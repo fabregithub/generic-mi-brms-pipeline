@@ -1,0 +1,656 @@
+# ============================================================
+# 00_common_functions.R
+# Generic helper functions for MI + brms pipeline
+# ============================================================
+
+suppressPackageStartupMessages({
+  library(tidyverse)
+  library(brms)
+  library(cmdstanr)
+  library(posterior)
+  library(bayestestR)
+  library(future)
+  library(furrr)
+})
+
+`%||%` <- function(x, y) {
+  if (is.null(x)) y else x
+}
+
+# ------------------------------------------------------------
+# Project directories and logging
+# ------------------------------------------------------------
+
+setup_project_dirs <- function(paths) {
+  dir.create("data", recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$objects, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$imputed_data, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$model_data, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$fits, recursive = TRUE, showWarnings = FALSE)
+  dir.create(paths$results, recursive = TRUE, showWarnings = FALSE)
+}
+
+init_logging <- function(prefix = "pipeline") {
+  assign("log_file", paste0(prefix, "_progress.log"), envir = .GlobalEnv)
+  assign("heartbeat_file", paste0(prefix, "_heartbeat.txt"), envir = .GlobalEnv)
+  assign("success_flag", paste0(prefix, "_success.flag"), envir = .GlobalEnv)
+  assign("error_flag", paste0(prefix, "_error.flag"), envir = .GlobalEnv)
+  invisible(TRUE)
+}
+
+update_heartbeat <- function(status = "running") {
+  heartbeat_file <- get0("heartbeat_file", ifnotfound = "pipeline_heartbeat.txt", envir = .GlobalEnv)
+  writeLines(
+    paste0(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), " | ", status),
+    heartbeat_file
+  )
+}
+
+log_msg <- function(..., .sep = " ") {
+  log_file <- get0("log_file", ifnotfound = "pipeline_progress.log", envir = .GlobalEnv)
+  msg <- paste(..., sep = .sep)
+  line <- paste0("[", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "] ", msg)
+  cat(line, "\n", file = log_file, append = TRUE)
+  cat(line, "\n")
+  flush.console()
+  update_heartbeat(msg)
+}
+
+log_section <- function(title) {
+  log_msg("============================================================")
+  log_msg(title)
+  log_msg("============================================================")
+}
+
+# ------------------------------------------------------------
+# Memory guard
+# ------------------------------------------------------------
+
+get_r_memory_used_gb <- function() {
+  mem <- gc()
+  sum(mem[, 2], na.rm = TRUE) / 1024
+}
+
+get_mac_memory_info_gb <- function() {
+  if (Sys.info()[["sysname"]] != "Darwin") {
+    return(list(available_gb = NA_real_, total_gb = NA_real_, used_gb = NA_real_))
+  }
+
+  vm <- tryCatch(system2("vm_stat", stdout = TRUE, stderr = TRUE), error = function(e) character(0))
+  total_bytes <- tryCatch(as.numeric(system2("sysctl", c("-n", "hw.memsize"), stdout = TRUE)), error = function(e) NA_real_)
+
+  if (length(vm) == 0 || is.na(total_bytes)) {
+    return(list(available_gb = NA_real_, total_gb = total_bytes / 1024^3, used_gb = NA_real_))
+  }
+
+  page_size <- suppressWarnings(as.numeric(sub(".*page size of ([0-9]+) bytes.*", "\\1", vm[1])))
+  if (is.na(page_size)) page_size <- 16384
+
+  extract_pages <- function(label) {
+    line <- grep(paste0("^", label, ":"), vm, value = TRUE)
+    if (length(line) == 0) return(0)
+    suppressWarnings(as.numeric(gsub("[^0-9]", "", line[1])))
+  }
+
+  available_bytes <- (
+    extract_pages("Pages free") +
+      extract_pages("Pages inactive") +
+      extract_pages("Pages speculative")
+  ) * page_size
+
+  total_gb <- total_bytes / 1024^3
+  available_gb <- available_bytes / 1024^3
+  list(available_gb = available_gb, total_gb = total_gb, used_gb = total_gb - available_gb)
+}
+
+log_memory <- function(memory_guard = NULL) {
+  if (isTRUE(memory_guard$gc_before_check %||% TRUE)) gc()
+  r_used <- get_r_memory_used_gb()
+  mac <- get_mac_memory_info_gb()
+  log_msg("R memory used, GB:", round(r_used, 2))
+  if (!is.na(mac$available_gb)) {
+    log_msg("macOS memory available, GB:", round(mac$available_gb, 2), "| used, GB:", round(mac$used_gb, 2), "| total, GB:", round(mac$total_gb, 2))
+  }
+}
+
+guard_memory <- function(label = "memory check", memory_guard = NULL, min_mac_available_gb = NULL) {
+  memory_guard <- memory_guard %||% list(enabled = FALSE)
+  if (!isTRUE(memory_guard$enabled)) return(invisible(TRUE))
+
+  if (isTRUE(memory_guard$gc_before_check %||% TRUE)) gc()
+  r_used <- get_r_memory_used_gb()
+  mac <- get_mac_memory_info_gb()
+
+  log_msg("Memory guard at", label, "| R used GB:", round(r_used, 2))
+  if (!is.na(mac$available_gb)) {
+    log_msg("Memory guard at", label, "| macOS available GB:", round(mac$available_gb, 2))
+  }
+
+  max_r <- memory_guard$max_r_memory_gb %||% Inf
+  min_mac <- min_mac_available_gb %||% memory_guard$min_mac_available_gb %||% -Inf
+
+  if (is.finite(r_used) && r_used > max_r) {
+    stop("Memory safeguard stopped pipeline at ", label, ": R memory used ", round(r_used, 2), " GB exceeds limit ", max_r, " GB.")
+  }
+  if (!is.na(mac$available_gb) && mac$available_gb < min_mac) {
+    stop("Memory safeguard stopped pipeline at ", label, ": macOS available memory ", round(mac$available_gb, 2), " GB is below limit ", min_mac, " GB.")
+  }
+  invisible(TRUE)
+}
+
+safe_step <- function(step_name, expr, analysis_spec = NULL) {
+  log_section(step_name)
+  tryCatch({
+    guard_memory(paste("before", step_name), analysis_spec$memory_guard %||% NULL)
+    out <- force(expr)
+    guard_memory(paste("after", step_name), analysis_spec$memory_guard %||% NULL)
+    log_msg("SUCCESS:", step_name)
+    log_memory(analysis_spec$memory_guard %||% NULL)
+    out
+  }, error = function(e) {
+    msg <- paste("ERROR in", step_name, ":", conditionMessage(e))
+    log_msg(msg)
+    log_msg("Pipeline stopped.")
+    error_flag <- get0("error_flag", ifnotfound = "pipeline_error.flag", envir = .GlobalEnv)
+    writeLines(msg, error_flag)
+    update_heartbeat(msg)
+    stop(e)
+  })
+}
+
+# ------------------------------------------------------------
+# CmdStan / brms setup
+# ------------------------------------------------------------
+
+setup_brms_cmdstan <- function(cache_dir = file.path(path.expand("~"), ".cmdstanr-cache")) {
+  cmdstan_path_main <- cmdstanr::cmdstan_path()
+  cmdstanr::set_cmdstan_path(cmdstan_path_main)
+  Sys.setenv(CMDSTAN = cmdstan_path_main)
+  options(brms.backend = "cmdstanr")
+  dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+  options(cmdstanr_write_stan_file_dir = cache_dir)
+  invisible(list(cmdstan_path = cmdstan_path_main, cache_dir = cache_dir))
+}
+
+# ------------------------------------------------------------
+# Basic validation and data helpers
+# ------------------------------------------------------------
+
+read_var_dict <- function(path) {
+  readr::read_csv(path, show_col_types = FALSE) %>%
+    mutate(
+      impute_target = as.logical(impute_target),
+      use_in_model = as.logical(use_in_model),
+      use_as_auxiliary = as.logical(use_as_auxiliary)
+    )
+}
+
+check_required_vars <- function(df, vars, label = "variables") {
+  vars <- vars[!is.na(vars) & nzchar(vars)]
+  missing_vars <- setdiff(vars, names(df))
+  if (length(missing_vars) > 0) {
+    stop("Missing ", label, ": ", paste(missing_vars, collapse = ", "))
+  }
+}
+
+prepare_raw_data <- function(raw_data, analysis_spec, var_dict) {
+  out <- as_tibble(raw_data)
+  row_id <- analysis_spec$data$row_id_var %||% "row_id"
+  if (!row_id %in% names(out)) out[[row_id]] <- seq_len(nrow(out))
+
+  cat_vars <- var_dict %>% filter(type %in% c("categorical", "binary", "ordinal")) %>% pull(var)
+  cat_vars <- intersect(cat_vars, names(out))
+  for (v in cat_vars) out[[v]] <- as.factor(out[[v]])
+
+  ref_tbl <- var_dict %>% filter(!is.na(reference), reference != "", var %in% names(out))
+  if (nrow(ref_tbl) > 0) {
+    for (i in seq_len(nrow(ref_tbl))) {
+      v <- ref_tbl$var[i]
+      ref <- as.character(ref_tbl$reference[i])
+      if (is.factor(out[[v]]) && ref %in% levels(out[[v]])) {
+        out[[v]] <- stats::relevel(out[[v]], ref = ref)
+      }
+    }
+  }
+  out
+}
+
+make_z_stats <- function(df, scale_vars) {
+  scale_vars <- intersect(scale_vars, names(df))
+  if (length(scale_vars) == 0) return(tibble(variable = character(), center = numeric(), scale = numeric()))
+  purrr::map_dfr(scale_vars, function(v) {
+    x <- df[[v]]
+    if (!is.numeric(x) && !is.integer(x)) stop("Cannot z-scale non-numeric variable: ", v)
+    s <- stats::sd(x, na.rm = TRUE)
+    if (!is.finite(s) || s <= 0) stop("Cannot z-scale variable with invalid SD: ", v)
+    tibble(variable = v, center = mean(x, na.rm = TRUE), scale = s)
+  })
+}
+
+apply_z_stats <- function(df, z_stats) {
+  out <- df
+  if (is.null(z_stats) || nrow(z_stats) == 0) return(out)
+  for (i in seq_len(nrow(z_stats))) {
+    v <- z_stats$variable[i]
+    out[[paste0(v, "_z")]] <- as.numeric((out[[v]] - z_stats$center[i]) / z_stats$scale[i])
+  }
+  out
+}
+
+# ------------------------------------------------------------
+# Formula, family, priors
+# ------------------------------------------------------------
+
+make_brms_family <- function(outcome_spec) {
+  family <- outcome_spec$family
+  link <- outcome_spec$link
+  switch(
+    family,
+    gaussian = stats::gaussian(link = link %||% "identity"),
+    student = brms::student(link = link %||% "identity"),
+    bernoulli = brms::bernoulli(link = link %||% "logit"),
+    poisson = stats::poisson(link = link %||% "log"),
+    negbinomial = brms::negbinomial(link = link %||% "log"),
+    beta = brms::Beta(link = link %||% "logit"),
+    ordinal = brms::cumulative(link = link %||% "logit"),
+    categorical = brms::categorical(link = link %||% "logit"),
+    stop("Unsupported brms family: ", family)
+  )
+}
+
+resolve_fixed_effects <- function(analysis_spec, var_dict) {
+  fixed <- analysis_spec$model$fixed_effects
+  if (length(fixed) == 1 && identical(fixed, "auto")) {
+    fixed_vars <- var_dict %>% filter(use_in_model, role != "outcome") %>% pull(var)
+  } else {
+    fixed_vars <- fixed
+  }
+  scale_vars <- var_dict %>% filter(scale == "z", var %in% fixed_vars) %>% pull(var)
+  fixed_vars <- ifelse(fixed_vars %in% scale_vars, paste0(fixed_vars, "_z"), fixed_vars)
+  unique(fixed_vars)
+}
+
+make_brms_formula <- function(analysis_spec, var_dict) {
+  if (!is.null(analysis_spec$model$custom_formula)) return(analysis_spec$model$custom_formula)
+  y <- analysis_spec$outcome$y_var
+  fixed <- resolve_fixed_effects(analysis_spec, var_dict)
+  if (length(fixed) == 0) fixed_rhs <- "1" else fixed_rhs <- paste(fixed, collapse = " + ")
+
+  random_terms <- character(0)
+  id_var <- analysis_spec$data$id_var
+  if (isTRUE(analysis_spec$model$random_effects$subject_intercept) && !is.null(id_var)) {
+    random_terms <- c(random_terms, paste0("(1 | ", id_var, ")"))
+  }
+  slope_vars <- analysis_spec$model$random_effects$subject_slope_vars %||% character(0)
+  if (length(slope_vars) > 0 && !is.null(id_var)) {
+    random_terms <- c(random_terms, paste0("(", paste(slope_vars, collapse = " + "), " | ", id_var, ")"))
+  }
+  rhs <- paste(c(fixed_rhs, random_terms), collapse = " + ")
+  stats::as.formula(paste(y, "~", rhs))
+}
+
+make_default_priors <- function(analysis_spec, formula = NULL, data = NULL) {
+  family <- analysis_spec$outcome$family
+  y_var <- analysis_spec$outcome$y_var
+  
+  y_sd <- if (!is.null(data) && y_var %in% names(data)) {
+    stats::sd(data[[y_var]], na.rm = TRUE)
+  } else {
+    NA_real_
+  }
+  
+  if (!is.finite(y_sd) || y_sd <= 0) {
+    y_sd <- 1
+  }
+  
+  intercept_scale <- 2.5 * y_sd
+  sigma_scale <- y_sd
+  
+  priors <- switch(
+    family,
+    
+    gaussian = c(
+      brms::prior(normal(0, 1), class = "b"),
+      brms::set_prior(
+        paste0("student_t(3, 0, ", signif(intercept_scale, 6), ")"),
+        class = "Intercept"
+      ),
+      brms::set_prior(
+        paste0("student_t(3, 0, ", signif(sigma_scale, 6), ")"),
+        class = "sigma"
+      )
+    ),
+    
+    bernoulli = c(
+      brms::prior(normal(0, 1.5), class = "b"),
+      brms::prior(student_t(3, 0, 2.5), class = "Intercept")
+    ),
+    
+    poisson = c(
+      brms::prior(normal(0, 1), class = "b"),
+      brms::prior(student_t(3, 0, 2.5), class = "Intercept")
+    ),
+    
+    negbinomial = c(
+      brms::prior(normal(0, 1), class = "b"),
+      brms::prior(student_t(3, 0, 2.5), class = "Intercept")
+    ),
+    
+    beta = c(
+      brms::prior(normal(0, 1), class = "b"),
+      brms::prior(student_t(3, 0, 2.5), class = "Intercept")
+    ),
+    
+    ordinal = c(
+      brms::prior(normal(0, 1.5), class = "b"),
+      brms::prior(student_t(3, 0, 2.5), class = "Intercept")
+    ),
+    
+    categorical = c(
+      brms::prior(normal(0, 1.5), class = "b"),
+      brms::prior(student_t(3, 0, 2.5), class = "Intercept")
+    ),
+    
+    stop("No default priors defined for family: ", family)
+  )
+  
+  if (!is.null(formula)) {
+    formula_text <- paste(deparse(formula), collapse = " ")
+    has_group_level_terms <- grepl("\\|", formula_text)
+    
+    if (has_group_level_terms) {
+      priors <- c(
+        priors,
+        brms::prior(exponential(1), class = "sd")
+      )
+    }
+  }
+  
+  priors
+}
+
+filter_priors_to_model <- function(priors, formula, data, family) {
+  valid <- brms::get_prior(formula = formula, data = data, family = family)
+  valid_classes <- unique(valid$class)
+  priors_df <- as.data.frame(priors)
+  keep <- priors_df$class %in% valid_classes
+  dropped <- unique(priors_df$class[!keep])
+  if (length(dropped) > 0) message("Dropping priors not used by this model: ", paste(dropped, collapse = ", "))
+  priors[keep]
+}
+
+build_model_spec <- function(analysis_spec, var_dict, reference_data) {
+  scale_vars <- var_dict %>% filter(scale == "z") %>% pull(var)
+  z_stats <- make_z_stats(reference_data, scale_vars)
+  formula <- make_brms_formula(analysis_spec, var_dict)
+  family <- make_brms_family(analysis_spec$outcome)
+  prior <- if (identical(analysis_spec$model$priors, "default_weakly_regularizing")) {
+    make_default_priors(analysis_spec, formula)
+  } else {
+    analysis_spec$model$priors
+  }
+  fixed_effects <- resolve_fixed_effects(analysis_spec, var_dict)
+  list(
+    formula = formula,
+    family = family,
+    prior = prior,
+    z_stats = z_stats,
+    fixed_effects = fixed_effects,
+    chains = analysis_spec$model$chains,
+    iter = analysis_spec$model$iter,
+    warmup = analysis_spec$model$warmup,
+    seed = analysis_spec$model$seed,
+    adapt_delta = analysis_spec$model$adapt_delta,
+    max_treedepth = analysis_spec$model$max_treedepth,
+    parameter_draw_regex = analysis_spec$model$parameter_draw_regex,
+    allow_new_levels = analysis_spec$posterior_prediction$allow_new_levels,
+    sample_new_levels = analysis_spec$posterior_prediction$sample_new_levels
+  )
+}
+
+# ------------------------------------------------------------
+# Imputation
+# ------------------------------------------------------------
+
+is_binary_like <- function(x) {
+  ux <- unique(stats::na.omit(x))
+  length(ux) <= 2
+}
+
+make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
+  row_id <- analysis_spec$data$row_id_var
+  y <- analysis_spec$outcome$y_var
+
+  target_vars <- var_dict %>% filter(impute_target) %>% pull(var)
+  if (isTRUE(analysis_spec$imputation$impute_y)) target_vars <- unique(c(target_vars, y))
+  target_vars <- intersect(target_vars, names(data))
+  target_vars <- target_vars[vapply(target_vars, function(v) anyNA(data[[v]]), logical(1))]
+
+  base_predictors <- var_dict %>%
+    filter(use_in_model | use_as_auxiliary | impute_target) %>%
+    pull(var) %>%
+    intersect(names(data))
+
+  # Exclude variables with missingness unless they are imputation targets.
+  usable_predictors <- base_predictors[vapply(base_predictors, function(v) !anyNA(data[[v]]) || v %in% target_vars, logical(1))]
+
+  vars <- stats::setNames(
+    lapply(target_vars, function(v) setdiff(usable_predictors, c(row_id, v))),
+    target_vars
+  )
+
+  list(
+    m = analysis_spec$imputation$m,
+    maxiter = analysis_spec$imputation$maxiter,
+    verbose = analysis_spec$imputation$verbose %||% FALSE,
+    vars = vars,
+    mean_match_k = analysis_spec$imputation$mean_match_k
+  )
+}
+
+run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
+  vars <- imputation_spec$vars
+  m <- imputation_spec$m
+
+  if (length(vars) == 0) {
+    log_msg("No imputation targets with missingness. Duplicating data m times.")
+    return(rep(list(as_tibble(data)), m))
+  }
+
+  valueSelector <- vapply(names(vars), function(v) {
+    x <- data[[v]]
+    if (is.factor(x)) "value" else if (is.numeric(x) && !is_binary_like(x)) "meanMatch" else "value"
+  }, character(1))
+  names(valueSelector) <- names(vars)
+
+  mm_vars <- names(vars)[valueSelector == "meanMatch"]
+  meanMatchCandidates <- rep(imputation_spec$mean_match_k %||% 5, length(mm_vars))
+  names(meanMatchCandidates) <- mm_vars
+
+  mice_obj <- miceRanger::miceRanger(
+    data = data,
+    m = m,
+    maxiter = imputation_spec$maxiter,
+    vars = vars,
+    valueSelector = valueSelector,
+    meanMatchCandidates = meanMatchCandidates,
+    returnModels = FALSE,
+    parallel = FALSE,
+    verbose = imputation_spec$verbose %||% FALSE,
+    num.threads = analysis_spec$parallel$num_impute_threads %||% 1
+  )
+
+  miceRanger::completeData(mice_obj, verbose = FALSE) %>% purrr::map(as_tibble)
+}
+
+# ------------------------------------------------------------
+# Model data and fitting
+# ------------------------------------------------------------
+
+prepare_model_data_files <- function(imputation_manifest, analysis_spec, model_spec, out_dir) {
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  y <- analysis_spec$outcome$y_var
+  row_id <- analysis_spec$data$row_id_var
+
+  manifest <- imputation_manifest %>%
+    mutate(
+      analysis_file = file.path(out_dir, sprintf("analysis_imp_%03d.rds", imputation)),
+      pred_file = file.path(out_dir, sprintf("pred_imp_%03d.rds", imputation))
+    )
+
+  for (i in seq_len(nrow(manifest))) {
+    dat_i <- readRDS(manifest$imputed_file[i])
+    dat_i <- apply_z_stats(dat_i, model_spec$z_stats)
+
+    model_vars <- all.vars(model_spec$formula)
+    analysis_vars <- unique(c(model_vars, row_id))
+    pred_vars <- unique(c(setdiff(model_vars, y), row_id))
+
+    check_required_vars(dat_i, analysis_vars, "analysis variables")
+    check_required_vars(dat_i, pred_vars, "prediction variables")
+
+    analysis_i <- dat_i %>% filter(!is.na(.data[[y]])) %>% select(all_of(analysis_vars))
+    pred_i <- dat_i %>% filter(is.na(.data[[y]])) %>% select(all_of(pred_vars))
+
+    saveRDS(analysis_i, manifest$analysis_file[i], compress = FALSE)
+    saveRDS(pred_i, manifest$pred_file[i], compress = FALSE)
+    rm(dat_i, analysis_i, pred_i); gc()
+  }
+  manifest
+}
+
+rds_ok <- function(file) {
+  if (!file.exists(file)) return(FALSE)
+  tryCatch({ obj <- readRDS(file); rm(obj); gc(); TRUE }, error = function(e) FALSE)
+}
+
+fit_one_brm_file <- function(ii, fit_manifest, model_spec, analysis_spec, setup_info, log_file = NULL) {
+  imp_i <- fit_manifest$imputation[ii]
+  fit_file_i <- fit_manifest$fit_file[ii]
+  analysis_file_i <- fit_manifest$analysis_file[ii]
+
+  worker_log <- function(...) {
+    msg <- paste(..., sep = " ")
+    line <- paste0("[", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), "] ", msg)
+    if (!is.null(log_file)) cat(line, "\n", file = log_file, append = TRUE)
+    line
+  }
+
+  worker_log("Worker started for imputation", imp_i)
+  if (rds_ok(fit_file_i)) {
+    worker_log("Existing valid fit found; skipping", imp_i)
+    return(tibble(imputation = imp_i, status = "skipped_existing_valid_fit", fit_file = fit_file_i))
+  }
+  if (file.exists(fit_file_i) && !rds_ok(fit_file_i)) file.remove(fit_file_i)
+
+  cmdstanr::set_cmdstan_path(setup_info$cmdstan_path)
+  options(brms.backend = "cmdstanr")
+  options(cmdstanr_write_stan_file_dir = setup_info$cache_dir)
+
+  dat_i <- readRDS(analysis_file_i)
+  worker_log("Analysis rows:", nrow(dat_i))
+  prior_i <- filter_priors_to_model(model_spec$prior, model_spec$formula, dat_i, model_spec$family)
+  worker_log("Prior classes used:", paste(unique(as.data.frame(prior_i)$class), collapse = ", "))
+
+  fit_i <- tryCatch(
+    brms::brm(
+      formula = model_spec$formula,
+      data = dat_i,
+      family = model_spec$family,
+      prior = prior_i,
+      chains = model_spec$chains,
+      iter = model_spec$iter,
+      warmup = model_spec$warmup,
+      cores = analysis_spec$parallel$cores_per_fit %||% 1,
+      seed = model_spec$seed + imp_i,
+      init = analysis_spec$model$init %||% "random",
+      refresh = 100,
+      silent = analysis_spec$model$silent %||% 2,
+      backend = "cmdstanr",
+      control = list(adapt_delta = model_spec$adapt_delta, max_treedepth = model_spec$max_treedepth)
+    ),
+    error = function(e) {
+      worker_log("ERROR during brm() for imputation", imp_i, ":", conditionMessage(e))
+      stop(e)
+    }
+  )
+
+  saveRDS(fit_i, fit_file_i, compress = FALSE)
+  rm(dat_i, fit_i); gc()
+  worker_log("Worker completed for imputation", imp_i)
+  tibble(imputation = imp_i, status = "completed", fit_file = fit_file_i)
+}
+
+# ------------------------------------------------------------
+# Diagnostics / posterior summaries / predictions
+# ------------------------------------------------------------
+
+diagnose_one_fit <- function(fit_file, imputation, max_treedepth) {
+  fit_i <- readRDS(fit_file)
+  np <- brms::nuts_params(fit_i)
+  out <- tibble(
+    imputation = imputation,
+    divergent = sum(np$Parameter == "divergent__" & np$Value == 1, na.rm = TRUE),
+    treedepth_hits = sum(np$Parameter == "treedepth__" & np$Value >= max_treedepth, na.rm = TRUE)
+  )
+  rm(fit_i, np); gc()
+  out
+}
+
+summarise_parameter_draws_table <- function(draws_df, summary_spec) {
+  meta_cols <- c("imputation", ".chain", ".iteration", ".draw")
+  param_cols <- setdiff(names(draws_df), meta_cols)
+  param_cols <- grep("^(b_|sd_|sigma)", param_cols, value = TRUE)
+  if (identical(summary_spec$effects, "fixed")) param_cols <- grep("^b_", param_cols, value = TRUE)
+  if (length(param_cols) == 0) stop("No parameter columns found for posterior summary.")
+
+  args <- list(
+    x = draws_df[, param_cols, drop = FALSE],
+    centrality = summary_spec$centrality,
+    ci = summary_spec$ci,
+    ci_method = summary_spec$ci_method,
+    verbose = FALSE
+  )
+  if (!is.null(summary_spec$test) && length(summary_spec$test) > 0) args$test <- summary_spec$test
+  if (!is.null(summary_spec$rope$fixed_range)) args$rope_range <- summary_spec$rope$fixed_range
+
+  suppressWarnings(do.call(bayestestR::describe_posterior, args)) %>% as_tibble()
+}
+
+predict_missing_y_draws_one <- function(fit_i, pred_i, analysis_spec, model_spec, ndraws = 1000) {
+  row_id <- analysis_spec$data$row_id_var
+  if (nrow(pred_i) == 0) return(tibble())
+  new_i <- pred_i %>% select(-all_of(row_id))
+  if (anyNA(new_i)) stop("Prediction rows still contain missing predictors.")
+
+  draw_mat <- brms::posterior_predict(
+    fit_i,
+    newdata = new_i,
+    ndraws = ndraws,
+    allow_new_levels = model_spec$allow_new_levels %||% TRUE,
+    sample_new_levels = model_spec$sample_new_levels %||% "gaussian"
+  ) %>% as.matrix()
+
+  as_tibble(draw_mat, .name_repair = "minimal") %>%
+    stats::setNames(paste0("row_", pred_i[[row_id]])) %>%
+    mutate(.draw = row_number()) %>%
+    pivot_longer(cols = -.draw, names_to = row_id, values_to = "y_draw") %>%
+    mutate(!!row_id := as.integer(sub("^row_", "", .data[[row_id]])))
+}
+
+summarise_missing_y_draws <- function(pred_draws_long, analysis_spec, summary_spec) {
+  row_id <- analysis_spec$data$row_id_var
+  if (nrow(pred_draws_long) == 0) return(tibble())
+  pred_draws_long %>%
+    group_by(.data[[row_id]]) %>%
+    group_split() %>%
+    map_dfr(function(df_i) {
+      suppressWarnings(bayestestR::describe_posterior(
+        df_i$y_draw,
+        centrality = summary_spec$centrality,
+        ci = summary_spec$ci,
+        ci_method = summary_spec$ci_method,
+        verbose = FALSE
+      )) %>% as_tibble() %>% mutate(!!row_id := unique(df_i[[row_id]]), .before = 1)
+    })
+}

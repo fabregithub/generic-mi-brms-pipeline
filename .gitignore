@@ -1,0 +1,42 @@
+# R session files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# Pipeline outputs
+objects/
+fits/
+results/
+
+# Logs and flags
+*.log
+pipeline_progress.log
+pipeline_stdout.log
+pipeline_heartbeat.txt
+pipeline_success.flag
+pipeline_error.flag
+run_all_stdout.log
+run_all_*_stdout.log
+
+# Large/generated data
+data/*.rds
+data/*.RDS
+data/*.csv
+!data/.gitkeep
+
+# CmdStan/cache/temp files
+*.stan
+*.hpp
+*.o
+*.d
+*.exe
+.cmdstanr-cache/
+
+# macOS
+.DS_Store
+
+# Quarto generated outputs
+*_files/
+*.html
+*.docx

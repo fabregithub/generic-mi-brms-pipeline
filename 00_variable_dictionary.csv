@@ -1,0 +1,7 @@
+var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
+Ozone,Ozone concentration,outcome,continuous,single,none,,false,false,true
+Solar.R,Solar radiation,predictor,continuous,single,z,,true,true,false
+Wind,Wind speed,predictor,continuous,single,z,,false,true,false
+Temp,Temperature,predictor,continuous,single,z,,false,true,false
+Month,Month,predictor,categorical,single,none,5,false,true,false
+Day,Day of month,auxiliary,integer,single,none,,false,false,true
