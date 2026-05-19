@@ -12,7 +12,7 @@ It supports:
 - diagnostics
 - posterior summaries
 - posterior prediction for rows with missing outcomes
-- publication-ready tables, figures, and report templates
+- publication-ready tables, figures, methods/settings metadata, and report templates
 
 The default example uses the built-in public dataset `datasets::airquality`, so the template can be tested and demonstrated without private data.
 
@@ -1073,9 +1073,13 @@ Typical outputs include:
 results/publication/tables/main_effect_table_display.csv
 results/publication/tables/main_effect_table_full.csv
 results/publication/tables/diagnostics_summary.csv
+results/publication/tables/analysis_metadata.csv
+results/publication/tables/analysis_metadata.rds
 results/publication/figures/forest_plot_odds_ratios.png
 results/publication/report/bayesian_mi_report_template.qmd
 ```
+
+The generated Quarto report includes posterior results, diagnostics, figures, and a methods/settings table based on `analysis_metadata.csv`. This table records key analysis settings such as the imputation strategy, target number of imputations, fitted imputations used in posterior summaries, model formula, family/link, priors, MCMC settings, parallel settings, posterior-summary settings, and predictive-draw settings.
 
 Render the report with:
 
