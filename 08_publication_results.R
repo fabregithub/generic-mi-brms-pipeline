@@ -508,6 +508,222 @@ safe_step("STEP 8: Publication-ready outputs", {
     ")"
   )
   
+
+  # ------------------------------------------------------------
+  # Analysis metadata for the report
+  # ------------------------------------------------------------
+
+  fmt_scalar <- function(x, default = "not specified") {
+    if (is.null(x) || length(x) == 0 || all(is.na(x))) {
+      return(default)
+    }
+
+    paste(as.character(x), collapse = ", ")
+  }
+
+  fmt_prior_text <- function(prior_obj) {
+    if (is.null(prior_obj)) {
+      return("not available")
+    }
+
+    out <- tryCatch(
+      paste(capture.output(print(prior_obj)), collapse = "; "),
+      error = function(e) paste(as.character(prior_obj), collapse = "; ")
+    )
+
+    if (length(out) == 0 || !nzchar(out)) {
+      "not available"
+    } else {
+      out
+    }
+  }
+
+  formula_text <- if (exists("model_spec") && !is.null(model_spec$formula)) {
+    paste(deparse(model_spec$formula), collapse = " ")
+  } else {
+    "not available"
+  }
+
+  family_text <- if (exists("model_spec") && !is.null(model_spec$family)) {
+    paste(capture.output(print(model_spec$family)), collapse = " ")
+  } else {
+    paste0(
+      analysis_spec$outcome$family,
+      "(",
+      analysis_spec$outcome$link,
+      ")"
+    )
+  }
+
+  prior_text <- if (exists("model_spec") && !is.null(model_spec$prior)) {
+    fmt_prior_text(model_spec$prior)
+  } else {
+    "not available"
+  }
+
+  outcome_var <- analysis_spec$outcome$y_var %||% "not available"
+  id_var <- analysis_spec$data$id_var %||% "not available"
+  time_var <- analysis_spec$data$time_var %||% "not available"
+  data_structure <- analysis_spec$data$data_structure %||% "not available"
+  imputation_strategy <- analysis_spec$imputation$strategy %||% "not available"
+
+  n_imputations_target <- analysis_spec$imputation$m %||% NA
+  imputation_maxiter <- analysis_spec$imputation$maxiter %||% NA
+  mean_match_k <- analysis_spec$imputation$mean_match_k %||% NA
+
+  n_fitted_models <- if (!is.na(n_parameter_imputations)) {
+    n_parameter_imputations
+  } else if (!is.null(diagnostics)) {
+    nrow(diagnostics)
+  } else {
+    NA_integer_
+  }
+
+  mcmc_chains <- analysis_spec$model$chains %||% NA
+  mcmc_iter <- analysis_spec$model$iter %||% NA
+  mcmc_warmup <- analysis_spec$model$warmup %||% NA
+
+  mcmc_sampling <- if (
+    is.numeric(mcmc_iter) &&
+      is.numeric(mcmc_warmup) &&
+      is.finite(mcmc_iter) &&
+      is.finite(mcmc_warmup)
+  ) {
+    mcmc_iter - mcmc_warmup
+  } else {
+    NA
+  }
+
+  mcmc_seed <- analysis_spec$model$seed %||% NA
+  adapt_delta <- analysis_spec$model$adapt_delta %||% NA
+  max_treedepth <- analysis_spec$model$max_treedepth %||% NA
+  run_smoke_fit <- analysis_spec$model$run_smoke_fit %||% NA
+
+  num_impute_threads <- analysis_spec$parallel$num_impute_threads %||% NA
+  fit_workers <- analysis_spec$parallel$fit_workers %||% NA
+  cores_per_fit <- analysis_spec$parallel$cores_per_fit %||% NA
+  future_max_gb <- analysis_spec$parallel$future_globals_maxsize_gb %||% NA
+
+  summary_centrality <- analysis_spec$summary$centrality %||% NA
+  summary_ci <- analysis_spec$summary$ci %||% NA
+  summary_ci_method <- analysis_spec$summary$ci_method %||% NA
+
+  summary_test <- if (!is.null(analysis_spec$summary$test)) {
+    paste(analysis_spec$summary$test, collapse = ", ")
+  } else {
+    "not specified"
+  }
+
+  summary_rope <- if (!is.null(analysis_spec$summary$rope$fixed_range)) {
+    paste(analysis_spec$summary$rope$fixed_range, collapse = ", ")
+  } else {
+    "not specified"
+  }
+
+  predictive_draws_text <- analysis_spec$posterior_prediction$ndraws %||% "not specified"
+
+  missing_y_rows_text <- if (!is.null(missing_y_summary)) {
+    nrow(missing_y_summary)
+  } else {
+    0
+  }
+
+  analysis_metadata <- tibble::tibble(
+    Item = c(
+      "Analysis ID",
+      "Project label",
+      "Data structure",
+      "Outcome variable",
+      "Subject ID variable",
+      "Time variable",
+      "Imputation strategy",
+      "Model formula",
+      "Model family/link",
+      "Priors",
+      "Target number of imputations",
+      "Successfully fitted imputed datasets used in posterior summaries",
+      "Imputation iterations",
+      "Mean matching candidates",
+      "MCMC chains",
+      "Total iterations per chain",
+      "Warm-up iterations per chain",
+      "Post-warm-up sampling iterations per chain",
+      "Seed",
+      "adapt_delta",
+      "max_treedepth",
+      "Smoke fit before parallel fitting",
+      "Imputation threads",
+      "Parallel fit workers",
+      "Cores per fit",
+      "future.globals.maxSize, GB",
+      "Posterior summary centrality",
+      "Credible interval",
+      "Credible interval method",
+      "Posterior tests",
+      "ROPE range",
+      "Predictive draws for missing outcomes",
+      "Rows with missing outcome prediction summaries"
+    ),
+    Value = c(
+      fmt_scalar(analysis_spec$analysis_id),
+      fmt_scalar(analysis_spec$project_label),
+      fmt_scalar(data_structure),
+      fmt_scalar(outcome_var),
+      fmt_scalar(id_var),
+      fmt_scalar(time_var),
+      fmt_scalar(imputation_strategy),
+      fmt_scalar(formula_text),
+      fmt_scalar(family_text),
+      fmt_scalar(prior_text),
+      fmt_scalar(n_imputations_target),
+      fmt_scalar(n_fitted_models),
+      fmt_scalar(imputation_maxiter),
+      fmt_scalar(mean_match_k),
+      fmt_scalar(mcmc_chains),
+      fmt_scalar(mcmc_iter),
+      fmt_scalar(mcmc_warmup),
+      fmt_scalar(mcmc_sampling),
+      fmt_scalar(mcmc_seed),
+      fmt_scalar(adapt_delta),
+      fmt_scalar(max_treedepth),
+      fmt_scalar(run_smoke_fit),
+      fmt_scalar(num_impute_threads),
+      fmt_scalar(fit_workers),
+      fmt_scalar(cores_per_fit),
+      fmt_scalar(future_max_gb),
+      fmt_scalar(summary_centrality),
+      fmt_scalar(summary_ci),
+      fmt_scalar(summary_ci_method),
+      fmt_scalar(summary_test),
+      fmt_scalar(summary_rope),
+      fmt_scalar(predictive_draws_text),
+      fmt_scalar(missing_y_rows_text)
+    )
+  )
+
+  readr::write_csv(
+    analysis_metadata,
+    file.path(table_dir, "analysis_metadata.csv")
+  )
+
+  saveRDS(
+    analysis_metadata,
+    file.path(table_dir, "analysis_metadata.rds"),
+    compress = FALSE
+  )
+
+  methods_sentence <- glue(
+    "The target number of imputations was {fmt_scalar(n_imputations_target)}. ",
+    "Posterior summaries were based on {fmt_scalar(n_fitted_models)} successfully fitted imputed datasets. ",
+    "For each fitted model, we used {fmt_scalar(mcmc_chains)} chain(s), ",
+    "{fmt_scalar(mcmc_iter)} total iterations per chain, ",
+    "including {fmt_scalar(mcmc_warmup)} warm-up iterations and ",
+    "{fmt_scalar(mcmc_sampling)} post-warm-up sampling iterations. ",
+    "The main sampler-control settings were adapt_delta = {fmt_scalar(adapt_delta)} ",
+    "and max_treedepth = {fmt_scalar(max_treedepth)}."
+  )
+
+
   report_lines <- c(
     "---",
     'title: "Bayesian Multiple-Imputation Analysis Report"',
@@ -537,11 +753,38 @@ safe_step("STEP 8: Publication-ready outputs", {
     "",
     glue("This report summarizes a Bayesian `{family_text}` regression analysis using multiple imputation."),
     "",
-    "# Model",
+    "# Model and computational settings",
     "",
-    glue("Outcome: `{analysis_spec$outcome$y_var}`"),
+    methods_sentence,
     "",
-    glue("Family/link: `{family_text}`"),
+    "The model formula used in the analysis was:",
+    "",
+    "```text",
+    formula_text,
+    "```",
+    "",
+    "The brms family/link specification was:",
+    "",
+    "```text",
+    family_text,
+    "```",
+    "",
+    "The priors used in the fitted model were:",
+    "",
+    "```text",
+    prior_text,
+    "```",
+    "",
+    "The table below records the main analysis, imputation, modelling, parallelisation, and posterior-summary settings used to generate this report.",
+    "",
+    "```{r analysis-metadata-table}",
+    "analysis_metadata <- readr::read_csv(",
+    "  file.path(table_dir, 'analysis_metadata.csv'),",
+    "  show_col_types = FALSE",
+    ")",
+    "",
+    "gt(analysis_metadata)",
+    "```",
     "",
     "# Diagnostics",
     "",
@@ -598,6 +841,8 @@ safe_step("STEP 8: Publication-ready outputs", {
     "- `tables/main_effect_table.html`",
     "- `tables/main_effect_table.docx`",
     "- `tables/diagnostics_summary.csv`, if diagnostics are available",
+    "- `tables/analysis_metadata.csv`",
+    "- `tables/analysis_metadata.rds`",
     "",
     "## Figures",
     "",
