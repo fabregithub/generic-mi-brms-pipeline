@@ -19,6 +19,7 @@ suppressPackageStartupMessages({
   library(glue)
   library(stringr)
   library(forcats)
+  library(brms)
 })
 
 init_logging("pipeline")
@@ -69,6 +70,103 @@ safe_step("STEP 8: Publication-ready outputs", {
       str_replace_all(":", " x ") %>%
       str_replace_all("_z$", " per SD") %>%
       str_replace_all("_", " ")
+  }
+  
+  classify_parameter <- function(param) {
+    dplyr::case_when(
+      param == "b_Intercept" ~ "intercept",
+      grepl("^b_", param) ~ "fixed",
+      grepl("^sd_", param) ~ "group_sd",
+      grepl("^sigma", param) ~ "residual_sigma",
+      grepl("^sds_", param) ~ "smooth_sd",
+      grepl("^bs_", param) ~ "smooth_basis",
+      grepl("^simo_", param) ~ "monotonic_simplex",
+      grepl("^bsp_", param) ~ "special_brms",
+      TRUE ~ "other"
+    )
+  }
+  
+  safe_filename <- function(x) {
+    x %>%
+      stringr::str_replace_all("[^A-Za-z0-9_\\.-]+", "_") %>%
+      stringr::str_replace_all("_+", "_") %>%
+      stringr::str_replace("^_", "") %>%
+      stringr::str_replace("_$", "")
+  }
+  
+  get_report_formula_core <- function(formula) {
+    if (inherits(formula, "brmsformula") && !is.null(formula$formula)) {
+      return(formula$formula)
+    }
+
+    formula
+  }
+
+  get_report_formula_text <- function(formula) {
+    if (is.null(formula)) {
+      return("not available")
+    }
+
+    paste(deparse(get_report_formula_core(formula), width.cutoff = 500), collapse = " ")
+  }
+
+  compact_report_text <- function(x) {
+    x <- paste(x, collapse = " ")
+    x <- gsub("\\s+", " ", x)
+    trimws(x)
+  }
+
+  get_report_prior_text <- function(prior) {
+    if (is.null(prior)) {
+      return("not available")
+    }
+
+    prior_df <- tryCatch(
+      as.data.frame(prior),
+      error = function(e) NULL
+    )
+
+    if (is.null(prior_df) || nrow(prior_df) == 0) {
+      return("not available")
+    }
+
+    # Keep the reader-facing prior display compact.  These are the fields
+    # most users need in the methods/settings table.
+    keep_cols <- intersect(
+      c("prior", "class", "coef", "group", "resp", "dpar", "nlpar"),
+      names(prior_df)
+    )
+
+    prior_df <- prior_df[, keep_cols, drop = FALSE]
+
+    # Convert missing values and empty strings to blanks for clean display.
+    prior_df[] <- lapply(prior_df, function(z) {
+      z <- as.character(z)
+      z[is.na(z)] <- ""
+      z
+    })
+
+    apply(
+      prior_df,
+      1,
+      function(row_i) {
+        parts <- paste0(names(row_i), "=", row_i)
+        parts <- parts[nzchar(row_i)]
+        paste(parts, collapse = ", ")
+      }
+    ) |>
+      paste(collapse = "; ") |>
+      compact_report_text()
+  }
+
+  extract_special_term_vars <- function(formula, fun) {
+    if (is.null(formula)) return(character(0))
+    formula_text <- get_report_formula_text(formula)
+    pattern <- paste0("\\b", fun, "\\s*\\(\\s*`?([A-Za-z.][A-Za-z0-9._]*)`?")
+    matches <- gregexpr(pattern, formula_text, perl = TRUE)
+    hits <- regmatches(formula_text, matches)[[1]]
+    if (length(hits) == 0 || identical(hits, character(0))) return(character(0))
+    unique(sub(pattern, "\\1", hits, perl = TRUE))
   }
   
   find_col <- function(df, candidates) {
@@ -138,6 +236,10 @@ safe_step("STEP 8: Publication-ready outputs", {
   parameter_summary_file <- file.path(paths$results, "parameter_summary.rds")
   diagnostics_file <- file.path(paths$results, "diagnostics.rds")
   missing_y_summary_file <- file.path(paths$results, "missing_y_summary.rds")
+  model_spec_file <- file.path(paths$objects, "model_spec.rds")
+  fit_manifest_file <- file.path(paths$objects, "fit_manifest.rds")
+  fit_status_file <- file.path(paths$objects, "fit_status.rds")
+  parameter_manifest_file <- file.path(paths$objects, "parameter_manifest.rds")
   
   if (!file.exists(parameter_summary_file)) {
     stop("Missing parameter_summary.rds.")
@@ -153,6 +255,18 @@ safe_step("STEP 8: Publication-ready outputs", {
   
   missing_y_summary <- if (file.exists(missing_y_summary_file)) {
     readRDS(missing_y_summary_file)
+  } else {
+    NULL
+  }
+  
+  model_spec <- if (file.exists(model_spec_file)) {
+    readRDS(model_spec_file)
+  } else {
+    NULL
+  }
+  
+  fit_manifest <- if (file.exists(fit_manifest_file)) {
+    readRDS(fit_manifest_file)
   } else {
     NULL
   }
@@ -202,6 +316,11 @@ safe_step("STEP 8: Publication-ready outputs", {
   main_effect_table <- parameter_summary %>%
     mutate(
       Parameter_raw = Parameter,
+      Parameter_Class = if ("Parameter_Class" %in% names(parameter_summary)) {
+        as.character(Parameter_Class)
+      } else {
+        classify_parameter(Parameter)
+      },
       Parameter_clean = clean_parameter_name(Parameter),
       Estimate_num = as.numeric(.data[[central_col]]),
       CI_low_num = as.numeric(.data[[ci_low_col]]),
@@ -253,10 +372,38 @@ safe_step("STEP 8: Publication-ready outputs", {
   )
   
   # ------------------------------------------------------------
+  # Special brms parameters from s() and mo()
+  # ------------------------------------------------------------
+  
+  special_parameter_table <- main_effect_table %>%
+    dplyr::filter(Parameter_Class %in% c("smooth_sd", "smooth_basis", "monotonic_simplex", "special_brms")) %>%
+    dplyr::transmute(
+      Parameter = Parameter_clean,
+      Parameter_raw = Parameter_raw,
+      Parameter_Class = Parameter_Class,
+      Estimate = fmt_num(Estimate_num, 3),
+      `95% CrI` = fmt_ci(CI_low_num, CI_high_num, 3),
+      pd = ifelse(is.na(pd_num), NA_character_, fmt_num(pd_num, 3)),
+      `ROPE %` = ifelse(is.na(ROPE_Percentage_num), NA_character_, fmt_num(ROPE_Percentage_num, 1))
+    )
+  
+  special_terms_sentence <- "No smooth-term or monotonic-effect auxiliary parameters were detected in the extracted posterior draws."
+  
+  if (nrow(special_parameter_table) > 0) {
+    saveRDS(special_parameter_table, file.path(table_dir, "special_parameter_table.rds"), compress = FALSE)
+    readr::write_csv(special_parameter_table, file.path(table_dir, "special_parameter_table.csv"))
+    special_parameter_gt <- special_parameter_table %>% gt() %>%
+      tab_header(title = "Supplementary Smooth and Monotonic Parameters", subtitle = "Auxiliary brms parameters from s() and mo() terms")
+    save_gt_table(special_parameter_gt, "special_parameter_table")
+    special_terms_sentence <- "Supplementary brms parameters from smooth or monotonic terms were detected and written to special_parameter_table.csv. These parameters are usually less directly interpretable than ordinary regression coefficients; conditional-effect plots are recommended for reporting s() and mo() terms."
+  }
+  
+  # ------------------------------------------------------------
   # Display table
   # ------------------------------------------------------------
   
   display_base <- main_effect_table %>%
+    filter(Parameter_Class == "fixed") %>%
     filter(!is_intercept(Parameter_raw)) %>%
     transmute(
       Parameter = Parameter_clean,
@@ -294,6 +441,11 @@ safe_step("STEP 8: Publication-ready outputs", {
     file.path(table_dir, "main_effect_table_display.csv")
   )
   
+  main_effect_table_center_cols <- setdiff(
+    names(main_effect_table_display),
+    "Parameter"
+  )
+
   main_effect_gt <- main_effect_table_display %>%
     gt() %>%
     tab_header(
@@ -301,7 +453,7 @@ safe_step("STEP 8: Publication-ready outputs", {
     ) %>%
     cols_align(
       align = "center",
-      columns = -Parameter
+      columns = dplyr::all_of(main_effect_table_center_cols)
     ) %>%
     tab_source_note(
       source_note = "CrI = credible interval; pd = probability of direction; ROPE = region of practical equivalence."
@@ -328,6 +480,7 @@ safe_step("STEP 8: Publication-ready outputs", {
   # ------------------------------------------------------------
   
   forest_data <- main_effect_table %>%
+    filter(Parameter_Class == "fixed") %>%
     filter(!is_intercept(Parameter_raw)) %>%
     filter(str_detect(Parameter_raw, "^b_"))
   
@@ -398,6 +551,68 @@ safe_step("STEP 8: Publication-ready outputs", {
   }
   
   # ------------------------------------------------------------
+  # Conditional-effect plots for s() and mo() terms
+  # ------------------------------------------------------------
+  
+  conditional_effects_sentence <- "Conditional-effect plots were not requested or no eligible special terms were detected."
+  conditional_effect_manifest <- tibble::tibble()
+  reporting_ce <- analysis_spec$reporting$conditional_effects %||% list(enabled = FALSE)
+  ce_enabled <- reporting_ce$enabled %||% FALSE
+  
+  if (isTRUE(ce_enabled) && !is.null(model_spec) && !is.null(fit_manifest)) {
+    ce_effects <- reporting_ce$effects %||% "auto"
+    if (identical(ce_effects, "auto")) {
+      ce_effects <- unique(c(
+        extract_special_term_vars(model_spec$formula, "s"),
+        extract_special_term_vars(model_spec$formula, "mo")
+      ))
+    }
+    
+    if (length(ce_effects) > 0) {
+      valid_fit_manifest <- fit_manifest %>%
+        dplyr::mutate(fit_valid = purrr::map_lgl(fit_file, rds_ok)) %>%
+        dplyr::filter(fit_valid)
+      
+      if (nrow(valid_fit_manifest) > 0) {
+        fit_for_ce <- readRDS(valid_fit_manifest$fit_file[1])
+        ce_rows <- list()
+        for (effect_i in ce_effects) {
+          log_msg("Creating conditional-effect plot for:", effect_i)
+          safe_effect <- safe_filename(effect_i)
+          png_file <- file.path(figure_dir, paste0("conditional_effect_", safe_effect, ".png"))
+          pdf_file <- file.path(figure_dir, paste0("conditional_effect_", safe_effect, ".pdf"))
+          ce_result <- tryCatch({
+            ce <- brms::conditional_effects(
+              fit_for_ce,
+              effects = effect_i,
+              re_formula = reporting_ce$re_formula %||% NA,
+              resolution = reporting_ce$resolution %||% 100
+            )
+            p <- plot(ce, plot = FALSE)[[1]] +
+              ggplot2::theme_bw(base_size = 12) +
+              ggplot2::labs(
+                title = paste("Conditional effect:", effect_i),
+                subtitle = paste0("Generated from representative fit imputation ", valid_fit_manifest$imputation[1], "; posterior tables are pooled across valid fits")
+              )
+            ggplot2::ggsave(png_file, plot = p, width = 7, height = 5, dpi = 300)
+            ggplot2::ggsave(pdf_file, plot = p, width = 7, height = 5)
+            tibble::tibble(effect = effect_i, representative_imputation = valid_fit_manifest$imputation[1], png_file = basename(png_file), pdf_file = basename(pdf_file), status = "created", error = NA_character_)
+          }, error = function(e) {
+            tibble::tibble(effect = effect_i, representative_imputation = valid_fit_manifest$imputation[1], png_file = NA_character_, pdf_file = NA_character_, status = "failed", error = conditionMessage(e))
+          })
+          ce_rows[[length(ce_rows) + 1]] <- ce_result
+        }
+        conditional_effect_manifest <- dplyr::bind_rows(ce_rows)
+        readr::write_csv(conditional_effect_manifest, file.path(table_dir, "conditional_effects_manifest.csv"))
+        n_created <- sum(conditional_effect_manifest$status == "created", na.rm = TRUE)
+        conditional_effects_sentence <- glue("Conditional-effect plots were requested for {length(ce_effects)} effect(s); {n_created} plot(s) were created from the first valid representative fit. For multiply imputed analyses, these plots should be interpreted as visual summaries of nonlinear term shape; posterior coefficient summaries remain pooled across valid fits.")
+        rm(fit_for_ce)
+        gc()
+      }
+    }
+  }
+  
+  # ------------------------------------------------------------
   # Diagnostics summary
   # ------------------------------------------------------------
   
@@ -444,7 +659,7 @@ safe_step("STEP 8: Publication-ready outputs", {
   # Missing outcome prediction summary, if available
   # ------------------------------------------------------------
   
-  missing_y_sentence <- "Posterior predictions for missing outcome rows were summarized when available."
+  missing_y_sentence <- "Posterior predictions for missing outcome rows were summarised when available."
   
   if (!is.null(missing_y_summary)) {
     readr::write_csv(
@@ -485,7 +700,7 @@ safe_step("STEP 8: Publication-ready outputs", {
       save_gt_table(missing_y_gt, "missing_y_overall_summary")
       
       missing_y_sentence <- glue(
-        "Posterior predictions were summarized for {missing_y_overall$n_missing_rows} rows with missing outcomes."
+        "Posterior predictions were summarised for {missing_y_overall$n_missing_rows} rows with missing outcomes."
       )
     }
   }
@@ -522,14 +737,10 @@ safe_step("STEP 8: Publication-ready outputs", {
   }
 
   fmt_prior_text <- function(prior_obj) {
-    if (is.null(prior_obj)) {
-      return("not available")
-    }
-
-    out <- tryCatch(
-      paste(capture.output(print(prior_obj)), collapse = "; "),
-      error = function(e) paste(as.character(prior_obj), collapse = "; ")
-    )
+    # Use the compact reader-facing formatter defined above.
+    # Avoid capture.output(print(...)), because brmsprior objects print as
+    # padded tables with many spaces, which looks poor in HTML/DOCX reports.
+    out <- get_report_prior_text(prior_obj)
 
     if (length(out) == 0 || !nzchar(out)) {
       "not available"
@@ -538,24 +749,33 @@ safe_step("STEP 8: Publication-ready outputs", {
     }
   }
 
-  formula_text <- if (exists("model_spec") && !is.null(model_spec$formula)) {
-    paste(deparse(model_spec$formula), collapse = " ")
+  formula_text <- if (!is.null(model_spec) && !is.null(model_spec$formula_text)) {
+    compact_report_text(model_spec$formula_text)
+  } else if (!is.null(model_spec) && !is.null(model_spec$formula)) {
+    compact_report_text(get_report_formula_text(model_spec$formula))
   } else {
     "not available"
   }
 
-  family_text <- if (exists("model_spec") && !is.null(model_spec$family)) {
-    paste(capture.output(print(model_spec$family)), collapse = " ")
-  } else {
-    paste0(
-      analysis_spec$outcome$family,
-      "(",
-      analysis_spec$outcome$link,
-      ")"
-    )
-  }
+  family_name <- analysis_spec$outcome$family %||% "not specified"
+  link_name <- analysis_spec$outcome$link %||% "not specified"
 
-  prior_text <- if (exists("model_spec") && !is.null(model_spec$prior)) {
+  family_text <- paste0(
+    family_name,
+    "(",
+    link_name,
+    ")"
+  )
+
+  family_sentence <- dplyr::case_when(
+    family_name == "bernoulli" && link_name == "logit" ~ "Bernoulli regression model with a logit link",
+    family_name == "gaussian" && link_name == "identity" ~ "Gaussian regression model with an identity link",
+    family_name == "poisson" && link_name == "log" ~ "Poisson regression model with a log link",
+    family_name == "negbinomial" && link_name == "log" ~ "negative-binomial regression model with a log link",
+    TRUE ~ paste0(family_name, " regression model with a ", link_name, " link")
+  )
+
+  prior_text <- if (!is.null(model_spec) && !is.null(model_spec$prior)) {
     fmt_prior_text(model_spec$prior)
   } else {
     "not available"
@@ -571,7 +791,7 @@ safe_step("STEP 8: Publication-ready outputs", {
   imputation_maxiter <- analysis_spec$imputation$maxiter %||% NA
   mean_match_k <- analysis_spec$imputation$mean_match_k %||% NA
 
-  n_fitted_models <- if (!is.na(n_parameter_imputations)) {
+  n_fitted_models <- if (exists("n_parameter_imputations") && length(n_parameter_imputations) == 1 && !is.na(n_parameter_imputations)) {
     n_parameter_imputations
   } else if (!is.null(diagnostics)) {
     nrow(diagnostics)
@@ -662,7 +882,9 @@ safe_step("STEP 8: Publication-ready outputs", {
       "Posterior tests",
       "ROPE range",
       "Predictive draws for missing outcomes",
-      "Rows with missing outcome prediction summaries"
+      "Rows with missing outcome prediction summaries",
+      "Conditional-effect plotting",
+      "Conditional-effect plot variables"
     ),
     Value = c(
       fmt_scalar(analysis_spec$analysis_id),
@@ -697,7 +919,9 @@ safe_step("STEP 8: Publication-ready outputs", {
       fmt_scalar(summary_test),
       fmt_scalar(summary_rope),
       fmt_scalar(predictive_draws_text),
-      fmt_scalar(missing_y_rows_text)
+      fmt_scalar(missing_y_rows_text),
+      fmt_scalar(analysis_spec$reporting$conditional_effects$enabled %||% FALSE),
+      fmt_scalar(analysis_spec$reporting$conditional_effects$effects %||% "not specified")
     )
   )
 
@@ -722,6 +946,59 @@ safe_step("STEP 8: Publication-ready outputs", {
     "The main sampler-control settings were adapt_delta = {fmt_scalar(adapt_delta)} ",
     "and max_treedepth = {fmt_scalar(max_treedepth)}."
   )
+
+  special_parameter_report_lines <- c(
+    "# Supplementary smooth and monotonic parameters",
+    "",
+    special_terms_sentence,
+    "",
+    "```{r special-parameter-table, eval=file.exists(file.path(table_dir, 'special_parameter_table.csv'))}",
+    "special_parameter_table <- readr::read_csv(file.path(table_dir, 'special_parameter_table.csv'), show_col_types = FALSE)",
+    "gt(special_parameter_table)",
+    "```"
+  )
+
+  conditional_effect_report_lines <- c(
+    "# Conditional-effect plots",
+    "",
+    conditional_effects_sentence,
+    "",
+    "```{r conditional-effect-manifest, eval=file.exists(file.path(table_dir, 'conditional_effects_manifest.csv'))}",
+    "conditional_effects_manifest <- readr::read_csv(file.path(table_dir, 'conditional_effects_manifest.csv'), show_col_types = FALSE)",
+    "gt(conditional_effects_manifest)",
+    "```",
+    "",
+    "```{r conditional-effect-images, results='asis', eval=file.exists(file.path(table_dir, 'conditional_effects_manifest.csv'))}",
+    "conditional_effects_manifest <- readr::read_csv(file.path(table_dir, 'conditional_effects_manifest.csv'), show_col_types = FALSE)",
+    "created_effects <- conditional_effects_manifest |> dplyr::filter(status == 'created')",
+    "for (ii in seq_len(nrow(created_effects))) {",
+    "  img <- file.path(figure_dir, created_effects$png_file[ii])",
+    "  if (file.exists(img)) {",
+    "    cat('## Conditional effect: `', created_effects$effect[ii], '`\\n\\n', sep = '')",
+    "    cat('![](', img, '){fig-alt=\\\"Conditional effect plot\\\"}\\n\\n', sep = '')",
+    "  }",
+    "}",
+    "```"
+  )
+
+  missing_y_report_lines <- if (file.exists(file.path(table_dir, "missing_y_overall_summary.csv"))) {
+    c(
+      "# Missing outcome prediction",
+      "",
+      missing_y_sentence,
+      "",
+      "```{r missing-y-summary}",
+      "missing_y_overall <- readr::read_csv(file.path(table_dir, 'missing_y_overall_summary.csv'), show_col_types = FALSE)",
+      "gt(missing_y_overall)",
+      "```"
+    )
+  } else {
+    c(
+      "# Missing outcome prediction",
+      "",
+      missing_y_sentence
+    )
+  }
 
 
   report_lines <- c(
@@ -751,7 +1028,7 @@ safe_step("STEP 8: Publication-ready outputs", {
     "",
     "# Overview",
     "",
-    glue("This report summarizes a Bayesian `{family_text}` regression analysis using multiple imputation."),
+    glue("This report summarises a Bayesian {family_sentence} using multiple imputation."),
     "",
     "# Model and computational settings",
     "",
@@ -802,20 +1079,17 @@ safe_step("STEP 8: Publication-ready outputs", {
     "gt(main_effect_table)",
     "```",
     "",
+    special_parameter_report_lines,
+    "",
     "# Forest plot",
     "",
     "```{r forest-plot, fig.width=8, fig.height=8, eval=file.exists(file.path(figure_dir, 'forest_plot_fixed_effects.png'))}",
     "knitr::include_graphics(file.path(figure_dir, 'forest_plot_fixed_effects.png'))",
     "```",
     "",
-    "# Missing outcome prediction",
+    conditional_effect_report_lines,
     "",
-    missing_y_sentence,
-    "",
-    "```{r missing-y-summary, eval=file.exists(file.path(table_dir, 'missing_y_overall_summary.csv'))}",
-    "missing_y_overall <- readr::read_csv(file.path(table_dir, 'missing_y_overall_summary.csv'), show_col_types = FALSE)",
-    "gt(missing_y_overall)",
-    "```"
+    missing_y_report_lines
   )
   
   report_file <- file.path(report_dir, "bayesian_mi_report_template.qmd")
@@ -840,6 +1114,8 @@ safe_step("STEP 8: Publication-ready outputs", {
     "- `tables/main_effect_table_full.csv`",
     "- `tables/main_effect_table.html`",
     "- `tables/main_effect_table.docx`",
+    "- `tables/special_parameter_table.csv`, if smooth or monotonic terms are present",
+    "- `tables/conditional_effects_manifest.csv`, if conditional-effect plots are created",
     "- `tables/diagnostics_summary.csv`, if diagnostics are available",
     "- `tables/analysis_metadata.csv`",
     "- `tables/analysis_metadata.rds`",
@@ -848,6 +1124,8 @@ safe_step("STEP 8: Publication-ready outputs", {
     "",
     "- `figures/forest_plot_fixed_effects.png`",
     "- `figures/forest_plot_fixed_effects.pdf`",
+    "- `figures/conditional_effect_*.png`, if conditional-effect plots are created",
+    "- `figures/conditional_effect_*.pdf`, if conditional-effect plots are created",
     "",
     "## Report",
     "",

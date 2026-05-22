@@ -240,6 +240,21 @@ apply_z_stats <- function(df, z_stats) {
 # ------------------------------------------------------------
 # Formula, family, priors
 # ------------------------------------------------------------
+get_brms_formula_core <- function(formula) {
+  if (inherits(formula, "brmsformula") && !is.null(formula$formula)) {
+    return(formula$formula)
+  }
+  
+  formula
+}
+
+get_brms_formula_text <- function(formula) {
+  paste(deparse(get_brms_formula_core(formula)), collapse = " ")
+}
+
+get_brms_formula_vars <- function(formula) {
+  unique(all.vars(get_brms_formula_core(formula)))
+}
 
 make_brms_family <- function(outcome_spec) {
   family <- outcome_spec$family
@@ -392,6 +407,8 @@ build_model_spec <- function(analysis_spec, var_dict, reference_data) {
   fixed_effects <- resolve_fixed_effects(analysis_spec, var_dict)
   list(
     formula = formula,
+    formula_vars = get_brms_formula_vars(formula),
+    formula_text = get_brms_formula_text(formula),
     family = family,
     prior = prior,
     z_stats = z_stats,
@@ -502,9 +519,17 @@ prepare_model_data_files <- function(imputation_manifest, analysis_spec, model_s
     dat_i <- readRDS(manifest$imputed_file[i])
     dat_i <- apply_z_stats(dat_i, model_spec$z_stats)
 
-    model_vars <- all.vars(model_spec$formula)
+    model_vars <- model_spec$formula_vars %||% get_brms_formula_vars(model_spec$formula)
+    
     analysis_vars <- unique(c(model_vars, row_id))
+    analysis_vars <- analysis_vars[
+      !is.na(analysis_vars) & nzchar(analysis_vars)
+    ]
+    
     pred_vars <- unique(c(setdiff(model_vars, y), row_id))
+    pred_vars <- pred_vars[
+      !is.na(pred_vars) & nzchar(pred_vars)
+    ]
 
     check_required_vars(dat_i, analysis_vars, "analysis variables")
     check_required_vars(dat_i, pred_vars, "prediction variables")

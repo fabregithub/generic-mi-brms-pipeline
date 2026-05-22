@@ -231,9 +231,11 @@ renv::restore()
 From a fresh template folder, run in Terminal:
 
 ```
-Rscript 00_create_airquality_example_data.R
+cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
+cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
+Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
 Rscript 01_validate_config.R
-Rscript run_all.R 2>&1 | tee run_all_stdout.log
+Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 ```
 
 Outputs are written to:
@@ -267,6 +269,8 @@ Usually edit only:
 - MCMC settings
 - parallel settings
 - memory guard settings
+
+The `examples/` folder contains ready-to-run public-data configurations. These are useful for testing the pipeline and for learning how to structure a new analysis.
 
 `00_variable_dictionary.csv` defines:
 
@@ -561,78 +565,181 @@ row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 
 ---
 
-## Included public-data example
+---
 
-The included example uses:
+## Example datasets
+
+The repository includes three public example analyses. These are intended to help users test the full pipeline before applying it to private study data.
+
+The example folders are:
+
+```
+examples
+├── airquality_gaussian
+│   ├── 00_config_airquality_gaussian.R
+│   ├── 00_create_airquality_example_data.R
+│   └── 00_variable_dictionary_airquality_gaussian.csv
+├── birthwt_logistic
+│   ├── 00_config_birthwt_logistic.R
+│   ├── 00_create_birthwt_logistic_example_data.R
+│   └── 00_variable_dictionary_birthwt_logistic.csv
+└── birthwt_spline_monotonic
+    ├── 00_config_birthwt_spline_monotonic.R
+    ├── 00_create_birthwt_spline_monotonic_example_data.R
+    ├── 00_variable_dictionary_birthwt_spline_monotonic.csv
+    └── README_birthwt_spline_monotonic.md
+```
+
+Each example contains:
+
+```
+a config file
+a variable dictionary
+a data-creation script
+```
+
+To use an example, copy its config file and variable dictionary to the project root as:
+
+```
+00_config.R
+00_variable_dictionary.csv
+```
+
+Then run the example data-creation script.
+
+### Example 1: Gaussian model using `datasets::airquality`
+
+This is the default Gaussian example.
+
+It tests:
+
+```
+continuous outcome
+gaussian(identity) model
+row-level imputation
+ordinary fixed-effect reporting
+posterior prediction for rows with missing outcome values
+```
+
+Model outline:
 
 ```
 Dataset: datasets::airquality
 Outcome: Ozone
 Model family: gaussian(identity)
 Model: Ozone ~ Solar.R_z + Wind_z + Temp_z + Month
-Imputation: row-level miceRanger imputation
-Missing outcome handling: observed Ozone rows are used for fitting;
-                          missing Ozone rows are predicted later
 ```
 
-The default demo can be run with a small number of imputations for speed, or stress-tested with production-like settings.
-
----
-
-## Alternative sample data: logistic regression with `MASS::birthwt`
-
-The default example uses `datasets::airquality` for a Gaussian model. The template also includes an alternative public-data example for a binary outcome using `MASS::birthwt`.
-
-This example tests the Bernoulli/logit workflow.
-
-The example files are stored in:
+Run in Terminal from the project root:
 
 ```
-examples/birthwt_logistic/
+cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
+cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
+
+Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
+Rscript 01_validate_config.R
+Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 ```
 
-The folder should contain:
+Render the report:
 
 ```
-examples/birthwt_logistic/00_create_birthwt_logistic_example_data.R
-examples/birthwt_logistic/00_config_birthwt_logistic.R
-examples/birthwt_logistic/00_variable_dictionary_birthwt_logistic.csv
+quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
-The logistic example uses:
+### Example 2: Logistic model using `MASS::birthwt`
+
+This example tests the Bernoulli/logit workflow with a binary outcome.
+
+It tests:
+
+```
+binary outcome
+bernoulli(logit) model
+row-level imputation
+odds-ratio reporting
+ordinary fixed-effect reporting
+```
+
+Model outline:
 
 ```
 Dataset: MASS::birthwt
 Outcome: low
 Model family: bernoulli(logit)
 Model: low ~ age_z + lwt_z + race + smoke + ptl_z + ht + ui + ftv_z
-Imputation: row-level miceRanger imputation
 ```
 
-### Switch from the Gaussian example to the logistic example
-
-Run the following in Terminal from the project root folder:
+Run in Terminal from the project root:
 
 ```
 cp examples/birthwt_logistic/00_config_birthwt_logistic.R 00_config.R
 cp examples/birthwt_logistic/00_variable_dictionary_birthwt_logistic.csv 00_variable_dictionary.csv
-```
 
-Then create the logistic example data. Run in Terminal:
-
-```
 Rscript examples/birthwt_logistic/00_create_birthwt_logistic_example_data.R
+Rscript 01_validate_config.R
+Rscript run_all.R 2>&1 | tee run_all_birthwt_logistic_stdout.log
 ```
 
-This creates:
+Render the report:
 
 ```
-data/birthwt_logistic_example.rds
+quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
-### Clean previous example outputs before switching examples
+### Example 3: Spline and monotonic effects using `MASS::birthwt`
 
-If you previously ran the `airquality` example, clean the old outputs before running the `birthwt` example. Run in Terminal:
+This example tests custom `brms` formulae with `s()` and `mo()` terms.
+
+It tests:
+
+```
+custom_formula
+s() smooth terms
+mo() monotonic effects
+ordered categorical predictors
+special brms parameter summaries
+conditional-effect plots
+odds-ratio reporting for ordinary fixed effects
+```
+
+Model outline:
+
+```
+Dataset: MASS::birthwt
+Outcome: low
+Model family: bernoulli(logit)
+Model: low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z
+```
+
+Here, `lwt_q` is an ordered quintile version of maternal weight, created by the example data script.
+
+Run in Terminal from the project root:
+
+```
+cp examples/birthwt_spline_monotonic/00_config_birthwt_spline_monotonic.R 00_config.R
+cp examples/birthwt_spline_monotonic/00_variable_dictionary_birthwt_spline_monotonic.csv 00_variable_dictionary.csv
+
+Rscript examples/birthwt_spline_monotonic/00_create_birthwt_spline_monotonic_example_data.R
+Rscript 01_validate_config.R
+Rscript run_all.R 2>&1 | tee run_all_birthwt_spline_monotonic_stdout.log
+```
+
+Render the report:
+
+```
+quarto render results/publication/report/bayesian_mi_report_template.qmd
+```
+
+See also:
+
+```
+examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md
+```
+
+### Cleaning outputs before switching examples
+
+When switching from one example to another, clean the previous outputs first. Run in Terminal:
 
 ```
 rm -rf objects fits results
@@ -640,40 +747,66 @@ rm -f pipeline_error.flag
 rm -f pipeline_success.flag
 rm -f pipeline_progress.log
 rm -f pipeline_heartbeat.txt
+rm -f pipeline_stdout.log
 rm -f run_all_stdout.log
 ```
 
-Alternatively, if the template includes a cleaning script, run in Terminal:
+If the repository includes a cleaning script, you can instead run:
 
 ```
 bash 99_cleanall.sh
 ```
 
-### Validate and run the logistic example
+### Automated example tests
+
+The repository may include optional bash scripts to test the examples automatically.
+
+Quick tests use small settings such as:
+
+```
+m = 5
+chains = 1
+iter = 500
+warmup = 250
+fit_workers = 1
+cores_per_fit = 1
+```
 
 Run in Terminal:
 
 ```
-Rscript 01_validate_config.R
-Rscript run_all.R 2>&1 | tee run_all_birthwt_logistic_stdout.log
+bash test_all_examples_quick.sh
 ```
 
-### Return to the Gaussian `airquality` example
-
-To return to the default Gaussian example, copy the corresponding Gaussian example config and dictionary files back to the main filenames, if they are included in your template.
-
-For example, run in Terminal:
+Parallel tests use modest parallel settings such as:
 
 ```
-cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
-cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
+m = 10
+chains = 4
+iter = 500
+warmup = 250
+fit_workers = 2
+cores_per_fit = 4
 ```
 
-Then recreate the `airquality` example data and re-run validation.
+Run in Terminal:
 
-If those files are not included separately, restore the default `00_config.R` and `00_variable_dictionary.csv` from the original template.
+```
+bash test_all_examples_parallel.sh
+```
 
----
+A successful example test should create:
+
+```
+results/diagnostics.rds
+results/parameter_summary.rds
+results/publication/tables/main_effect_table_display.csv
+results/publication/tables/analysis_metadata.csv
+results/publication/report/bayesian_mi_report_template.qmd
+results/publication/report/bayesian_mi_report_template.html
+results/publication/report/bayesian_mi_report_template.docx
+```
+
 
 ## Recommended high-performance settings
 

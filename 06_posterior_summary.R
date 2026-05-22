@@ -51,7 +51,7 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     sprintf("parameter_draws_imp_%03d.rds", fit_manifest$imputation)
   )
   
-  draw_regex <- model_spec$parameter_draw_regex %||% "^(b_|sd_|sigma)"
+  draw_regex <- model_spec$parameter_draw_regex %||% "^(b_|sd_|sigma|sds_|bs_|simo_|bsp_)"
   
   for (ii in seq_len(nrow(fit_manifest))) {
     imp_i <- fit_manifest$imputation[ii]
@@ -171,6 +171,20 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     rope_range <- summary_spec$rope$fixed_range
   }
   
+  classify_parameter <- function(param) {
+    dplyr::case_when(
+      param == "b_Intercept" ~ "intercept",
+      grepl("^b_", param) ~ "fixed",
+      grepl("^sd_", param) ~ "group_sd",
+      grepl("^sigma", param) ~ "residual_sigma",
+      grepl("^sds_", param) ~ "smooth_sd",
+      grepl("^bs_", param) ~ "smooth_basis",
+      grepl("^simo_", param) ~ "monotonic_simplex",
+      grepl("^bsp_", param) ~ "special_brms",
+      TRUE ~ "other"
+    )
+  }
+  
   parameter_summary <- purrr::map_dfr(
     parameter_cols,
     function(param) {
@@ -232,6 +246,12 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     }
   )
   
+  parameter_summary <- parameter_summary %>%
+    dplyr::mutate(
+      Parameter_Class = classify_parameter(Parameter),
+      .after = "Parameter"
+    )
+  
   saveRDS(
     parameter_summary,
     file.path(paths$results, "parameter_summary.rds"),
@@ -243,6 +263,29 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     file.path(paths$results, "parameter_summary.csv")
   )
   
+  special_parameter_summary <- parameter_summary %>%
+    dplyr::filter(Parameter_Class %in% c(
+      "smooth_sd",
+      "smooth_basis",
+      "monotonic_simplex",
+      "special_brms"
+    ))
+  
+  if (nrow(special_parameter_summary) > 0) {
+    saveRDS(
+      special_parameter_summary,
+      file.path(paths$results, "special_parameter_summary.rds"),
+      compress = FALSE
+    )
+    
+    readr::write_csv(
+      special_parameter_summary,
+      file.path(paths$results, "special_parameter_summary.csv")
+    )
+    
+    log_msg("Saved special_parameter_summary.rds and special_parameter_summary.csv")
+  }
+  
   log_msg("Saved parameter_summary.rds and parameter_summary.csv")
   
   rm(
@@ -252,7 +295,8 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     parameter_manifest,
     valid_draw_files,
     parameter_draws,
-    parameter_summary
+    parameter_summary,
+    special_parameter_summary
   )
   
   gc()
