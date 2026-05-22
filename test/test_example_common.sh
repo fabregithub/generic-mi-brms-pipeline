@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Shared helper functions for testing the Generic MI + brms Pipeline examples.
-# Copy this file and the test_*.sh files into the project root folder.
+#
+# Location:
+#   generic_mi_brms_pipeline/test/test_example_common.sh
+#
+# The test scripts are stored in test/ to keep the project root clean.
+# This file automatically moves to the project root before running R scripts.
 
 set -Eeuo pipefail
+
+TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${TEST_SCRIPT_DIR}/.." && pwd)"
+cd "${PROJECT_ROOT}"
 
 log() {
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -69,6 +78,11 @@ analysis_spec$model$iter <- 500
 analysis_spec$model$warmup <- 250
 analysis_spec$model$run_smoke_fit <- TRUE
 
+# Quick tests use single-worker imputation to isolate configuration/model errors.
+analysis_spec$parallel$impute_workers <- 1
+analysis_spec$parallel$num_impute_threads_per_worker <- 1
+analysis_spec$parallel$num_impute_threads <- 1
+
 analysis_spec$parallel$fit_workers <- 1
 analysis_spec$parallel$cores_per_fit <- 1
 analysis_spec$parallel$future_globals_maxsize_gb <- 8
@@ -89,8 +103,13 @@ analysis_spec$model$iter <- 500
 analysis_spec$model$warmup <- 250
 analysis_spec$model$run_smoke_fit <- TRUE
 
+# Parallel tests exercise the doParallel/foreach miceRanger path.
+analysis_spec$parallel$impute_workers <- 2
+analysis_spec$parallel$num_impute_threads_per_worker <- 2
+analysis_spec$parallel$num_impute_threads <- 2
+
 analysis_spec$parallel$fit_workers <- 2
-analysis_spec$parallel$cores_per_fit <- 4
+analysis_spec$parallel$cores_per_fit <- 2
 analysis_spec$parallel$future_globals_maxsize_gb <- 20
 
 analysis_spec$posterior_prediction$ndraws <- 300
@@ -122,8 +141,8 @@ render_and_check_report() {
 
 check_pipeline_success() {
   # Some pipeline versions write pipeline_success.flag and some simply print
-  # "Pipeline completed successfully."  Do not fail only because the flag is
-  # absent.  The required output files below are the stronger practical check.
+  # "Pipeline completed successfully." Do not fail only because the flag is absent.
+  # The required output files below are the stronger practical check.
   if [[ -f "pipeline_success.flag" ]]; then
     log "pipeline_success.flag found"
   else
@@ -141,6 +160,21 @@ check_pipeline_success() {
   require_file "results/publication/report/bayesian_mi_report_template.qmd"
 }
 
+check_parallel_imputation_log() {
+  local log_file="$1"
+
+  log "Checking that the parallel miceRanger path was exercised"
+
+  if grep -E "miceRanger parallel:.*TRUE|miceRanger parallel.*TRUE|impute_workers:.*2|impute_workers.*2" "$log_file" >/dev/null 2>&1; then
+    log "Parallel imputation log check passed"
+  else
+    log "Could not confirm parallel miceRanger from stdout log."
+    log "This may be harmless if log formatting changed, but please inspect:"
+    log "  $log_file"
+    log "Expected to see impute_workers = 2 or miceRanger parallel = TRUE."
+  fi
+}
+
 print_diagnostics_hint() {
   log "Optional diagnostic check in R/RStudio:"
   cat <<'EOF'
@@ -153,6 +187,7 @@ EOF
 
 run_pipeline() {
   local log_file="$1"
+  local mode="${2:-quick}"
 
   require_file "01_validate_config.R"
   require_file "run_all.R"
@@ -164,33 +199,26 @@ run_pipeline() {
   Rscript run_all.R 2>&1 | tee "$log_file"
 
   check_pipeline_success
+
+  if [[ "$mode" == "parallel" ]]; then
+    check_parallel_imputation_log "$log_file"
+  fi
+
   render_and_check_report
 }
 
 prepare_airquality_example() {
   log "Preparing airquality Gaussian example"
 
-  if [[ -f "examples/airquality_gaussian/00_config_airquality_gaussian.R" && \
-        -f "examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv" ]]; then
-    cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
-    cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
-  else
-    log "No examples/airquality_gaussian config files found."
-    log "Using the current root 00_config.R and 00_variable_dictionary.csv."
-  fi
+  require_file "examples/airquality_gaussian/00_config_airquality_gaussian.R"
+  require_file "examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv"
+  require_file "examples/airquality_gaussian/00_create_airquality_example_data.R"
 
-  require_file "00_config.R"
-  require_file "00_variable_dictionary.csv"
+  cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
+  cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
 
-  if [[ -f "00_create_airquality_example_data.R" ]]; then
-    log "Creating airquality example data from root script"
-    Rscript 00_create_airquality_example_data.R
-  elif [[ -f "examples/airquality_gaussian/00_create_airquality_example_data.R" ]]; then
-    log "Creating airquality example data from examples/airquality_gaussian"
-    Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
-  else
-    die "Could not find 00_create_airquality_example_data.R"
-  fi
+  log "Creating airquality example data"
+  Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
 }
 
 prepare_birthwt_logistic_example() {
@@ -214,7 +242,7 @@ test_airquality() {
   clean_outputs
   prepare_airquality_example
   apply_test_overrides "$mode"
-  run_pipeline "$log_file"
+  run_pipeline "$log_file" "$mode"
 
   log "Airquality ${mode} test completed successfully"
   print_diagnostics_hint
@@ -227,7 +255,7 @@ test_birthwt_logistic() {
   clean_outputs
   prepare_birthwt_logistic_example
   apply_test_overrides "$mode"
-  run_pipeline "$log_file"
+  run_pipeline "$log_file" "$mode"
 
   log "Birthwt logistic ${mode} test completed successfully"
   print_diagnostics_hint

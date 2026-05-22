@@ -16,6 +16,16 @@ safe_step("STEP 3: Imputation", {
     }
     imputation_spec <- make_row_level_imputation_spec(dat, analysis_spec, var_dict)
     saveRDS(imputation_spec, file.path(paths$objects, "imputation_spec.rds"), compress = FALSE)
+
+    log_msg(
+      "Imputation parallel settings | impute_workers:",
+      analysis_spec$parallel$impute_workers %||% 1,
+      "| num_impute_threads_per_worker:",
+      analysis_spec$parallel$num_impute_threads_per_worker %||%
+        analysis_spec$parallel$num_impute_threads %||%
+        1
+    )
+
     imputed_list <- run_row_level_imputation(dat, imputation_spec, analysis_spec)
   } else {
     stop("This template currently implements strategy = 'row_level' and 'none'. Requested: ", analysis_spec$imputation$strategy)

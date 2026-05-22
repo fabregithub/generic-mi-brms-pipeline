@@ -52,11 +52,15 @@ install.packages(c(
   "bayestestR",
   "future",
   "furrr",
+  "doParallel",
+  "foreach",
   "gt",
   "flextable",
   "officer",
   "forcats",
   "glue",
+  "doParallel",
+  "foreach",
   "readr",
   "tibble",
   "dplyr",
@@ -775,7 +779,7 @@ cores_per_fit = 1
 Run in Terminal:
 
 ```
-bash test_all_examples_quick.sh
+bash test/test_all_examples_quick.sh
 ```
 
 Parallel tests use modest parallel settings such as:
@@ -792,7 +796,7 @@ cores_per_fit = 4
 Run in Terminal:
 
 ```
-bash test_all_examples_parallel.sh
+bash test/test_all_examples_parallel.sh
 ```
 
 A successful example test should create:
@@ -806,6 +810,60 @@ results/publication/report/bayesian_mi_report_template.qmd
 results/publication/report/bayesian_mi_report_template.html
 results/publication/report/bayesian_mi_report_template.docx
 ```
+
+
+---
+
+## Parallel miceRanger imputation
+
+The pipeline can parallelise `miceRanger` imputation using `doParallel` and `foreach`.
+
+In `00_config.R`, the relevant settings are:
+
+```
+analysis_spec$parallel$impute_workers <- 4
+analysis_spec$parallel$num_impute_threads_per_worker <- 4
+```
+
+The approximate CPU demand during imputation is:
+
+```
+impute_workers * num_impute_threads_per_worker
+```
+
+For example:
+
+```
+4 workers * 4 threads per worker = about 16 active threads
+```
+
+Start conservatively, especially on laptops or when the imputation data are large, because parallel `miceRanger` can copy data to worker processes and increase memory use.
+
+Recommended starting values:
+
+```
+# Public examples or ordinary laptops
+analysis_spec$parallel$impute_workers <- 1
+analysis_spec$parallel$num_impute_threads_per_worker <- 1
+
+# High-memory workstation
+analysis_spec$parallel$impute_workers <- 4
+analysis_spec$parallel$num_impute_threads_per_worker <- 4
+```
+
+To test parallel imputation from scratch, remove old imputation outputs first:
+
+```
+rm -f objects/imputation_manifest.rds
+rm -f objects/imputation_spec.rds
+rm -rf objects/imputed_data
+rm -rf objects/imputed_wide
+rm -rf objects/model_data
+rm -rf fits results
+rm -f pipeline_error.flag pipeline_success.flag
+```
+
+Then re-run the pipeline.
 
 
 ## Recommended high-performance settings
@@ -1123,6 +1181,8 @@ install.packages(c(
   "bayestestR",
   "future",
   "furrr",
+  "doParallel",
+  "foreach",
   "gt",
   "flextable",
   "officer",

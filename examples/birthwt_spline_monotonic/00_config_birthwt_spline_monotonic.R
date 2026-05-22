@@ -196,9 +196,34 @@ analysis_spec <- list(
   ),
 
   parallel = list(
-    num_impute_threads = 2,
+    # ----------------------------------------------------------
+    # miceRanger imputation parallelisation
+    # ----------------------------------------------------------
+    # impute_workers controls how many parallel miceRanger workers
+    # are used.  num_impute_threads_per_worker controls the number
+    # of ranger threads used inside each worker.
+    #
+    # Approximate CPU demand during imputation:
+    # impute_workers * num_impute_threads_per_worker
+    #
+    # Public example default is deliberately conservative.
+    # For large analyses on a high-memory machine, try:
+    # impute_workers = 4
+    # num_impute_threads_per_worker = 4
+    impute_workers = 1,
+    num_impute_threads_per_worker = 1,
+
+    # Backward-compatible fallback used by older scripts.
+    num_impute_threads = 1,
+
+    # ----------------------------------------------------------
+    # brms model fitting parallelisation
+    # ----------------------------------------------------------
+    # Public example default is deliberately conservative.
+    # For real analyses, increase after the smoke fit succeeds.
     fit_workers = 1,
     cores_per_fit = 1,
+
     future_globals_maxsize_gb = 8
   ),
 
