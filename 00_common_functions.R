@@ -179,6 +179,7 @@ setup_brms_cmdstan <- function(cache_dir = file.path(path.expand("~"), ".cmdstan
 read_var_dict <- function(path) {
   readr::read_csv(path, show_col_types = FALSE) %>%
     mutate(
+      across(where(is.character), stringr::str_trim),
       impute_target = as.logical(impute_target),
       use_in_model = as.logical(use_in_model),
       use_as_auxiliary = as.logical(use_as_auxiliary)
@@ -198,9 +199,32 @@ prepare_raw_data <- function(raw_data, analysis_spec, var_dict) {
   row_id <- analysis_spec$data$row_id_var %||% "row_id"
   if (!row_id %in% names(out)) out[[row_id]] <- seq_len(nrow(out))
 
-  cat_vars <- var_dict %>% filter(type %in% c("categorical", "binary", "ordinal")) %>% pull(var)
-  cat_vars <- intersect(cat_vars, names(out))
-  for (v in cat_vars) out[[v]] <- as.factor(out[[v]])
+  binary_vars <- var_dict %>%
+    filter(type == "binary") %>%
+    pull(var) %>%
+    intersect(names(out))
+
+  categorical_vars <- var_dict %>%
+    filter(type == "categorical") %>%
+    pull(var) %>%
+    intersect(names(out))
+
+  ordinal_vars <- var_dict %>%
+    filter(type == "ordinal") %>%
+    pull(var) %>%
+    intersect(names(out))
+
+  for (v in binary_vars) {
+    out[[v]] <- as.factor(out[[v]])
+  }
+
+  for (v in categorical_vars) {
+    out[[v]] <- as.factor(out[[v]])
+  }
+
+  for (v in ordinal_vars) {
+    out[[v]] <- ordered(out[[v]])
+  }
 
   ref_tbl <- var_dict %>% filter(!is.na(reference), reference != "", var %in% names(out))
   if (nrow(ref_tbl) > 0) {
@@ -208,7 +232,12 @@ prepare_raw_data <- function(raw_data, analysis_spec, var_dict) {
       v <- ref_tbl$var[i]
       ref <- as.character(ref_tbl$reference[i])
       if (is.factor(out[[v]]) && ref %in% levels(out[[v]])) {
-        out[[v]] <- stats::relevel(out[[v]], ref = ref)
+        if (is.ordered(out[[v]])) {
+          lev <- levels(out[[v]])
+          out[[v]] <- ordered(out[[v]], levels = lev)
+        } else {
+          out[[v]] <- stats::relevel(out[[v]], ref = ref)
+        }
       }
     }
   }
@@ -645,6 +674,151 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
 
   miceRanger::completeData(mice_obj, verbose = FALSE) %>%
     purrr::map(as_tibble)
+}
+
+
+
+# ------------------------------------------------------------
+# Subject-wide imputation for repeated outcome data
+# ------------------------------------------------------------
+
+make_subject_wide_imputation_data <- function(data, analysis_spec, var_dict) {
+  id_var <- analysis_spec$data$id_var
+  time_var <- analysis_spec$data$time_var
+  row_id_var <- analysis_spec$data$row_id_var
+  y_var <- analysis_spec$outcome$y_var
+  y_prefix <- analysis_spec$outcome$y_prefix %||% paste0(y_var, "_")
+
+  check_required_vars(
+    data,
+    c(id_var, time_var, row_id_var, y_var),
+    "subject-wide imputation core variables"
+  )
+
+  subject_vars <- var_dict %>%
+    dplyr::filter(
+      .data$timing %in% c("single", "baseline"),
+      !.data$role %in% c("id", "time", "outcome", "binary_outcome")
+    ) %>%
+    dplyr::pull(.data$var) %>%
+    unique() %>%
+    intersect(names(data))
+
+  subject_data <- data %>%
+    dplyr::group_by(.data[[id_var]]) %>%
+    dplyr::summarise(
+      dplyr::across(dplyr::all_of(subject_vars), dplyr::first),
+      .groups = "drop"
+    )
+
+  y_wide <- data %>%
+    dplyr::select(dplyr::all_of(c(id_var, time_var, y_var))) %>%
+    dplyr::distinct() %>%
+    tidyr::pivot_wider(
+      names_from = dplyr::all_of(time_var),
+      values_from = dplyr::all_of(y_var),
+      names_prefix = y_prefix
+    )
+
+  subject_wide <- subject_data %>%
+    dplyr::left_join(y_wide, by = id_var)
+
+  long_base_vars <- var_dict %>%
+    dplyr::filter(.data$timing %in% c("repeated", "time_varying")) %>%
+    dplyr::pull(.data$var) %>%
+    unique() %>%
+    intersect(names(data))
+
+  long_base_vars <- unique(c(row_id_var, id_var, time_var, y_var, long_base_vars))
+
+  long_base <- data %>%
+    dplyr::select(dplyr::all_of(long_base_vars))
+
+  list(
+    subject_wide = subject_wide,
+    long_base = long_base,
+    subject_vars = subject_vars
+  )
+}
+
+make_subject_wide_imputation_spec <- function(subject_wide, analysis_spec, var_dict) {
+  id_var <- analysis_spec$data$id_var
+  y_wide_regex <- analysis_spec$outcome$y_wide_regex %||%
+    paste0("^", analysis_spec$outcome$y_var, "_")
+
+  y_wide_cols <- grep(y_wide_regex, names(subject_wide), value = TRUE)
+
+  target_vars <- var_dict %>%
+    dplyr::filter(.data$impute_target) %>%
+    dplyr::pull(.data$var) %>%
+    unique()
+
+  if (isTRUE(analysis_spec$imputation$impute_y)) {
+    target_vars <- unique(c(target_vars, y_wide_cols))
+  }
+
+  exclude_targets <- unique(c(
+    id_var,
+    if (!isTRUE(analysis_spec$imputation$impute_y)) y_wide_cols else character(0),
+    analysis_spec$imputation$extra_exclude_targets %||% character(0)
+  ))
+
+  target_vars <- setdiff(target_vars, exclude_targets)
+  target_vars <- intersect(target_vars, names(subject_wide))
+  target_vars <- target_vars[
+    vapply(target_vars, function(v) anyNA(subject_wide[[v]]), logical(1))
+  ]
+
+  analysis_vars <- derive_analysis_variables(var_dict, analysis_spec)
+
+  base_predictors <- var_dict %>%
+    dplyr::filter(.data$use_in_model | .data$use_as_auxiliary | .data$impute_target) %>%
+    dplyr::pull(.data$var) %>%
+    c(analysis_vars$auxiliary_vars %||% character(0), y_wide_cols) %>%
+    unique() %>%
+    intersect(names(subject_wide))
+
+  usable_predictors <- base_predictors[
+    vapply(
+      base_predictors,
+      function(v) !anyNA(subject_wide[[v]]) || v %in% target_vars,
+      logical(1)
+    )
+  ]
+
+  vars <- stats::setNames(
+    lapply(target_vars, function(v) setdiff(usable_predictors, c(id_var, v))),
+    target_vars
+  )
+
+  list(
+    m = analysis_spec$imputation$m,
+    maxiter = analysis_spec$imputation$maxiter,
+    verbose = analysis_spec$imputation$verbose %||% FALSE,
+    vars = vars,
+    mean_match_k = analysis_spec$imputation$mean_match_k
+  )
+}
+
+prepare_long_imputed_from_subject_wide <- function(
+    imputed_wide_list,
+    long_base,
+    analysis_spec
+) {
+  id_var <- analysis_spec$data$id_var
+  y_wide_regex <- analysis_spec$outcome$y_wide_regex %||%
+    paste0("^", analysis_spec$outcome$y_var, "_")
+
+  purrr::map(
+    imputed_wide_list,
+    function(wide_i) {
+      subject_only <- wide_i %>%
+        dplyr::select(-tidyselect::matches(y_wide_regex))
+
+      long_base %>%
+        dplyr::left_join(subject_only, by = id_var)
+    }
+  )
 }
 
 

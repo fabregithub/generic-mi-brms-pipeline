@@ -20,6 +20,56 @@ safe_step("STEP 1: Validate configuration", {
   required <- unique(c(var_dict$var, analysis_spec$outcome$y_var, analysis_spec$data$id_var, analysis_spec$data$time_var))
   check_required_vars(raw_data, required, "variables listed in config/dictionary")
 
+  if (identical(analysis_spec$imputation$strategy, "subject_wide_with_repeated_y_auxiliary")) {
+    if (is.null(analysis_spec$data$id_var) ||
+        is.null(analysis_spec$data$time_var) ||
+        is.na(analysis_spec$data$id_var) ||
+        is.na(analysis_spec$data$time_var) ||
+        !nzchar(analysis_spec$data$id_var) ||
+        !nzchar(analysis_spec$data$time_var)) {
+      stop(
+        "strategy = 'subject_wide_with_repeated_y_auxiliary' requires ",
+        "analysis_spec$data$id_var and analysis_spec$data$time_var."
+      )
+    }
+
+    check_required_vars(
+      raw_data,
+      c(
+        analysis_spec$data$id_var,
+        analysis_spec$data$time_var,
+        analysis_spec$outcome$y_var
+      ),
+      "subject-wide repeated outcome variables"
+    )
+
+    if (!"timing" %in% names(var_dict)) {
+      stop(
+        "strategy = 'subject_wide_with_repeated_y_auxiliary' requires ",
+        "a timing column in 00_variable_dictionary.csv."
+      )
+    }
+
+    n_subject_level <- var_dict %>%
+      dplyr::filter(.data$timing %in% c("single", "baseline")) %>%
+      nrow()
+
+    if (n_subject_level == 0) {
+      stop(
+        "No subject-level variables found in 00_variable_dictionary.csv. ",
+        "For subject-wide imputation, mark baseline/single-measure covariates ",
+        "with timing = 'single' or timing = 'baseline'."
+      )
+    }
+
+    log_msg(
+      "Validated subject-wide repeated-outcome imputation strategy with",
+      n_subject_level,
+      "subject-level variable row(s) in dictionary"
+    )
+  }
+
+
   dat <- prepare_raw_data(raw_data, analysis_spec, var_dict)
   model_spec <- build_model_spec(analysis_spec, var_dict, dat)
 
@@ -30,19 +80,6 @@ safe_step("STEP 1: Validate configuration", {
   # ------------------------------------------------------------
   # Additional validation for brms custom formula terms
   # ------------------------------------------------------------
-
-  extract_special_term_vars <- function(formula, fun) {
-    formula_text <- get_brms_formula_text(formula)
-    pattern <- paste0("\\b", fun, "\\s*\\(\\s*`?([A-Za-z.][A-Za-z0-9._]*)`?")
-    matches <- gregexpr(pattern, formula_text, perl = TRUE)
-    hits <- regmatches(formula_text, matches)[[1]]
-
-    if (length(hits) == 0 || identical(hits, character(0))) {
-      return(character(0))
-    }
-
-    unique(sub(pattern, "\\1", hits, perl = TRUE))
-  }
 
   smooth_vars <- extract_special_term_vars(model_spec$formula, "s")
   monotonic_vars <- extract_special_term_vars(model_spec$formula, "mo")
@@ -105,7 +142,7 @@ safe_step("STEP 1: Validate configuration", {
     log_msg("Detected monotonic term(s) mo() for:", paste(monotonic_vars, collapse = ", "))
   }
 
-  log_msg("Formula:", model_spec$formula_text %||% get_brms_formula_text(model_spec$formula))
+  log_msg("Formula:", paste(deparse(model_spec$formula), collapse = " "))
   log_msg("Family:", analysis_spec$outcome$family, "link:", analysis_spec$outcome$link)
   log_msg("Validation completed.")
 }, analysis_spec)
