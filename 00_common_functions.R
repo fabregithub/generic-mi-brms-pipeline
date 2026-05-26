@@ -546,6 +546,32 @@ get_brms_formula_vars <- function(formula) {
 }
 
 
+extract_special_term_vars <- function(formula, fun = c("s", "mo")) {
+  fun <- match.arg(fun)
+
+  if (is.null(formula)) {
+    return(character(0))
+  }
+
+  formula_text <- get_brms_formula_text(formula)
+
+  pattern <- paste0(
+    "\\b",
+    fun,
+    "\\s*\\(\\s*`?([A-Za-z.][A-Za-z0-9._]*)`?"
+  )
+
+  matches <- gregexpr(pattern, formula_text, perl = TRUE)
+  hits <- regmatches(formula_text, matches)[[1]]
+
+  if (length(hits) == 0 || identical(hits, character(0))) {
+    return(character(0))
+  }
+
+  unique(sub(pattern, "\\1", hits, perl = TRUE))
+}
+
+
 # ------------------------------------------------------------
 # Imputation
 # ------------------------------------------------------------

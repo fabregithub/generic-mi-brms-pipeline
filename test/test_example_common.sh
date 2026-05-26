@@ -4,17 +4,27 @@
 # Location:
 #   generic_mi_brms_pipeline/test/test_example_common.sh
 #
-# The test scripts are stored in test/ to keep the project root clean.
-# This file automatically moves to the project root before running R scripts.
+# The test scripts live in test/ to keep the project root clean.
+#
+# Important behaviour:
+#   - Each example test runs in its own isolated project copy under test/runs/.
+#   - Root-level objects/, fits/, and results/ are not deleted or overwritten.
+#   - Previous test runs are kept for inspection.
+#
+# Example:
+#   bash test/test_all_examples_quick.sh
+#
+# Outputs:
+#   test/runs/<timestamp>_<example>_<mode>/
 
 set -Eeuo pipefail
 
 TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${TEST_SCRIPT_DIR}/.." && pwd)"
-cd "${PROJECT_ROOT}"
+TEST_RUNS_DIR="${PROJECT_ROOT}/test/runs"
 
 log() {
-  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2
 }
 
 die() {
@@ -27,22 +37,96 @@ require_file() {
   [[ -f "$f" ]] || die "Required file not found: $f"
 }
 
+require_dir() {
+  local d="$1"
+  [[ -d "$d" ]] || die "Required directory not found: $d"
+}
+
 require_command() {
   local cmd="$1"
   command -v "$cmd" >/dev/null 2>&1 || die "Required command not found: $cmd"
 }
 
-clean_outputs() {
-  log "Cleaning previous pipeline outputs"
-  rm -rf objects fits results
-  rm -f pipeline_error.flag
-  rm -f pipeline_success.flag
-  rm -f pipeline_progress.log
-  rm -f pipeline_heartbeat.txt
-  rm -f pipeline_stdout.log
-  rm -f run_all_stdout.log
-  rm -f run_all_airquality_*_stdout.log
-  rm -f run_all_birthwt_logistic_*_stdout.log
+timestamp_id() {
+  date '+%Y%m%d_%H%M%S'
+}
+
+make_run_dir() {
+  local example="$1"
+  local mode="$2"
+  local ts
+  ts="$(timestamp_id)"
+
+  local run_dir="${TEST_RUNS_DIR}/${ts}_${example}_${mode}"
+
+  # Avoid rare collision when two tests start in the same second.
+  if [[ -e "$run_dir" ]]; then
+    run_dir="${run_dir}_$$"
+  fi
+
+  mkdir -p "$run_dir"
+  printf '%s\n' "$run_dir"
+}
+
+copy_if_exists() {
+  local src="$1"
+  local dest="$2"
+
+  if [[ -e "$src" ]]; then
+    cp -R "$src" "$dest"
+  fi
+}
+
+prepare_runtime_project() {
+  local run_dir="$1"
+  local runtime_project="${run_dir}/project"
+  # This function is called via command substitution, so its stdout must
+  # contain only the runtime project path. Use log(), which writes to stderr,
+  # for human-readable messages.
+
+  mkdir -p "$runtime_project"
+
+  log "Creating isolated runtime project:"
+  log "  $runtime_project"
+
+  # Root R scripts
+  local root_files=(
+    "00_common_functions.R"
+    "00_config.R"
+    "00_create_airquality_example_data.R"
+    "00_variable_dictionary.csv"
+    "01_validate_config.R"
+    "02_prepare_data.R"
+    "03_impute.R"
+    "04_fit_models.R"
+    "05_diagnostics.R"
+    "06_posterior_summary.R"
+    "07_posterior_prediction.R"
+    "08_publication_results.R"
+    "fit_single_imputation.R"
+    "run_all.R"
+    "99_clean_fitting_results.sh"
+    "99_cleanall.sh"
+  )
+
+  for f in "${root_files[@]}"; do
+    if [[ -f "${PROJECT_ROOT}/${f}" ]]; then
+      cp "${PROJECT_ROOT}/${f}" "${runtime_project}/${f}"
+    fi
+  done
+
+  # Example configs/data scripts/dictionaries.
+  require_dir "${PROJECT_ROOT}/examples"
+  cp -R "${PROJECT_ROOT}/examples" "${runtime_project}/examples"
+
+  # Create empty data directory. Example data scripts will write into this.
+  mkdir -p "${runtime_project}/data"
+
+  # Optional docs/license files. These are useful when inspecting a run.
+  copy_if_exists "${PROJECT_ROOT}/README.md" "${runtime_project}/"
+  copy_if_exists "${PROJECT_ROOT}/LICENSE" "${runtime_project}/"
+
+  printf '%s\n' "$runtime_project"
 }
 
 strip_test_overrides() {
@@ -66,11 +150,11 @@ apply_test_overrides() {
   strip_test_overrides
 
   if [[ "$mode" == "quick" ]]; then
-    log "Applying quick-test overrides to 00_config.R"
+    log "Applying quick-test overrides to runtime 00_config.R"
     cat >> 00_config.R <<'EOF'
 
 # ---- BEGIN automated test overrides ----
-# Added by test scripts. Remove this block to restore the original settings.
+# Added by test scripts inside an isolated runtime project.
 analysis_spec$imputation$m <- 5
 
 analysis_spec$model$chains <- 1
@@ -91,11 +175,11 @@ analysis_spec$posterior_prediction$ndraws <- 200
 # ---- END automated test overrides ----
 EOF
   elif [[ "$mode" == "parallel" ]]; then
-    log "Applying modest parallel-test overrides to 00_config.R"
+    log "Applying modest parallel-test overrides to runtime 00_config.R"
     cat >> 00_config.R <<'EOF'
 
 # ---- BEGIN automated test overrides ----
-# Added by test scripts. Remove this block to restore the original settings.
+# Added by test scripts inside an isolated runtime project.
 analysis_spec$imputation$m <- 10
 
 analysis_spec$model$chains <- 4
@@ -150,7 +234,7 @@ check_pipeline_success() {
   fi
 
   if [[ -f "pipeline_error.flag" ]]; then
-    die "pipeline_error.flag exists. Inspect pipeline_progress.log and the run_all stdout log."
+    die "pipeline_error.flag exists. Inspect pipeline_progress.log and the run_all stdout log in the run folder."
   fi
 
   require_file "results/diagnostics.rds"
@@ -176,12 +260,37 @@ check_parallel_imputation_log() {
 }
 
 print_diagnostics_hint() {
-  log "Optional diagnostic check in R/RStudio:"
+  log "Optional diagnostic check in R/RStudio from this run folder:"
   cat <<'EOF'
 diag <- readRDS("results/diagnostics.rds")
 summary(diag)
 sum(diag$divergent, na.rm = TRUE)
 sum(diag$treedepth_hits, na.rm = TRUE)
+EOF
+}
+
+write_run_metadata() {
+  local run_dir="$1"
+  local example="$2"
+  local mode="$3"
+  local runtime_project="$4"
+
+  cat > "${run_dir}/RUN_INFO.txt" <<EOF
+Generic MI + brms pipeline test run
+
+Example: ${example}
+Mode: ${mode}
+Created: $(date '+%Y-%m-%d %H:%M:%S')
+Project root: ${PROJECT_ROOT}
+Runtime project: ${runtime_project}
+
+Inspect outputs in:
+  ${runtime_project}/objects
+  ${runtime_project}/fits
+  ${runtime_project}/results
+
+Stdout log:
+  ${runtime_project}/run_all_${example}_${mode}_stdout.log
 EOF
 }
 
@@ -235,28 +344,61 @@ prepare_birthwt_logistic_example() {
   Rscript examples/birthwt_logistic/00_create_birthwt_logistic_example_data.R
 }
 
-test_airquality() {
-  local mode="${1:-quick}"
-  local log_file="run_all_airquality_${mode}_stdout.log"
+run_example_in_isolated_project() {
+  local example="$1"
+  local mode="$2"
 
-  clean_outputs
-  prepare_airquality_example
+  local run_dir
+  local runtime_project
+  local log_file
+
+  run_dir="$(make_run_dir "$example" "$mode")"
+  runtime_project="$(prepare_runtime_project "$run_dir")"
+
+  write_run_metadata "$run_dir" "$example" "$mode" "$runtime_project"
+
+  cd "$runtime_project"
+
+  log "Running ${example} ${mode} test in isolated folder:"
+  log "  $runtime_project"
+
+  if [[ "$example" == "airquality" ]]; then
+    prepare_airquality_example
+  elif [[ "$example" == "birthwt_logistic" ]]; then
+    prepare_birthwt_logistic_example
+  else
+    die "Unknown example: $example"
+  fi
+
   apply_test_overrides "$mode"
+
+  log_file="run_all_${example}_${mode}_stdout.log"
   run_pipeline "$log_file" "$mode"
 
-  log "Airquality ${mode} test completed successfully"
+  log "${example} ${mode} test completed successfully"
+  log "Run outputs preserved in:"
+  log "  $runtime_project"
   print_diagnostics_hint
+
+  # Return to the real project root for the next test.
+  cd "$PROJECT_ROOT"
+}
+
+test_airquality() {
+  local mode="${1:-quick}"
+  run_example_in_isolated_project "airquality" "$mode"
 }
 
 test_birthwt_logistic() {
   local mode="${1:-quick}"
-  local log_file="run_all_birthwt_logistic_${mode}_stdout.log"
+  run_example_in_isolated_project "birthwt_logistic" "$mode"
+}
 
-  clean_outputs
-  prepare_birthwt_logistic_example
-  apply_test_overrides "$mode"
-  run_pipeline "$log_file" "$mode"
-
-  log "Birthwt logistic ${mode} test completed successfully"
-  print_diagnostics_hint
+list_test_runs() {
+  if [[ -d "$TEST_RUNS_DIR" ]]; then
+    log "Existing test runs:"
+    find "$TEST_RUNS_DIR" -maxdepth 2 -name RUN_INFO.txt -print | sort
+  else
+    log "No test runs found yet."
+  fi
 }

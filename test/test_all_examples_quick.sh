@@ -13,4 +13,5 @@ require_command quarto
 test_airquality quick
 test_birthwt_logistic quick
 
+list_test_runs
 log "All quick example tests completed successfully"

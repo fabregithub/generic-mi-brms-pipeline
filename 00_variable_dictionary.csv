@@ -1,7 +1,11 @@
 var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
-Ozone,Ozone concentration,outcome,continuous,single,none,,false,false,true
-Solar.R,Solar radiation,predictor,continuous,single,z,,true,true,false
-Wind,Wind speed,predictor,continuous,single,z,,false,true,false
-Temp,Temperature,predictor,continuous,single,z,,false,true,false
-Month,Month,predictor,categorical,single,none,5,false,true,false
-Day,Day of month,auxiliary,integer,single,none,,false,false,true
+low,Low birth weight,binary_outcome,binary,single,no,0,FALSE,TRUE,FALSE
+age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+lwt,Maternal weight at last menstrual period,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+race,Race,covariate,categorical,single,no,1,TRUE,TRUE,FALSE
+smoke,Smoking during pregnancy,covariate,binary,single,no,0,TRUE,TRUE,FALSE
+ptl,Previous premature labours,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+ht,History of hypertension,covariate,binary,single,no,0,TRUE,TRUE,FALSE
+ui,Uterine irritability,covariate,binary,single,no,0,TRUE,TRUE,FALSE
+ftv,Physician visits during first trimester,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE

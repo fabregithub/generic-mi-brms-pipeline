@@ -14,4 +14,5 @@ require_command quarto
 test_airquality parallel
 test_birthwt_logistic parallel
 
+list_test_runs
 log "All parallel example tests completed successfully"
