@@ -289,6 +289,86 @@ The `examples/` folder contains ready-to-run public-data configurations. These a
 
 ---
 
+---
+
+## Variable roles: dictionary by default, config as optional override
+
+The pipeline uses `00_variable_dictionary.csv` as the default source of truth for variable metadata.
+
+This means the following information should normally be specified only in the dictionary:
+
+```
+role
+type
+timing
+scale
+reference
+impute_target
+use_in_model
+use_as_auxiliary
+```
+
+Therefore, the standard setting in `00_config.R` is:
+
+```
+variables = NULL
+```
+
+The pipeline automatically derives internal variable groups from the dictionary, including:
+
+```
+exposure_vars
+covariate_vars
+auxiliary_vars
+continuous_vars
+categorical_vars
+ordinal_vars
+subject_level_vars
+time_varying_vars
+scale_vars
+```
+
+For example, if `00_variable_dictionary.csv` contains:
+
+```
+var,role,type,timing,scale,use_in_model
+Solar.R,covariate,continuous,single,z,TRUE
+Wind,covariate,continuous,single,z,TRUE
+Temp,covariate,continuous,single,z,TRUE
+Month,covariate,categorical,single,no,TRUE
+```
+
+and `analysis_spec$model$fixed_effects` is:
+
+```
+fixed_effects = "auto"
+```
+
+the model uses:
+
+```
+Solar.R_z + Wind_z + Temp_z + Month
+```
+
+### Optional overrides
+
+Advanced users can override selected derived groups in `00_config.R`.
+
+Example:
+
+```
+variables = list(
+  scale_vars = c("age", "income"),
+  auxiliary_vars = c("baseline_score")
+)
+```
+
+If `variables = NULL`, no override is applied.
+
+If `exposure_vars` or `covariate_vars` are explicitly supplied in `analysis_spec$variables`, they are used by `fixed_effects = "auto"` instead of the dictionary-derived `use_in_model` list. For most analyses, it is simpler and safer to leave `variables = NULL` and control the model through the dictionary.
+
+
+
 ## Variable dictionary guide
 
 The file `00_variable_dictionary.csv` is the main machine-readable description of the analysis variables.

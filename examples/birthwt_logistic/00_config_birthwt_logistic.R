@@ -42,58 +42,7 @@ analysis_spec <- list(
     predict_missing_y = FALSE
   ),
 
-  variables = list(
-    exposure_vars = c(
-      "age",
-      "lwt",
-      "race",
-      "smoke",
-      "ptl",
-      "ht",
-      "ui",
-      "ftv"
-    ),
-
-    covariate_vars = character(0),
-
-    auxiliary_vars = character(0),
-
-    continuous_vars = c(
-      "age",
-      "lwt",
-      "ptl",
-      "ftv"
-    ),
-
-    categorical_vars = c(
-      "race",
-      "smoke",
-      "ht",
-      "ui"
-    ),
-
-    ordinal_vars = character(0),
-
-    subject_level_vars = c(
-      "age",
-      "lwt",
-      "race",
-      "smoke",
-      "ptl",
-      "ht",
-      "ui",
-      "ftv"
-    ),
-
-    time_varying_vars = character(0),
-
-    scale_vars = c(
-      "age",
-      "lwt",
-      "ptl",
-      "ftv"
-    )
-  ),
+  variables = NULL,
 
   imputation = list(
     enabled = TRUE,

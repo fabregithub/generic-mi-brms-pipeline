@@ -85,51 +85,21 @@ analysis_spec <- list(
   # ------------------------------------------------------------
   # Variable roles
   # ------------------------------------------------------------
-  # These are mostly derived from 00_variable_dictionary.csv,
-  # but keeping key groups here makes the config readable.
-  
-  variables = list(
-    exposure_vars = c(
-      "Solar.R",
-      "Wind",
-      "Temp",
-      "Month"
-    ),
-    
-    covariate_vars = character(0),
-    
-    auxiliary_vars = character(0),
-    
-    continuous_vars = c(
-      "Solar.R",
-      "Wind",
-      "Temp"
-    ),
-    
-    categorical_vars = c(
-      "Month"
-    ),
-    
-    ordinal_vars = character(0),
-    
-    subject_level_vars = c(
-      "Solar.R",
-      "Wind",
-      "Temp",
-      "Month"
-    ),
-    
-    time_varying_vars = character(0),
-    
-    # Variables to z-scale for modeling.
-    # The model will use Solar.R_z, Wind_z, Temp_z.
-    scale_vars = c(
-      "Solar.R",
-      "Wind",
-      "Temp"
-    )
-  ),
-  
+  # Variable roles, types, timing, scaling, imputation targets,
+  # model inclusion, reference categories, and auxiliary-variable status are
+  # read from 00_variable_dictionary.csv.
+  #
+  # This block is kept only for optional project-specific overrides.
+  # Leave as NULL for standard use.
+  #
+  # Example override:
+  # variables = list(
+  #   scale_vars = c("age", "income"),
+  #   auxiliary_vars = c("baseline_score")
+  # )
+
+  variables = NULL,
+
   # ------------------------------------------------------------
   # Imputation specification
   # ------------------------------------------------------------

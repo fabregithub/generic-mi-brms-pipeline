@@ -237,6 +237,83 @@ apply_z_stats <- function(df, z_stats) {
   out
 }
 
+
+# ------------------------------------------------------------
+# Variable dictionary roles
+# ------------------------------------------------------------
+
+derive_analysis_variables <- function(var_dict, analysis_spec = NULL) {
+  # 00_variable_dictionary.csv is the source of truth for variable roles,
+  # types, timing, scaling, imputation targets, and model inclusion.
+  #
+  # analysis_spec$variables is optional. If supplied, it overrides selected
+  # derived lists. This allows advanced users to make project-specific
+  # adjustments without duplicating the full dictionary in 00_config.R.
+
+  get_col <- function(df, col, default = NA_character_) {
+    if (col %in% names(df)) {
+      df[[col]]
+    } else {
+      rep(default, nrow(df))
+    }
+  }
+
+  role <- get_col(var_dict, "role", "")
+  type <- get_col(var_dict, "type", "")
+  timing <- get_col(var_dict, "timing", "")
+  scale <- get_col(var_dict, "scale", "no")
+  use_as_auxiliary <- get_col(var_dict, "use_as_auxiliary", FALSE)
+
+  use_as_auxiliary <- as.logical(use_as_auxiliary)
+  use_as_auxiliary[is.na(use_as_auxiliary)] <- FALSE
+
+  vars_from_dict <- list(
+    exposure_vars = var_dict$var[role == "exposure"],
+    covariate_vars = var_dict$var[role == "covariate"],
+    auxiliary_vars = unique(var_dict$var[role == "auxiliary" | use_as_auxiliary]),
+    continuous_vars = var_dict$var[type == "continuous"],
+    categorical_vars = var_dict$var[type == "categorical"],
+    ordinal_vars = var_dict$var[type == "ordinal"],
+    subject_level_vars = var_dict$var[timing %in% c("single", "baseline")],
+    time_varying_vars = var_dict$var[timing %in% c("repeated", "time_varying")],
+    scale_vars = var_dict$var[scale == "z"]
+  )
+
+  vars_from_dict <- purrr::map(
+    vars_from_dict,
+    ~ unique(.x[!is.na(.x) & nzchar(.x)])
+  )
+
+  overrides <- NULL
+
+  if (!is.null(analysis_spec) && !is.null(analysis_spec$variables)) {
+    overrides <- analysis_spec$variables
+  }
+
+  if (is.null(overrides)) {
+    return(vars_from_dict)
+  }
+
+  if (!is.list(overrides)) {
+    stop("analysis_spec$variables must be NULL or a named list.")
+  }
+
+  unknown_override_names <- setdiff(names(overrides), names(vars_from_dict))
+
+  if (length(unknown_override_names) > 0) {
+    stop(
+      "Unknown names in analysis_spec$variables: ",
+      paste(unknown_override_names, collapse = ", "),
+      ". Valid names are: ",
+      paste(names(vars_from_dict), collapse = ", ")
+    )
+  }
+
+  # For vectors, modifyList() replaces the whole vector, which is what we want.
+  utils::modifyList(vars_from_dict, overrides)
+}
+
+
 # ------------------------------------------------------------
 # Formula, family, priors
 # ------------------------------------------------------------
@@ -292,25 +369,37 @@ filter_priors_to_model <- function(priors, formula, data, family) {
 }
 
 
-resolve_fixed_effects <- function(analysis_spec, var_dict) {
+resolve_fixed_effects <- function(analysis_spec, var_dict, analysis_vars = NULL) {
   fixed <- analysis_spec$model$fixed_effects
+  analysis_vars <- analysis_vars %||% derive_analysis_variables(var_dict, analysis_spec)
 
   if (length(fixed) == 1 && identical(fixed, "auto")) {
+    # Default: use 00_variable_dictionary.csv.
     fixed_vars <- var_dict %>%
       dplyr::filter(
         .data$use_in_model,
         !.data$role %in% c("outcome", "binary_outcome", "id", "time")
       ) %>%
       dplyr::pull(.data$var)
+
+    # Optional override: if users explicitly define exposure_vars and/or
+    # covariate_vars in analysis_spec$variables, use those for auto fixed
+    # effects. This keeps the dictionary as default while allowing advanced
+    # project-specific overrides.
+    if (!is.null(analysis_spec$variables) &&
+        any(c("exposure_vars", "covariate_vars") %in% names(analysis_spec$variables))) {
+      fixed_vars <- unique(c(
+        analysis_vars$exposure_vars,
+        analysis_vars$covariate_vars
+      ))
+    }
   } else {
     fixed_vars <- fixed
   }
 
   fixed_vars <- fixed_vars[!is.na(fixed_vars) & nzchar(fixed_vars)]
 
-  scale_vars <- var_dict %>%
-    dplyr::filter(.data$scale == "z", .data$var %in% fixed_vars) %>%
-    dplyr::pull(.data$var)
+  scale_vars <- analysis_vars$scale_vars %||% character(0)
 
   fixed_vars <- ifelse(
     fixed_vars %in% scale_vars,
@@ -365,7 +454,8 @@ make_brms_formula <- function(analysis_spec, var_dict) {
 
 
 build_model_spec <- function(analysis_spec, var_dict, reference_data) {
-  scale_vars <- var_dict %>% filter(scale == "z") %>% pull(var)
+  analysis_vars <- derive_analysis_variables(var_dict, analysis_spec)
+  scale_vars <- analysis_vars$scale_vars %||% character(0)
   z_stats <- make_z_stats(reference_data, scale_vars)
   formula <- make_brms_formula(analysis_spec, var_dict)
   family <- make_brms_family(analysis_spec$outcome)
@@ -374,9 +464,10 @@ build_model_spec <- function(analysis_spec, var_dict, reference_data) {
   } else {
     analysis_spec$model$priors
   }
-  fixed_effects <- resolve_fixed_effects(analysis_spec, var_dict)
+  fixed_effects <- resolve_fixed_effects(analysis_spec, var_dict, analysis_vars)
   list(
     formula = formula,
+    analysis_vars = analysis_vars,
     formula_vars = get_brms_formula_vars(formula),
     formula_text = get_brms_formula_text(formula),
     family = family,
@@ -444,9 +535,13 @@ make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
   target_vars <- intersect(target_vars, names(data))
   target_vars <- target_vars[vapply(target_vars, function(v) anyNA(data[[v]]), logical(1))]
 
+  analysis_vars <- derive_analysis_variables(var_dict, analysis_spec)
+
   base_predictors <- var_dict %>%
     filter(use_in_model | use_as_auxiliary | impute_target) %>%
     pull(var) %>%
+    c(analysis_vars$auxiliary_vars %||% character(0)) %>%
+    unique() %>%
     intersect(names(data))
 
   # Exclude variables with missingness unless they are imputation targets.
