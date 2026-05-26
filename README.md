@@ -1570,3 +1570,83 @@ analysis_spec$model$run_smoke_fit <- FALSE
 but keep it as `TRUE` when changing the dataset, formula, priors, outcome family, or imputation strategy.
 
 For large analyses, avoid `brm_multiple()` unless you have a specific reason to use it. The one-fit-per-imputation design is usually safer and easier to restart.
+
+---
+
+## Optional monotonic-effect publication summaries
+
+For models containing `brms::mo()` terms, the usual fixed-effect summary is not always the most interpretable output. The helper script:
+
+```
+10_publication_mo_results.R
+```
+
+derives posterior odds ratios from the monotonic-effect coefficient and simplex parameters. It supports models with interactions such as:
+
+```
+time * mo(ordinal_variable)
+```
+
+Run after the main pipeline has created `results/parameter_draws.rds`:
+
+```
+Rscript 09_check_mo_parameter_columns.R
+Rscript 10_publication_mo_results.R
+quarto render results/publication/mo_effects/report/mo_effects_report.qmd
+```
+
+For `mo()` models, make sure `00_config.R` includes `bsp_` and `simo_` in the draw regex:
+
+```
+analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
+```
+
+The main publication table from the helper script is:
+
+```
+results/publication/mo_effects/tables/mo_cumulative_or_table.csv
+```
+
+Adjacent increment odds ratios and simplex proportions are also written as supplementary tables.
+
+---
+
+## Test outputs
+
+The bash test scripts write isolated preserved runs under:
+
+```
+test/runs/
+```
+
+This means example tests do not delete or overwrite root-level `objects/`, `fits/`, or `results/`.
+
+Run quick tests:
+
+```
+bash test/test_all_examples_quick.sh
+```
+
+Run parallel tests:
+
+```
+bash test/test_all_examples_parallel.sh
+```
+
+List preserved test runs:
+
+```
+bash test/list_test_runs.sh
+```
+
+To clean all preserved test runs manually:
+
+```
+rm -rf test/runs
+```
+
+Add this to `.gitignore` if it is not already present:
+
+```
+test/runs/
+```

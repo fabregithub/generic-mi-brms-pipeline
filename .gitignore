@@ -40,3 +40,6 @@ data/*.csv
 *_files/
 *.html
 *.docx
+
+# Preserved isolated test runs
+test/runs/

@@ -24,6 +24,9 @@ PROJECT_ROOT="$(cd "${TEST_SCRIPT_DIR}/.." && pwd)"
 TEST_RUNS_DIR="${PROJECT_ROOT}/test/runs"
 
 log() {
+  # Important: log to stderr.
+  # Some helper functions return paths through stdout and are called through
+  # command substitution. Logging to stdout would pollute those returned paths.
   printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2
 }
 
@@ -80,9 +83,9 @@ copy_if_exists() {
 prepare_runtime_project() {
   local run_dir="$1"
   local runtime_project="${run_dir}/project"
-  # This function is called via command substitution, so its stdout must
-  # contain only the runtime project path. Use log(), which writes to stderr,
-  # for human-readable messages.
+  # This function is called via command substitution, so stdout must contain
+  # only the runtime project path. Use log(), which writes to stderr, for
+  # human-readable messages.
 
   mkdir -p "$runtime_project"
 
@@ -103,6 +106,8 @@ prepare_runtime_project() {
     "06_posterior_summary.R"
     "07_posterior_prediction.R"
     "08_publication_results.R"
+    "09_check_mo_parameter_columns.R"
+    "10_publication_mo_results.R"
     "fit_single_imputation.R"
     "run_all.R"
     "99_clean_fitting_results.sh"
@@ -259,6 +264,31 @@ check_parallel_imputation_log() {
   fi
 }
 
+check_mo_outputs() {
+  log "Checking mo()/s() example outputs"
+
+  # The spline/monotonic example should generate supplementary summaries for
+  # special brms parameters such as simo_ and smooth terms.
+  if [[ -f "results/special_parameter_summary.rds" || -f "results/special_parameter_summary.csv" ]]; then
+    log "special_parameter_summary output found"
+  else
+    die "Expected special_parameter_summary output was not found for mo()/s() example."
+  fi
+
+  # Conditional effect figures are optional but expected for this example.
+  if [[ -d "results/publication/figures" ]]; then
+    log "Publication figures found:"
+    ls -lh results/publication/figures || true
+  else
+    log "No results/publication/figures directory found; continuing because figure generation may be disabled by config."
+  fi
+
+  # Show extracted special columns for easier debugging.
+  if [[ -f "results/parameter_draws.rds" ]]; then
+    Rscript -e 'x <- readRDS("results/parameter_draws.rds"); cat("Special columns:\n"); print(grep("^(simo_|bsp_|sds_|bs_)", names(x), value = TRUE))'
+  fi
+}
+
 print_diagnostics_hint() {
   log "Optional diagnostic check in R/RStudio from this run folder:"
   cat <<'EOF'
@@ -290,13 +320,14 @@ Inspect outputs in:
   ${runtime_project}/results
 
 Stdout log:
-  ${runtime_project}/run_all_${example}_${mode}_stdout.log
+  ${run_dir}/logs/run_all_${example}_${mode}_stdout.log
 EOF
 }
 
 run_pipeline() {
   local log_file="$1"
   local mode="${2:-quick}"
+  local example="${3:-unknown}"
 
   require_file "01_validate_config.R"
   require_file "run_all.R"
@@ -311,6 +342,10 @@ run_pipeline() {
 
   if [[ "$mode" == "parallel" ]]; then
     check_parallel_imputation_log "$log_file"
+  fi
+
+  if [[ "$example" == "birthwt_spline_monotonic" ]]; then
+    check_mo_outputs
   fi
 
   render_and_check_report
@@ -344,6 +379,20 @@ prepare_birthwt_logistic_example() {
   Rscript examples/birthwt_logistic/00_create_birthwt_logistic_example_data.R
 }
 
+prepare_birthwt_spline_monotonic_example() {
+  log "Preparing birthwt spline + monotonic example"
+
+  require_file "examples/birthwt_spline_monotonic/00_config_birthwt_spline_monotonic.R"
+  require_file "examples/birthwt_spline_monotonic/00_variable_dictionary_birthwt_spline_monotonic.csv"
+  require_file "examples/birthwt_spline_monotonic/00_create_birthwt_spline_monotonic_example_data.R"
+
+  cp examples/birthwt_spline_monotonic/00_config_birthwt_spline_monotonic.R 00_config.R
+  cp examples/birthwt_spline_monotonic/00_variable_dictionary_birthwt_spline_monotonic.csv 00_variable_dictionary.csv
+
+  log "Creating birthwt spline + monotonic example data"
+  Rscript examples/birthwt_spline_monotonic/00_create_birthwt_spline_monotonic_example_data.R
+}
+
 run_example_in_isolated_project() {
   local example="$1"
   local mode="$2"
@@ -366,14 +415,24 @@ run_example_in_isolated_project() {
     prepare_airquality_example
   elif [[ "$example" == "birthwt_logistic" ]]; then
     prepare_birthwt_logistic_example
+  elif [[ "$example" == "birthwt_spline_monotonic" ]]; then
+    prepare_birthwt_spline_monotonic_example
   else
     die "Unknown example: $example"
   fi
 
   apply_test_overrides "$mode"
 
-  log_file="run_all_${example}_${mode}_stdout.log"
-  run_pipeline "$log_file" "$mode"
+  mkdir -p "${run_dir}/logs"
+  log_file="${run_dir}/logs/run_all_${example}_${mode}_stdout.log"
+  run_pipeline "$log_file" "$mode" "$example"
+
+  # If an older script or manual command created a stdout log in the runtime
+  # project root, move it into the run-level logs folder.
+  if [[ -f "run_all_${example}_${mode}_stdout.log" ]]; then
+    mkdir -p "${run_dir}/logs"
+    mv "run_all_${example}_${mode}_stdout.log" "${run_dir}/logs/"
+  fi
 
   log "${example} ${mode} test completed successfully"
   log "Run outputs preserved in:"
@@ -392,6 +451,11 @@ test_airquality() {
 test_birthwt_logistic() {
   local mode="${1:-quick}"
   run_example_in_isolated_project "birthwt_logistic" "$mode"
+}
+
+test_birthwt_spline_monotonic() {
+  local mode="${1:-quick}"
+  run_example_in_isolated_project "birthwt_spline_monotonic" "$mode"
 }
 
 list_test_runs() {

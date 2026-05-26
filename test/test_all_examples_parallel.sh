@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Modest parallel tests for both standard examples.
+# Modest parallel tests for all bundled examples, including s()/mo().
 # These exercise parallel miceRanger imputation with impute_workers = 2.
 set -Eeuo pipefail
 
@@ -13,6 +13,7 @@ require_command quarto
 
 test_airquality parallel
 test_birthwt_logistic parallel
+test_birthwt_spline_monotonic parallel
 
 list_test_runs
 log "All parallel example tests completed successfully"

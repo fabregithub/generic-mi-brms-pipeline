@@ -1,12 +1,15 @@
 # ============================================================
-# When running, rename this file to 00_config.R
+# 00_config.R
 # Generic MI + brms pipeline configuration
 #
-# Public logistic example:
-# MASS::birthwt
+# Public example dataset:
+# datasets::airquality
 #
 # Outcome:
-# low, binary indicator of low birth weight
+# Ozone, Gaussian identity model
+#
+# Main model:
+# Ozone ~ Solar.R_z + Wind_z + Temp_z + Month
 # ============================================================
 
 suppressPackageStartupMessages({
@@ -19,110 +22,227 @@ suppressPackageStartupMessages({
   library(bayestestR)
 })
 
+# ============================================================
+# Analysis specification
+# ============================================================
+
 analysis_spec <- list(
-
-  analysis_id = "birthwt_logistic_demo",
-
-  project_label = "Public birthwt logistic MI + brms demo",
-
+  
+  # ------------------------------------------------------------
+  # Basic analysis identity
+  # ------------------------------------------------------------
+  
+  analysis_id = "airquality_gaussian_demo",
+  
+  project_label = "Public airquality Gaussian MI + brms demo",
+  
+  # ------------------------------------------------------------
+  # Data specification
+  # ------------------------------------------------------------
+  
   data = list(
-    raw_data_file = "data/birthwt_logistic_example.rds",
+    raw_data_file = "data/airquality_example.rds",
+    
+    # airquality has no natural subject ID.
+    # The data-creation script adds row_id.
     id_var = NULL,
+    
     row_id_var = "row_id",
+    
+    # Options:
+    # "single_time"
+    # "repeated_y_subject_covariates"
+    # "repeated_y_timevarying_covariates"
     data_structure = "single_time",
+    
+    # No repeated-measure time variable in this demo.
     time_var = NULL
   ),
-
+  
+  # ------------------------------------------------------------
+  # Outcome specification
+  # ------------------------------------------------------------
+  
   outcome = list(
-    y_var = "low",
-    family = "bernoulli",
-    link = "logit",
+    y_var = "Ozone",
+    
+    # Options supported by the template:
+    # "gaussian", "bernoulli", "poisson", "negbinomial",
+    # "beta", "ordinal", "categorical"
+    family = "gaussian",
+    
+    link = "identity",
+    
+    # Only used for repeated-Y wide imputation.
     y_prefix = NULL,
     y_wide_regex = NULL,
-    predict_missing_y = FALSE
+    
+    # If TRUE, rows with missing outcome are excluded from model fitting
+    # but posterior predictions are generated for them later.
+    predict_missing_y = TRUE
   ),
+  
+  # ------------------------------------------------------------
+  # Variable roles
+  # ------------------------------------------------------------
+  # Variable roles, types, timing, scaling, imputation targets,
+  # model inclusion, reference categories, and auxiliary-variable status are
+  # read from 00_variable_dictionary.csv.
+  #
+  # This block is kept only for optional project-specific overrides.
+  # Leave as NULL for standard use.
+  #
+  # Example override:
+  # variables = list(
+  #   scale_vars = c("age", "income"),
+  #   auxiliary_vars = c("baseline_score")
+  # )
 
   variables = NULL,
 
+  # ------------------------------------------------------------
+  # Imputation specification
+  # ------------------------------------------------------------
+  
   imputation = list(
     enabled = TRUE,
+    
+    # Options:
+    # "none"
+    # "row_level"
+    # "subject_level"
+    # "subject_wide_with_repeated_y_auxiliary"  # repeated outcome; subject-wide imputation with y_wide auxiliaries
+    # "long_row_level"
     strategy = "row_level",
-
-    # Use small m for demo speed.
-    # For stress testing, set m = 100.
+    
+    # Public demo uses small m for speed.
+    # For real analyses, use something like 50-100.
     m = 100,
-
+    
     maxiter = 5,
+    
     mean_match_k = 5,
+    
     verbose = FALSE,
-
-    # Do not impute the outcome.
+    
+    # For this demo, do not impute the outcome as a target.
+    # Missing Ozone rows will be predicted later using posterior_predict().
     impute_y = FALSE,
-
+    
+    # Optional run-specific override. Variables listed here will not be
+    # imputed as targets, even if impute_target = TRUE in the dictionary.
     extra_exclude_targets = character(0)
   ),
-
+  
+  # ------------------------------------------------------------
+  # Model specification
+  # ------------------------------------------------------------
+  
   model = list(
+    # If "auto", fixed effects are built from variable dictionary/model roles.
+    # In this demo, the final fixed effects should be:
+    # Solar.R_z + Wind_z + Temp_z + Month
     fixed_effects = "auto",
-
+    
     random_effects = list(
       subject_intercept = FALSE,
       subject_slope_vars = character(0)
     ),
-
+    
+    # Optional manual formula override.
+    # Example:
+    # custom_formula = brms::bf(Ozone ~ Solar.R_z + Wind_z + Temp_z + Month)
     custom_formula = NULL,
-
+    
+    # Options:
+    # "default_weakly_regularizing"
+    # or a brms prior vector
     priors = "default_weakly_regularizing",
-
+    
+    # Public demo settings.
+    # For real analyses, use e.g. chains = 4, iter = 2000, warmup = 1000.
     chains = 4,
     iter = 2000,
     warmup = 1000,
-
-    seed = 54321,
-
+    
+    seed = 12345,
+    
     adapt_delta = 0.95,
     max_treedepth = 12,
-
+    
     parameter_draw_regex = "^(b_|sd_|sigma)",
-
+    
+    # Usually helpful for avoiding odd random initializations in demos.
     init = 0,
-
-    # Set to 0 for visible Stan output during testing.
-    # Set to 2 for quieter production runs.
+    
+    # 0 = show Stan output.
+    # 2 = quieter.
+    # For debugging the template, keep this at 0.
     silent = 0,
-
+    
+    # Run one sequential fit before parallel fitting.
+    # This helps catch brms/CmdStan/config problems early.
     run_smoke_fit = TRUE,
-
+    
+    # For production analyses, you can temporarily skip problematic imputations.
+    # Example: skip_imputations = c(45, 51)
     skip_imputations = integer(0),
+    
+    # To run only specific imputations.
+    # Example: only_imputations = c(51)
     only_imputations = integer(0)
   ),
-
+  
+  # ------------------------------------------------------------
+  # Posterior prediction specification
+  # ------------------------------------------------------------
+  
   posterior_prediction = list(
-    enabled = FALSE,
-    ndraws = 500,
+    enabled = TRUE,
+    
+    # Small for demo speed.
+    # For real analyses, use 1000 or more.
+    ndraws = 200,
+    
     allow_new_levels = TRUE,
     sample_new_levels = "gaussian"
   ),
-
+  
+  # ------------------------------------------------------------
+  # Posterior summary specification
+  # ------------------------------------------------------------
+  
   summary = list(
     effects = "fixed",
     component = "conditional",
     centrality = "median",
     ci = 0.95,
     ci_method = "HDI",
+    
+    # Common bayestestR tests.
+    # For Gaussian demo this is okay; for real analyses choose deliberately.
     test = c("p_direction", "rope"),
-
+    
     rope = list(
+      # Options:
+      # "none"
+      # "fixed"
+      # "auto"
       method = "fixed",
-
-      # Log-odds ROPE placeholder for demo.
-      # For real analyses, define this based on practical relevance.
-      fixed_range = c(-0.1, 0.1),
-
+      
+      # Used if method = "fixed".
+      # For Gaussian Ozone scale this is just a demo placeholder.
+      fixed_range = c(-1, 1),
+      
+      # Used by some custom binary/logit workflows.
       width_probability = 0.05
     )
   ),
-
+  
+  # ------------------------------------------------------------
+  # Parallel and memory settings
+  # ------------------------------------------------------------
+  
   parallel = list(
     # ----------------------------------------------------------
     # miceRanger imputation parallelisation
@@ -154,60 +274,67 @@ analysis_spec <- list(
 
     future_globals_maxsize_gb = 8
   ),
-
+  
+  # ------------------------------------------------------------
+  # Memory guard settings
+  # ------------------------------------------------------------
+  
   memory_guard = list(
     enabled = TRUE,
+    
+    # Public demo values are conservative.
+    # For a 192 GB machine, you may use larger values.
     max_r_memory_gb = 20,
+    
     min_mac_available_gb = 5,
+    
     min_mac_available_before_brm_gb = 5,
+    
     gc_before_check = TRUE
   )
 )
 
+# ============================================================
+# Project paths
+# ============================================================
+
 paths <- list(
   root = ".",
-
+  
+  # Folders
   data = "data",
-
+  objects = "objects",
+  
+  # Input files
   raw_data = analysis_spec$data$raw_data_file,
   variable_dictionary = "00_variable_dictionary.csv",
-
-  objects = "objects",
-
+  
+  # Imputation outputs
   imputed_data = "objects/imputed_data",
-  imputed = "objects/imputed_data",
+  imputed = "objects/imputed_data",          # backward-compatible alias
   imputed_wide = "objects/imputed_wide",
-
+  
+  # Model data and fits
   model_data = "objects/model_data",
-
   fits = "fits",
+  
+  # Results
   results = "results",
-
   publication = "results/publication",
-
+  
+  # CmdStan cache
   cache = file.path(path.expand("~"), ".cmdstanr-cache")
 )
 
-options(brms.backend = "cmdstanr")
-options(scipen = 999)
+# ============================================================
+# Convenience settings
+# ============================================================
 
-# ---- BEGIN automated test overrides ----
-# Added by test scripts. Remove this block to restore the original settings.
-analysis_spec$imputation$m <- 5
+options(
+  brms.backend = "cmdstanr"
+)
 
-analysis_spec$model$chains <- 1
-analysis_spec$model$iter <- 500
-analysis_spec$model$warmup <- 250
-analysis_spec$model$run_smoke_fit <- TRUE
-
-# Quick tests use single-worker imputation to isolate configuration/model errors.
-analysis_spec$parallel$impute_workers <- 1
-analysis_spec$parallel$num_impute_threads_per_worker <- 1
-analysis_spec$parallel$num_impute_threads <- 1
-
-analysis_spec$parallel$fit_workers <- 1
-analysis_spec$parallel$cores_per_fit <- 1
-analysis_spec$parallel$future_globals_maxsize_gb <- 8
-
-analysis_spec$posterior_prediction$ndraws <- 200
-# ---- END automated test overrides ----
+# Avoid accidental scientific notation in output tables.
+options(
+  scipen = 999
+)

@@ -26,6 +26,77 @@ init_logging("pipeline")
 setup_project_dirs(paths)
 
 safe_step("STEP 8: Publication-ready outputs", {
+
+  resolve_rope_range <- function(summary_spec) {
+    # Support both old and new config styles:
+    #
+    # Old/list style:
+    #   summary$rope <- list(method = "fixed", fixed_range = c(-0.1, 0.1))
+    #
+    # Current/simple style:
+    #   summary$test <- c("p_direction", "rope")
+    #   summary$rope_range <- "auto_logit_5pct"
+
+    rope_method <- "none"
+    rope_range <- NULL
+
+    rope_cfg <- summary_spec$rope %||% NULL
+
+    if (is.list(rope_cfg)) {
+      rope_method <- rope_cfg$method %||% "none"
+
+      if (identical(rope_method, "fixed")) {
+        rope_range <- rope_cfg$fixed_range %||% NULL
+      }
+    } else if (is.character(rope_cfg) && length(rope_cfg) >= 1) {
+      rope_method <- rope_cfg[[1]]
+    }
+
+    rope_range_cfg <- summary_spec$rope_range %||% NULL
+
+    if (!is.null(rope_range_cfg)) {
+      if (is.numeric(rope_range_cfg) && length(rope_range_cfg) == 2) {
+        rope_method <- "fixed"
+        rope_range <- as.numeric(rope_range_cfg)
+      } else if (is.character(rope_range_cfg) && length(rope_range_cfg) >= 1) {
+        if (identical(rope_range_cfg[[1]], "auto_logit_5pct")) {
+          rope_method <- "fixed"
+          rope_range <- log(c(0.95, 1.05))
+        } else if (identical(rope_range_cfg[[1]], "none")) {
+          rope_method <- "none"
+          rope_range <- NULL
+        } else {
+          warning(
+            "Unknown summary$rope_range value: ",
+            rope_range_cfg[[1]],
+            ". ROPE values will be shown as not available."
+          )
+        }
+      }
+    }
+
+    if (!identical(rope_method, "fixed")) {
+      rope_range <- NULL
+    }
+
+    rope_range
+  }
+
+  format_rope_range <- function(summary_spec) {
+    rr <- resolve_rope_range(summary_spec)
+
+    if (is.null(rr) || length(rr) != 2 || any(is.na(rr))) {
+      return("not specified")
+    }
+
+    paste0(
+      round(rr[[1]], 4),
+      " to ",
+      round(rr[[2]], 4)
+    )
+  }
+
+
   
   # ------------------------------------------------------------
   # Output folders
@@ -834,8 +905,8 @@ safe_step("STEP 8: Publication-ready outputs", {
     "not specified"
   }
 
-  summary_rope <- if (!is.null(analysis_spec$summary$rope$fixed_range)) {
-    paste(analysis_spec$summary$rope$fixed_range, collapse = ", ")
+  summary_rope <- if (!is.null(resolve_rope_range(analysis_spec$summary))) {
+    paste(resolve_rope_range(analysis_spec$summary), collapse = ", ")
   } else {
     "not specified"
   }

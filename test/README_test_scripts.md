@@ -4,7 +4,7 @@ The test scripts live in the `test/` folder to keep the project root clean.
 
 ## Important behaviour
 
-Each test now runs in an isolated copy of the project under:
+Each test runs in an isolated copy of the project under:
 
 ```text
 test/runs/
@@ -22,23 +22,54 @@ each quick/parallel run can be inspected later
 Example run folder:
 
 ```text
-test/runs/20260526_101530_airquality_quick/project/
+test/runs/20260526_101530_birthwt_spline_monotonic_quick/project/
 ```
 
-Inside each run folder, you will find:
+Inside each run's `project/` folder, you will find:
 
 ```text
 objects/
 fits/
 results/
-run_all_<example>_<mode>_stdout.log
 pipeline_progress.log
 ```
 
-The parent folder also contains:
+The run-level stdout logs are kept outside the runtime project root:
+
+```text
+test/runs/<run_id>/logs/run_all_<example>_<mode>_stdout.log
+```
+
+The parent run folder also contains:
 
 ```text
 RUN_INFO.txt
+```
+
+## Examples covered
+
+The test suite now covers all bundled examples:
+
+```text
+airquality_gaussian
+  gaussian(identity), simple public-data example
+
+birthwt_logistic
+  bernoulli(logit), logistic model example
+
+birthwt_spline_monotonic
+  bernoulli(logit), custom brms formula with s() and mo()
+```
+
+The `birthwt_spline_monotonic` tests specifically check that the pipeline can:
+
+```text
+validate custom brms formulae
+fit a model containing s()
+fit a model containing mo()
+extract special brms parameters such as simo_ and smooth terms
+create publication outputs for special parameters
+render the Quarto report
 ```
 
 ## Quick tests
@@ -58,7 +89,7 @@ fit_workers = 1
 cores_per_fit = 1
 ```
 
-Run in Terminal from the project root:
+Run all quick tests in Terminal from the project root:
 
 ```text
 bash test/test_all_examples_quick.sh
@@ -69,6 +100,7 @@ Or run examples individually:
 ```text
 bash test/test_airquality_quick.sh
 bash test/test_birthwt_logistic_quick.sh
+bash test/test_birthwt_spline_monotonic_quick.sh
 ```
 
 ## Parallel tests
@@ -93,7 +125,7 @@ fit_workers = 2
 cores_per_fit = 2
 ```
 
-Run in Terminal from the project root:
+Run all parallel tests in Terminal from the project root:
 
 ```text
 bash test/test_all_examples_parallel.sh
@@ -104,6 +136,7 @@ Or run examples individually:
 ```text
 bash test/test_airquality_parallel.sh
 bash test/test_birthwt_logistic_parallel.sh
+bash test/test_birthwt_spline_monotonic_parallel.sh
 ```
 
 ## List previous test runs
@@ -130,33 +163,6 @@ To remove one run:
 rm -rf test/runs/<run_folder_name>
 ```
 
-## What the scripts do
-
-Each test script:
-
-```text
-creates an isolated runtime copy of the project under test/runs/
-copies the example config to runtime 00_config.R
-copies the example variable dictionary to runtime 00_variable_dictionary.csv
-creates the public example data inside the runtime copy
-appends temporary test overrides to runtime 00_config.R
-runs validation
-runs the full pipeline
-renders the Quarto report
-checks key outputs exist
-leaves all outputs in the run folder
-```
-
-The temporary override block is clearly marked inside the runtime copy:
-
-```text
-# ---- BEGIN automated test overrides ----
-...
-# ---- END automated test overrides ----
-```
-
-The root project files are not edited.
-
 ## Successful outputs
 
 A successful test should create these inside the run's `project/` folder:
@@ -171,13 +177,28 @@ results/publication/report/bayesian_mi_report_template.html
 results/publication/report/bayesian_mi_report_template.docx
 ```
 
+For the `birthwt_spline_monotonic` example, the tests also expect:
+
+```text
+results/special_parameter_summary.rds
+```
+
+or:
+
+```text
+results/special_parameter_summary.csv
+```
+
 ## Notes
 
 The scripts do not require `pipeline_success.flag`, because some versions of the pipeline print `Pipeline completed successfully` without writing that flag. Instead, the scripts check for key output files and fail if `pipeline_error.flag` exists.
 
-## Implementation note
+## Stdout logs
 
-The helper function `log()` writes to stderr. This is intentional: some helper
-functions return paths through stdout and are called by command substitution.
-Keeping logs on stderr prevents paths from being polluted by timestamped log
-messages.
+The `run_all` stdout log is written to the run-level `logs/` folder, not to the runtime project root:
+
+```text
+test/runs/<run_id>/logs/
+```
+
+This keeps each runtime project root cleaner while preserving the full command output for debugging.

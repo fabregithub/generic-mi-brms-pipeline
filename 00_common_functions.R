@@ -581,6 +581,59 @@ is_binary_like <- function(x) {
   length(ux) <= 2
 }
 
+prepare_miceranger_data <- function(data) {
+  # miceRanger/ranger can behave poorly with ordered factors.  For imputation,
+  # treat ordered factors as ordinary factors, then restore the ordered class
+  # after completeData().  This is especially important for ordinal predictors
+  # that will later be used in brms::mo().
+  ordered_levels <- purrr::imap(
+    data,
+    function(x, nm) {
+      if (is.ordered(x)) {
+        levels(x)
+      } else {
+        NULL
+      }
+    }
+  )
+
+  ordered_levels <- ordered_levels[!vapply(ordered_levels, is.null, logical(1))]
+
+  out <- data
+
+  for (v in names(ordered_levels)) {
+    out[[v]] <- factor(
+      as.character(out[[v]]),
+      levels = ordered_levels[[v]],
+      ordered = FALSE
+    )
+  }
+
+  list(
+    data = out,
+    ordered_levels = ordered_levels
+  )
+}
+
+restore_ordered_factors <- function(data, ordered_levels) {
+  out <- tibble::as_tibble(data)
+
+  if (length(ordered_levels) == 0) {
+    return(out)
+  }
+
+  for (v in names(ordered_levels)) {
+    if (v %in% names(out)) {
+      out[[v]] <- ordered(
+        as.character(out[[v]]),
+        levels = ordered_levels[[v]]
+      )
+    }
+  }
+
+  out
+}
+
 make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
   row_id <- analysis_spec$data$row_id_var
   y <- analysis_spec$outcome$y_var
@@ -622,11 +675,43 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
 
   if (length(vars) == 0) {
     log_msg("No imputation targets with missingness. Duplicating data m times.")
-    return(rep(list(as_tibble(data)), m))
+    return(rep(list(tibble::as_tibble(data)), m))
+  }
+
+  # Make the vars list robust before it reaches miceRanger.
+  vars <- vars[names(vars) %in% names(data)]
+  vars <- purrr::map(vars, ~ intersect(.x, names(data)))
+
+  required_imputation_vars <- unique(c(names(vars), unlist(vars, use.names = FALSE)))
+  missing_imputation_vars <- setdiff(required_imputation_vars, names(data))
+
+  if (length(missing_imputation_vars) > 0) {
+    stop(
+      "The imputation specification refers to variable(s) not present in the imputation data: ",
+      paste(missing_imputation_vars, collapse = ", "),
+      ". Check 00_variable_dictionary.csv timing/type/impute_target settings."
+    )
+  }
+
+  if (length(vars) == 0) {
+    log_msg("No valid imputation targets remain after checking names. Duplicating data m times.")
+    return(rep(list(tibble::as_tibble(data)), m))
+  }
+
+  mice_data_info <- prepare_miceranger_data(data)
+  mice_data <- mice_data_info$data
+
+  ordered_vars <- names(mice_data_info$ordered_levels)
+
+  if (length(ordered_vars) > 0) {
+    log_msg(
+      "Temporarily treating ordered factors as unordered factors for miceRanger:",
+      paste(ordered_vars, collapse = ", ")
+    )
   }
 
   valueSelector <- vapply(names(vars), function(v) {
-    x <- data[[v]]
+    x <- mice_data[[v]]
     if (is.factor(x)) {
       "value"
     } else if (is.numeric(x) && !is_binary_like(x)) {
@@ -686,7 +771,7 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
   }
 
   mice_obj <- miceRanger::miceRanger(
-    data = data,
+    data = mice_data,
     m = m,
     maxiter = imputation_spec$maxiter,
     vars = vars,
@@ -699,7 +784,12 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
   )
 
   miceRanger::completeData(mice_obj, verbose = FALSE) %>%
-    purrr::map(as_tibble)
+    purrr::map(
+      ~ restore_ordered_factors(
+        data = .x,
+        ordered_levels = mice_data_info$ordered_levels
+      )
+    )
 }
 
 

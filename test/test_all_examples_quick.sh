@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Quick tests for both standard examples.
+# Quick tests for all bundled examples, including s()/mo().
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,6 +12,7 @@ require_command quarto
 
 test_airquality quick
 test_birthwt_logistic quick
+test_birthwt_spline_monotonic quick
 
 list_test_runs
 log "All quick example tests completed successfully"
