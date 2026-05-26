@@ -103,6 +103,14 @@ analysis_spec <- list(
   # ------------------------------------------------------------
   # Imputation specification
   # ------------------------------------------------------------
+  # Imputation targets and auxiliary variables are primarily defined in
+  # 00_variable_dictionary.csv:
+  #
+  #   impute_target
+  #   use_as_auxiliary
+  #   use_in_model
+  #
+  # This block controls how imputation is run.
   
   imputation = list(
     enabled = TRUE,
@@ -115,20 +123,20 @@ analysis_spec <- list(
     # "long_row_level"
     strategy = "row_level",
     
-    # Public demo uses small m for speed.
-    # For real analyses, use something like 50-100.
+    # Number of imputed datasets.
     m = 100,
     
     maxiter = 5,
-    
     mean_match_k = 5,
-    
     verbose = FALSE,
     
-    # For this demo, do not impute the outcome as a target.
-    # Missing Ozone rows will be predicted later using posterior_predict().
+    # If FALSE, the outcome is not imputed as a target, even if missing.
+    # Missing outcome rows can be predicted later using posterior_predict().
     impute_y = FALSE,
     
+    # Optional run-specific override.
+    # Variables listed here will not be imputed as targets, even if
+    # impute_target = TRUE in 00_variable_dictionary.csv.
     extra_exclude_targets = character(0)
   ),
   
