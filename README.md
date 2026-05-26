@@ -251,6 +251,31 @@ results/publication/
 
 ---
 
+
+## Pipeline scripts
+
+The core pipeline is run by `run_all.R`, which calls these scripts in order:
+
+```text
+01_validate_config.R
+02_prepare_data.R
+03_impute.R
+04_fit_models.R
+05_diagnostics.R
+06_posterior_summary.R
+07_posterior_prediction.R
+08_publication_results.R
+```
+
+Two additional scripts are provided for models that use `brms::mo()`:
+
+```text
+09_check_mo_parameter_columns.R      optional; checks extracted mo() parameter columns
+10_publication_mo_results.R         optional; creates derived mo() odds-ratio summaries
+```
+
+Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline, or factor-coded models. They are only needed when you want publication-ready summaries of monotonic ordinal effects.
+
 ## Main files to edit for a new project
 
 Usually edit only:
@@ -754,6 +779,58 @@ ht,History of hypertension,covariate,binary,single,no,0,TRUE,TRUE,FALSE
 ui,Uterine irritability,covariate,binary,single,no,0,TRUE,TRUE,FALSE
 ftv,Physician visits during first trimester,covariate,continuous,single,z,,TRUE,TRUE,FALSE
 row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
+```
+
+
+### Example: Spline + monotonic demo
+
+The `birthwt_spline_monotonic` example is used to test custom `brms` formula terms:
+
+```text
+s(age_z, k = 5)
+mo(lwt_q)
+```
+
+The corresponding dictionary demonstrates two important ideas:
+
+```text
+scale = z      creates age_z, ptl_z, and ftv_z
+type = ordinal creates an ordered factor suitable for mo()
+```
+
+Example:
+
+```text
+var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
+low,Low birth weight,binary_outcome,binary,single,no,0,FALSE,TRUE,FALSE
+age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+lwt_q,Maternal weight quintile,covariate,ordinal,single,no,1,TRUE,TRUE,FALSE
+race,Race,covariate,categorical,single,no,1,TRUE,TRUE,FALSE
+smoke,Smoking during pregnancy,covariate,binary,single,no,0,TRUE,TRUE,FALSE
+ptl,Previous premature labours,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+ht,History of hypertension,covariate,binary,single,no,0,TRUE,TRUE,FALSE
+ui,Uterine irritability,covariate,binary,single,no,0,TRUE,TRUE,FALSE
+ftv,Physician visits during first trimester,covariate,continuous,single,z,,TRUE,TRUE,FALSE
+row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
+```
+
+In `00_config.R`, this dictionary is paired with a custom formula:
+
+```text
+custom_formula = brms::bf(
+  low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z
+)
+```
+
+Notes:
+
+- `lwt_q` is created by the example-data script before the pipeline runs.
+- `lwt_q` is marked as `type = ordinal`, so the pipeline converts it to an ordered factor.
+- `mo(lwt_q)` then models the ordinal effect as monotonic but not necessarily equally spaced.
+- The posterior draw regex for `mo()` models should include both `bsp_` and `simo_` parameters:
+
+```text
+analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
 ```
 
 
@@ -1571,43 +1648,72 @@ but keep it as `TRUE` when changing the dataset, formula, priors, outcome family
 
 For large analyses, avoid `brm_multiple()` unless you have a specific reason to use it. The one-fit-per-imputation design is usually safer and easier to restart.
 
----
 
-## Optional monotonic-effect publication summaries
 
-For models containing `brms::mo()` terms, the usual fixed-effect summary is not always the most interpretable output. The helper script:
+## Optional monotonic-effect post-processing
 
-```
+For models that use `brms::mo()`, the standard posterior parameter table is not always the most interpretable summary. Monotonic effects are parameterised using an overall monotonic coefficient and simplex parameters, so category-specific odds ratios should be derived from posterior draws.
+
+Two optional scripts are provided for this purpose:
+
+```text
+09_check_mo_parameter_columns.R
 10_publication_mo_results.R
 ```
 
-derives posterior odds ratios from the monotonic-effect coefficient and simplex parameters. It supports models with interactions such as:
+Run these after the main pipeline has completed and `results/parameter_draws.rds` has been created.
 
-```
-time * mo(ordinal_variable)
-```
+First, check that the required monotonic-effect parameters were extracted:
 
-Run after the main pipeline has created `results/parameter_draws.rds`:
-
-```
+```text
 Rscript 09_check_mo_parameter_columns.R
+```
+
+Then create publication-ready monotonic-effect summaries:
+
+```text
 Rscript 10_publication_mo_results.R
+```
+
+Optional Quarto rendering:
+
+```text
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 ```
 
-For `mo()` models, make sure `00_config.R` includes `bsp_` and `simo_` in the draw regex:
+The main output table is:
 
-```
-analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
-```
-
-The main publication table from the helper script is:
-
-```
+```text
 results/publication/mo_effects/tables/mo_cumulative_or_table.csv
 ```
 
-Adjacent increment odds ratios and simplex proportions are also written as supplementary tables.
+Additional outputs include:
+
+```text
+results/publication/mo_effects/tables/mo_adjacent_or_table.csv
+results/publication/mo_effects/tables/mo_average_or_table.csv
+results/publication/mo_effects/tables/mo_simplex_table.csv
+results/publication/mo_effects/figures/mo_cumulative_or_plot.png
+results/publication/mo_effects/figures/mo_adjacent_or_plot.png
+results/publication/mo_effects/report/mo_effects_report.qmd
+```
+
+For models using `mo()`, make sure `00_config.R` includes `bsp_` and `simo_` in the posterior draw extraction regex:
+
+```text
+analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
+```
+
+The `10_publication_mo_results.R` script can handle monotonic effects with interactions such as:
+
+```text
+time * mo(ordinal_variable)
+```
+
+In that case, it calculates category-specific monotonic-effect odds ratios at the configured time values.
+
+These scripts are not required for ordinary Gaussian, logistic, spline-only, or factor-coded models. They are only needed when derived monotonic-effect odds ratios are desired.
+
 
 ---
 
@@ -1650,3 +1756,14 @@ Add this to `.gitignore` if it is not already present:
 ```
 test/runs/
 ```
+
+
+The all-example test scripts cover:
+
+```text
+airquality_gaussian
+birthwt_logistic
+birthwt_spline_monotonic
+```
+
+The `birthwt_spline_monotonic` example exercises custom `brms` formula support for `s()` and `mo()` terms.
