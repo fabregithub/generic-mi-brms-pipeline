@@ -85,21 +85,51 @@ analysis_spec <- list(
   # ------------------------------------------------------------
   # Variable roles
   # ------------------------------------------------------------
-  # Variable roles, types, timing, scaling, imputation targets,
-  # model inclusion, reference categories, and auxiliary-variable status are
-  # read from 00_variable_dictionary.csv.
-  #
-  # This block is kept only for optional project-specific overrides.
-  # Leave as NULL for standard use.
-  #
-  # Example override:
-  # variables = list(
-  #   scale_vars = c("age", "income"),
-  #   auxiliary_vars = c("baseline_score")
-  # )
-
-  variables = NULL,
-
+  # These are mostly derived from 00_variable_dictionary.csv,
+  # but keeping key groups here makes the config readable.
+  
+  variables = list(
+    exposure_vars = c(
+      "Solar.R",
+      "Wind",
+      "Temp",
+      "Month"
+    ),
+    
+    covariate_vars = character(0),
+    
+    auxiliary_vars = character(0),
+    
+    continuous_vars = c(
+      "Solar.R",
+      "Wind",
+      "Temp"
+    ),
+    
+    categorical_vars = c(
+      "Month"
+    ),
+    
+    ordinal_vars = character(0),
+    
+    subject_level_vars = c(
+      "Solar.R",
+      "Wind",
+      "Temp",
+      "Month"
+    ),
+    
+    time_varying_vars = character(0),
+    
+    # Variables to z-scale for modeling.
+    # The model will use Solar.R_z, Wind_z, Temp_z.
+    scale_vars = c(
+      "Solar.R",
+      "Wind",
+      "Temp"
+    )
+  ),
+  
   # ------------------------------------------------------------
   # Imputation specification
   # ------------------------------------------------------------
@@ -111,7 +141,7 @@ analysis_spec <- list(
     # "none"
     # "row_level"
     # "subject_level"
-    # "subject_wide_with_repeated_y_auxiliary"  # repeated outcome; subject-wide imputation with y_wide auxiliaries
+    # "subject_wide_with_repeated_y_auxiliary"
     # "long_row_level"
     strategy = "row_level",
     
@@ -129,8 +159,6 @@ analysis_spec <- list(
     # Missing Ozone rows will be predicted later using posterior_predict().
     impute_y = FALSE,
     
-    # Optional run-specific override. Variables listed here will not be
-    # imputed as targets, even if impute_target = TRUE in the dictionary.
     extra_exclude_targets = character(0)
   ),
   
@@ -244,35 +272,25 @@ analysis_spec <- list(
   # ------------------------------------------------------------
   
   parallel = list(
-    # ----------------------------------------------------------
-    # miceRanger imputation parallelisation
-    # ----------------------------------------------------------
-    # impute_workers controls how many parallel miceRanger workers
-    # are used.  num_impute_threads_per_worker controls the number
-    # of ranger threads used inside each worker.
-    #
-    # Approximate CPU demand during imputation:
-    # impute_workers * num_impute_threads_per_worker
-    #
-    # Public example default is deliberately conservative.
-    # For large analyses on a high-memory machine, try:
-    # impute_workers = 4
-    # num_impute_threads_per_worker = 4
-    impute_workers = 1,
-    num_impute_threads_per_worker = 1,
+    # miceRanger imputation threads
+    num_impute_threads = 2,
+    
+    # Public demo default.
+    # For real analyses, set fit_workers = 4 or similar.
+    fit_workers = 4,
+    
+    # For public demo, keep low.
+    # For real analyses, often 4 is useful.
+    cores_per_fit = 4,
+    
+    # Parallel workers for Step 6 posterior draw extraction.
+    # Start conservatively if brmsfit objects are large.
+    summary_workers = 2,
 
-    # Backward-compatible fallback used by older scripts.
-    num_impute_threads = 1,
-
-    # ----------------------------------------------------------
-    # brms model fitting parallelisation
-    # ----------------------------------------------------------
-    # Public example default is deliberately conservative.
-    # For real analyses, increase after the smoke fit succeeds.
-    fit_workers = 1,
-    cores_per_fit = 1,
-
-    future_globals_maxsize_gb = 8
+    # Parallel workers for Step 7 posterior prediction.
+    prediction_workers = 2,
+    
+    future_globals_maxsize_gb = 80
   ),
   
   # ------------------------------------------------------------

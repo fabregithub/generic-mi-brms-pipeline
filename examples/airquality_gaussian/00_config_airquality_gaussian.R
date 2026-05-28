@@ -270,6 +270,13 @@ analysis_spec <- list(
     fit_workers = 1,
     cores_per_fit = 1,
 
+    # Parallel workers for Step 6 posterior draw extraction.
+    # Start conservatively if brmsfit objects are large.
+    summary_workers = 2,
+
+    # Parallel workers for Step 7 posterior prediction.
+    prediction_workers = 2,
+    
     future_globals_maxsize_gb = 8
   ),
   
