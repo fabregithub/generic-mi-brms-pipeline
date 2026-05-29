@@ -1,4 +1,4 @@
-# Generic MI + brms Pipeline Template
+# Generic MICE + brms Pipeline Template
 
 This is a reusable R pipeline template for Bayesian regression analyses with optional multiple imputation.
 
@@ -12,247 +12,119 @@ It supports:
 - diagnostics
 - posterior summaries
 - posterior prediction for rows with missing outcomes
-- publication-ready tables, figures, methods/settings metadata, and report templates
+- publication-ready tables, figures, methods/settings metadata and report templates
 
 The default example uses the built-in public dataset `datasets::airquality`, so the template can be tested and demonstrated without private data.
 
 ---
 
-## Initial R environment setup
-
-Before running the pipeline, prepare the R environment and CmdStan toolchain. These instructions are for macOS. If running Windows, set up the Windows toolchain and R environment appropriately.
-
-### 1. Install system tools on macOS
-
-Run in Terminal to install the Apple command line tools:
-
-```
-xcode-select --install
-```
-
-Run in Terminal to confirm that `make` and a C++ compiler are available:
-
-```
-make --version
-clang++ --version
-```
-
-If these commands fail, restart the Terminal and try again.
-
-### 2. Install required R packages
-
-Run in R or RStudio to install the packages required for this pipeline:
-
-```
-install.packages(c(
-  "tidyverse",
-  "miceRanger",
-  "brms",
-  "posterior",
-  "bayestestR",
-  "future",
-  "furrr",
-  "doParallel",
-  "foreach",
-  "gt",
-  "flextable",
-  "officer",
-  "forcats",
-  "glue",
-  "readr",
-  "tibble",
-  "dplyr",
-  "stringr",
-  "purrr",
-  "rlang"
-))
-```
-
-Run in R or RStudio to install `cmdstanr` from the Stan R-universe repository:
-
-```
-install.packages(
-  "cmdstanr",
-  repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
-)
-```
-
-### 3. Install CmdStan
-
-Run in R or RStudio:
-
-```
-library(cmdstanr)
-
-cmdstanr::check_cmdstan_toolchain(fix = TRUE)
-
-cmdstanr::install_cmdstan()
-```
-
-This may take several minutes because CmdStan is compiled locally.
-
-Run in R or RStudio to check the CmdStan path:
-
-```
-cmdstanr::cmdstan_path()
-```
-
-You should see something like:
-
-```
-/Users/yourname/.cmdstan/cmdstan-2.xx.x
-```
-
-### 4. Verify CmdStan works
-
-Run this small CmdStanR test in R or RStudio:
-
-```
-library(cmdstanr)
-
-cmdstanr::check_cmdstan_toolchain(fix = TRUE)
-
-stan_file <- file.path(
-  cmdstanr::cmdstan_path(),
-  "examples",
-  "bernoulli",
-  "bernoulli.stan"
-)
-
-mod <- cmdstanr::cmdstan_model(stan_file)
-
-fit <- mod$sample(
-  data = list(
-    N = 10,
-    y = c(0, 1, 0, 0, 0, 1, 0, 1, 0, 0)
-  ),
-  chains = 1,
-  parallel_chains = 1,
-  iter_warmup = 10,
-  iter_sampling = 10,
-  refresh = 1
-)
-
-fit$summary()
-```
-
-If this runs successfully, CmdStan is ready.
-
-### 5. Verify brms + cmdstanr works
-
-Run this minimal `brms` test in R or RStudio:
-
-```
-library(brms)
-library(cmdstanr)
-
-options(brms.backend = "cmdstanr")
-
-fit_test <- brms::brm(
-  mpg ~ wt,
-  data = mtcars,
-  family = gaussian(),
-  chains = 1,
-  iter = 500,
-  warmup = 250,
-  cores = 1,
-  backend = "cmdstanr",
-  refresh = 10,
-  silent = 0
-)
-
-summary(fit_test)
-```
-
-If this succeeds, the local Bayesian modelling environment is ready for the pipeline.
-
-
-### 6. Install Quarto for report rendering
-
-The pipeline can generate a Quarto report template in:
-
-```
-results/publication/report/bayesian_mi_report_template.qmd
-```
-
-To render this report to HTML or DOCX, install Quarto.
-
-Run in Terminal on macOS with Homebrew:
-
-```
-brew install --cask quarto
-```
-
-Alternatively, download and install Quarto from the Quarto website.
-
-Run in Terminal to verify the installation:
-
-```
-quarto --version
-```
-
-If this command prints a version number, Quarto is ready.
-
-### 7. Optional: clear CmdStanR cache if fitting fails unexpectedly
-
-If a simple model fails with an error such as:
-
-```
-Fitting failed. Unable to retrieve the metadata.
-No chains finished successfully. Unable to retrieve the fit.
-```
-
-and the data look valid, run the following in Terminal to clear the CmdStanR cache:
-
-```
-rm -rf ~/.cmdstanr-cache
-mkdir -p ~/.cmdstanr-cache
-```
-
-Then re-run the validation or pipeline.
-
-### 8. Recommended reproducibility option: renv
-
-For long-term reproducibility, consider using `renv`. Run in R or RStudio:
-
-```
-install.packages("renv")
-renv::init()
-renv::snapshot()
-```
-
-This creates a project-specific package lockfile so the same package versions can be restored later. Run in R or RStudio:
-
-```
-renv::restore()
-```
-
-
-## Quick start
-
-From a fresh template folder, run in Terminal:
-
-```
-cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
-cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
-Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
-Rscript 01_validate_config.R
-Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
-```
-
-Outputs are written to:
-
-```
-objects/
-fits/
-results/
-results/publication/
-```
+## Contents
+
+1. [Background and purpose](#1-background-and-purpose)
+2. [Structure of the pipeline](#2-structure-of-the-pipeline)
+3. [Quick start](#3-quick-start)
+4. [Adapting the pipeline to private study data](#4-adapting-the-pipeline-to-private-study-data)
+5. [Variable dictionary](#5-variable-dictionary)
+6. [Parallelisation and performance tuning](#6-parallelisation-and-performance-tuning)
+7. [Logging, monitoring, restarting, troubleshooting and debugging](#7-logging-monitoring-restarting-troubleshooting-and-debugging)
+8. [Publication outputs and inference guidance](#8-publication-outputs-and-inference-guidance)
+9. [Examples and tests](#9-examples-and-tests)
+10. [Computing environment setup](#10-computing-environment-setup)
 
 ---
 
+## 1. Background and purpose
 
-## Pipeline scripts
+This pipeline is intended for applied Bayesian regression analyses where the data may contain missing covariates, repeated outcomes, large models, or models that need careful checkpointing. It combines multiple imputation, one-fit-per-imputation Bayesian modelling, diagnostics, posterior summaries, posterior prediction and publication-oriented outputs.
+
+The design prioritises reproducibility and restartability over keeping all fitted models in memory. This is why the pipeline fits one `brms` model per imputed dataset, saves each fit immediately and reuses valid checkpoint files on rerun.
+
+### Brief cautions and limitations
+
+This repository is a workflow scaffold, not a substitute for statistical judgement. Before using it for a scientific analysis, check that the imputation strategy, model formula, priors, diagnostics and posterior summaries are appropriate for your study question.
+
+Some models can be computationally expensive. In particular, large mixed logistic models, spline terms, monotonic ordinal terms and many imputations can take substantial time. Always start with a small quick test before a production run.
+
+---
+
+### Important design notes
+
+This template does **not** use `brm_multiple()` for model fitting.
+
+Instead, it fits one `brms` model per imputed dataset and saves each fit immediately:
+
+```
+fits/fit_imp_001.rds
+fits/fit_imp_002.rds
+...
+fits/fit_imp_100.rds
+```
+
+This is intentionally safer for large datasets because:
+
+- the main R session does not hold all fitted models in memory;
+- completed fits are preserved if the run stops;
+- failed or slow imputations can be re-run separately
+- valid existing fits are skipped on re-run; and
+- worker processes return only small status objects to the main session.
+
+Parallelism happens across imputations using `future` / `furrr`, with dynamic scheduling. This is configured inside the R scripts:
+
+```
+furrr::furrr_options(
+  seed = TRUE,
+  scheduling = Inf
+)
+```
+
+This improves load balancing when some imputed datasets take longer than others.
+
+---
+
+### Supported analysis patterns
+
+The template is designed to support:
+
+```
+single-time outcome, row-level covariates
+repeated outcome with subject-level covariates
+repeated outcome with time-varying covariates
+complete-case analysis without imputation
+row-level multiple imputation
+subject-level multiple imputation
+subject-wide imputation using repeated Y as auxiliary variables
+```
+
+Supported model families include:
+
+```
+gaussian
+bernoulli
+poisson
+negbinomial
+beta
+ordinal
+categorical
+```
+
+Model families and links are set in `00_config.R`.
+
+---
+
+## 2. Structure of the pipeline
+
+The repository is organised around a small set of user-edited files and a sequence of numbered pipeline scripts. In most projects, users only need to edit:
+
+```text
+00_config.R
+00_variable_dictionary.csv
+```
+
+All other scripts should usually be treated as pipeline code.
+
+---
+
+### Pipeline scripts
 
 The core pipeline is run by `run_all.R`, which calls these scripts in order:
 
@@ -274,9 +146,11 @@ Two additional scripts are provided for models that use `brms::mo()`:
 10_publication_mo_results.R         optional; creates derived mo() odds-ratio summaries
 ```
 
-Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline, or factor-coded models. They are only needed when you want publication-ready summaries of monotonic ordinal effects.
+Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline or factor-coded models. They are only needed when you want publication-ready summaries of monotonic ordinal effects.
 
-## Main files to edit for a new project
+---
+
+### Main files to edit for a new project
 
 Usually edit only:
 
@@ -309,14 +183,212 @@ The `examples/` folder contains ready-to-run public-data configurations. These a
 - imputation targets
 - model inclusion
 
+---
+
+## 3. Quick start
+
+This quick start uses the public Gaussian example based on `datasets::airquality`.
+
+If R, CmdStan or Quarto are not yet installed, see [Section 10](#10-computing-environment-setup) first.
+
+First, obtain a local copy of the template repository.
+
+Using Git:
+
+```
+git clone https://github.com/fabregithub/generic-mi-brms-pipeline.git
+cd generic-mi-brms-pipeline
+```
+
+Alternatively, download the repository as a ZIP file from GitHub, unzip it, and open Terminal in the unzipped project folder.
+
+Then run:
+
+```
+cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
+cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
+Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
+Rscript 01_validate_config.R
+Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
+```
+
+Outputs are written to:
+
+```
+objects/
+fits/
+results/
+results/publication/
+```
 
 ---
 
----
+## 4. Adapting the pipeline to private study data
+
+For a new study, the recommended workflow is:
+
+1. Prepare one clean analysis dataset and save it as an `.rds` file.
+2. Edit `00_variable_dictionary.csv`.
+3. Edit `00_config.R`.
+4. Run validation.
+5. Run a small quick test.
+6. Run a modest parallel test.
+7. Run the full production analysis.
+8. Render and inspect publication outputs.
+
+### Data preparation
+
+Before running the pipeline, prepare one clean input dataset, for example:
+
+```text
+data/my_analysis_data.rds
+```
+
+The dataset should already contain consistent variable names, explicit ID variables if needed, explicit time or wave variables for repeated data, and any derived variables that are not created by the pipeline. Save the dataset in R with:
+
+```r
+saveRDS(my_data, "data/my_analysis_data.rds")
+```
+
+Then point `00_config.R` to it:
+
+```r
+analysis_spec$data$raw_data_file <- "data/my_analysis_data.rds"
+```
+
+### Decision tree: where to start
+
+```text
+If your data are one row per person or analytic unit
+  -> use data_structure = "single_time"
+
+If your data are one row per subject-time observation
+  -> use a repeated-data structure and set id_var and time_var
+
+If your covariates are mostly measured once per subject
+  -> consider subject_wide_with_repeated_y_auxiliary imputation
+
+If your predictors change over time
+  -> use a repeated/time-varying pattern and check that timing is set correctly
+
+If there are no missing covariates to impute
+  -> set imputation$enabled = FALSE
+
+If you need ordinary linear/logistic effects
+  -> use fixed_effects = "auto" and control variables through the dictionary
+
+If you need nonlinear continuous effects
+  -> use custom_formula with s()
+
+If you need ordinal monotonic effects
+  -> mark the variable as type = ordinal, use custom_formula with mo(),
+     and run optional scripts 09 and 10 for derived odds-ratio summaries
+```
 
 ---
 
-## Repeated-outcome data and subject-wide imputation
+### Notes for adapting to private study data
+
+For a new project:
+
+1. Replace or edit `00_variable_dictionary.csv`.
+2. Edit `00_config.R`.
+3. Run in Terminal:
+
+```
+Rscript 01_validate_config.R
+```
+
+4. If validation passes, run in Terminal:
+
+```
+Rscript run_all.R 2>&1 | tee run_all_stdout.log
+```
+
+Recommended approach for a new analysis:
+
+### 1. Quick test run
+
+For the first test of a new dataset or model, use small settings. Edit these in `00_config.R` using RStudio or another text editor:
+
+```
+analysis_spec$imputation$m <- 5
+
+analysis_spec$model$chains <- 1
+analysis_spec$model$iter <- 500
+analysis_spec$model$warmup <- 250
+analysis_spec$model$run_smoke_fit <- TRUE
+
+analysis_spec$parallel$fit_workers <- 1
+analysis_spec$parallel$cores_per_fit <- 1
+analysis_spec$parallel$future_globals_maxsize_gb <- 8
+
+analysis_spec$posterior_prediction$ndraws <- 200
+```
+
+This quick test is intended to check that:
+
+```
+the data are read correctly
+the variable dictionary is valid
+imputation runs
+the brms formula is correct
+priors are compatible with the model
+one model can be fitted successfully
+posterior summaries and publication outputs are created
+```
+
+### 2. Parallel test run
+
+After the quick test succeeds, test parallel fitting with modest settings:
+
+```
+analysis_spec$imputation$m <- 10
+
+analysis_spec$model$chains <- 4
+analysis_spec$model$iter <- 500
+analysis_spec$model$warmup <- 250
+analysis_spec$model$run_smoke_fit <- TRUE
+
+analysis_spec$parallel$fit_workers <- 2
+analysis_spec$parallel$cores_per_fit <- 4
+analysis_spec$parallel$future_globals_maxsize_gb <- 20
+```
+
+This checks that multiple chains and multiple imputed datasets can run safely on the machine.
+
+### 3. Full production run
+
+For the final analysis, increase the imputation and MCMC settings. For a high-memory machine, a typical setting is:
+
+```
+analysis_spec$imputation$m <- 100
+
+analysis_spec$model$chains <- 4
+analysis_spec$model$iter <- 2000
+analysis_spec$model$warmup <- 1000
+analysis_spec$model$run_smoke_fit <- TRUE
+
+analysis_spec$parallel$fit_workers <- 4
+analysis_spec$parallel$cores_per_fit <- 4
+analysis_spec$parallel$future_globals_maxsize_gb <- 80
+
+analysis_spec$posterior_prediction$ndraws <- 1000
+```
+
+For repeated runs of the same already-tested analysis, you may set:
+
+```
+analysis_spec$model$run_smoke_fit <- FALSE
+```
+
+but keep it as `TRUE` when changing the dataset, formula, priors, outcome family or imputation strategy.
+
+For large analyses, avoid `brm_multiple()` unless you have a specific reason to use it. The one-fit-per-imputation design is usually safer and easier to restart.
+
+---
+
+### Repeated-outcome data and subject-wide imputation
 
 The generic pipeline can also handle repeated-outcome data where the outcome is measured multiple times per subject and most covariates are subject-level or baseline variables.
 
@@ -353,7 +425,7 @@ Example:
 ```
 data = list(
   raw_data_file = "data/my_repeated_data.rds",
-  id_var = "NO",
+  id_var = "ID",
   row_id_var = "row_id",
   data_structure = "repeated_y_subject_covariates",
   time_var = "time"
@@ -424,9 +496,9 @@ custom_formula = brms::bf(
 
 For large mixed logistic models, `mo()` can be much slower than ordinary factor coding. A practical approach is to use the factor-coded model as the main analysis and use `mo()` as a sensitivity analysis with fewer imputations.
 
+---
 
-
-## Variable roles: dictionary by default, config as optional override
+### Variable roles: dictionary by default, config as optional override
 
 The pipeline uses `00_variable_dictionary.csv` as the default source of truth for variable metadata.
 
@@ -502,9 +574,9 @@ If `variables = NULL`, no override is applied.
 
 If `exposure_vars` or `covariate_vars` are explicitly supplied in `analysis_spec$variables`, they are used by `fixed_effects = "auto"` instead of the dictionary-derived `use_in_model` list. For most analyses, it is simpler and safer to leave `variables = NULL` and control the model through the dictionary.
 
+---
 
-
-## Variable dictionary guide
+# 5. Variable dictionary
 
 The file `00_variable_dictionary.csv` is the main machine-readable description of the analysis variables.
 
@@ -639,8 +711,8 @@ Recommended values:
 | Value | Meaning | Result |
 |---|---|---|
 | `no` | No scaling or transformation | original variable used |
-| `z` | Standardize to mean 0 and SD 1 | creates `var_z` |
-| `center` | Mean-center only | creates centered version if supported |
+| `z` | Standardise to mean 0 and SD 1 | creates `var_z` |
+| `centre` | Mean-centre only | creates centred version if supported |
 | `log` | Log-transform | creates log version if supported |
 | `custom` | User-defined transform outside dictionary | handled in config/functions |
 
@@ -781,7 +853,6 @@ ftv,Physician visits during first trimester,covariate,continuous,single,z,,TRUE,
 row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 ```
 
-
 ### Example: Spline + monotonic demo
 
 The `birthwt_spline_monotonic` example is used to test custom `brms` formula terms:
@@ -794,7 +865,7 @@ mo(lwt_q)
 The corresponding dictionary demonstrates two important ideas:
 
 ```text
-scale = z      creates age_z, ptl_z, and ftv_z
+scale = z      creates age_z, ptl_z and ftv_z
 type = ordinal creates an ordered factor suitable for mo()
 ```
 
@@ -833,12 +904,508 @@ Notes:
 analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
 ```
 
+---
+
+## 6. Parallelisation and performance tuning
+
+The pipeline has several levels of parallelisation.
+
+| Setting | Used in | Meaning |
+|---|---|---|
+| `impute_workers` | Step 3 | Number of parallel `miceRanger` workers |
+| `num_impute_threads_per_worker` | Step 3 | Threads used by each imputation worker |
+| `fit_workers` | Step 4 | Number of imputed datasets fitted in parallel |
+| `cores_per_fit` | Step 4 | Number of chains/cores per `brms` fit |
+| `summary_workers` | Step 6 | Number of workers used for posterior-draw extraction |
+| `prediction_workers` | Step 7 | Number of workers used for posterior prediction |
+| `future_globals_maxsize_gb` | Steps 4, 6, 7 | Maximum future globals size |
+
+Recommended order inside `analysis_spec$parallel`:
+
+```r
+parallel = list(
+  # miceRanger imputation workers and threads
+  impute_workers = 2,
+  num_impute_threads_per_worker = 2,
+
+  # Model fitting workers and cores
+  fit_workers = 4,
+  cores_per_fit = 4,
+
+  # Step 6 and Step 7 workers
+  summary_workers = 2,
+  prediction_workers = 2,
+
+  future_globals_maxsize_gb = 80
+)
+```
+
+For large `brmsfit` objects, start conservatively with `summary_workers = 2` and `prediction_workers = 2`. Increase only if memory is comfortable.
+
+### Suggested settings by computing environment
+
+#### Laptop or low-memory desktop
+
+```r
+analysis_spec$parallel$impute_workers <- 1
+analysis_spec$parallel$num_impute_threads_per_worker <- 1
+analysis_spec$parallel$fit_workers <- 1
+analysis_spec$parallel$cores_per_fit <- 1
+analysis_spec$parallel$summary_workers <- 1
+analysis_spec$parallel$prediction_workers <- 1
+analysis_spec$parallel$future_globals_maxsize_gb <- 8
+```
+
+#### Standard desktop or small workstation
+
+```r
+analysis_spec$parallel$impute_workers <- 2
+analysis_spec$parallel$num_impute_threads_per_worker <- 2
+analysis_spec$parallel$fit_workers <- 2
+analysis_spec$parallel$cores_per_fit <- 4
+analysis_spec$parallel$summary_workers <- 2
+analysis_spec$parallel$prediction_workers <- 2
+analysis_spec$parallel$future_globals_maxsize_gb <- 20
+```
+
+#### High-memory workstation
+
+```r
+analysis_spec$parallel$impute_workers <- 4
+analysis_spec$parallel$num_impute_threads_per_worker <- 4
+analysis_spec$parallel$fit_workers <- 4
+analysis_spec$parallel$cores_per_fit <- 4
+analysis_spec$parallel$summary_workers <- 4
+analysis_spec$parallel$prediction_workers <- 4
+analysis_spec$parallel$future_globals_maxsize_gb <- 80
+```
+
+#### Shared server or high-performance computing environment
+
+Use conservative per-job settings unless your scheduler explicitly allocates more resources. Avoid requesting more threads than the scheduler has allocated to the job.
 
 ---
 
+### Parallel miceRanger imputation
+
+The pipeline can parallelise `miceRanger` imputation using `doParallel` and `foreach`.
+
+In `00_config.R`, the relevant settings are:
+
+```
+analysis_spec$parallel$impute_workers <- 4
+analysis_spec$parallel$num_impute_threads_per_worker <- 4
+```
+
+The approximate CPU demand during imputation is:
+
+```
+impute_workers * num_impute_threads_per_worker
+```
+
+For example:
+
+```
+4 workers * 4 threads per worker = about 16 active threads
+```
+
+Start conservatively, especially on laptops or when the imputation data are large, because parallel `miceRanger` can copy data to worker processes and increase memory use.
+
+Recommended starting values:
+
+```
+# Public examples or ordinary laptops
+analysis_spec$parallel$impute_workers <- 1
+analysis_spec$parallel$num_impute_threads_per_worker <- 1
+
+# High-memory workstation
+analysis_spec$parallel$impute_workers <- 4
+analysis_spec$parallel$num_impute_threads_per_worker <- 4
+```
+
+To test parallel imputation from scratch, remove old imputation outputs first:
+
+```
+rm -f objects/imputation_manifest.rds
+rm -f objects/imputation_spec.rds
+rm -rf objects/imputed_data
+rm -rf objects/imputed_wide
+rm -rf objects/model_data
+rm -rf fits results
+rm -f pipeline_error.flag pipeline_success.flag
+```
+
+Then re-run the pipeline.
+
 ---
 
-## Example datasets
+### Recommended high-performance settings
+
+The following settings were tested successfully on a high-memory machine. Edit these in `00_config.R` using RStudio or another text editor:
+
+```
+analysis_spec$imputation$m <- 100
+
+analysis_spec$model$chains <- 4
+analysis_spec$model$iter <- 2000
+analysis_spec$model$warmup <- 1000
+analysis_spec$model$run_smoke_fit <- TRUE
+
+analysis_spec$parallel$fit_workers <- 4
+analysis_spec$parallel$cores_per_fit <- 4
+analysis_spec$parallel$future_globals_maxsize_gb <- 80
+```
+
+This runs:
+
+```
+100 imputations
+4 chains per model
+4 imputed datasets fitted in parallel
+16 active chains total
+```
+
+For a new analysis, keep the following setting in `00_config.R`:
+
+```
+analysis_spec$model$run_smoke_fit <- TRUE
+```
+
+The smoke fit runs one sequential model first, before launching parallel workers. This catches formula, prior, data, or CmdStan problems early.
+
+After a configuration has been tested successfully, you may set the following in `00_config.R`:
+
+```
+analysis_spec$model$run_smoke_fit <- FALSE
+```
+
+to save a little time.
+
+---
+
+## 7. Logging, monitoring, restarting, troubleshooting and debugging
+
+---
+
+### Common commands
+
+Validate config. Run in Terminal:
+
+```
+Rscript 01_validate_config.R
+```
+
+Run all steps. Run in Terminal:
+
+```
+Rscript run_all.R 2>&1 | tee run_all_stdout.log
+```
+
+Fit one imputed dataset only. Run in Terminal:
+
+```
+Rscript fit_single_imputation.R 1
+```
+
+For example, to fit the model only for imputed dataset 51, run in Terminal:
+
+```
+Rscript fit_single_imputation.R 51
+```
+
+Render the generated Quarto report after installing Quarto. Run in Terminal:
+
+```
+quarto render results/publication/report/bayesian_mi_report_template.qmd
+```
+
+---
+
+### Restarting after interruption
+
+The pipeline is checkpointed. If a run is interrupted, run the following in Terminal:
+
+```
+Rscript run_all.R 2>&1 | tee run_all_stdout.log
+```
+
+Existing valid fit files are skipped.
+
+To clean only fitting and downstream results while keeping prepared/imputed data, run in Terminal:
+
+```
+rm -f fits/fit_imp_*.rds
+rm -f objects/fit_manifest.rds
+rm -f objects/fit_status.rds
+rm -f objects/fit_smoke_status.rds
+rm -f results/fit_status.csv
+rm -f results/fit_smoke_status.csv
+rm -f results/worker_logs/fit_worker_imp_*.log
+
+rm -f results/parameter_draws.rds
+rm -f results/parameter_summary.rds
+rm -f results/parameter_summary.csv
+rm -f results/parameter_draws_imp_*.rds
+rm -f objects/parameter_manifest.rds
+
+rm -f results/missing_y_draws.rds
+rm -f results/missing_y_summary.rds
+rm -f results/missing_y_summary.csv
+rm -f results/missing_y_draws_imp_*.rds
+
+rm -f pipeline_error.flag
+rm -f pipeline_success.flag
+rm -f run_all_stdout.log
+```
+or run ```bash 99_clean_fitting_results.sh```.
+
+To clean imputation and all downstream outputs, run in Terminal:
+
+```
+rm -f objects/imputation_manifest.rds
+rm -f objects/imputed_data/*.rds
+rm -f objects/imputed_wide/*.rds
+
+rm -f objects/model_data_manifest.rds
+rm -f objects/model_data/*.rds
+
+rm -f fits/fit_imp_*.rds
+rm -f objects/fit_manifest.rds
+rm -f objects/fit_status.rds
+rm -f objects/fit_smoke_status.rds
+rm -f results/fit_status.csv
+rm -f results/fit_smoke_status.csv
+rm -f results/worker_logs/fit_worker_imp_*.log
+
+rm -f results/parameter_draws.rds
+rm -f results/parameter_summary.rds
+rm -f results/parameter_summary.csv
+rm -f results/parameter_draws_imp_*.rds
+rm -f objects/parameter_manifest.rds
+
+rm -f results/missing_y_draws.rds
+rm -f results/missing_y_summary.rds
+rm -f results/missing_y_summary.csv
+rm -f results/missing_y_draws_imp_*.rds
+
+rm -f pipeline_error.flag
+rm -f pipeline_success.flag
+rm -f run_all_stdout.log
+```
+or run ```bash 99_cleanall.sh```.
+
+---
+
+### Logging and monitoring
+
+The pipeline writes logs and status files:
+
+```
+pipeline_progress.log
+pipeline_stdout.log
+pipeline_heartbeat.txt
+pipeline_success.flag
+pipeline_error.flag
+results/worker_logs/
+```
+
+Monitor progress by running the following in Terminal:
+
+```
+tail -f pipeline_progress.log
+```
+
+Inspect worker-level fitting logs by running the following in Terminal:
+
+```
+ls -lh results/worker_logs
+cat results/worker_logs/fit_worker_imp_001.log
+```
+
+If the pipeline completes successfully, this file is created:
+
+```
+pipeline_success.flag
+```
+
+If an R-level error is caught, this file is created:
+
+```
+pipeline_error.flag
+```
+
+If the machine crashes or restarts unexpectedly, there may be no error flag. In that case, check the heartbeat and logs, then re-run. The checkpoint system should skip completed valid fits.
+
+---
+
+### Troubleshooting CmdStan cache issues
+
+If a simple model fails with an error like:
+
+```
+Fitting failed. Unable to retrieve the metadata.
+No chains finished successfully. Unable to retrieve the fit.
+```
+
+and the data look valid, try clearing the CmdStanR cache. Run in Terminal:
+
+```
+rm -rf ~/.cmdstanr-cache
+mkdir -p ~/.cmdstanr-cache
+```
+
+Then re-run the direct debug fit or the pipeline.
+
+This can resolve stale or corrupted compiled-model cache issues.
+
+---
+
+### Debugging model fitting
+
+A good sequence is:
+
+1. Validate the config. Run in Terminal:
+
+```
+Rscript 01_validate_config.R
+```
+
+2. Run one direct or smoke fit.
+
+3. If successful, run the full pipeline.
+
+4. If a specific imputed dataset is slow or problematic during model fitting, fit it alone. Run in Terminal:
+
+```
+Rscript fit_single_imputation.R 51
+```
+
+You can temporarily skip or restrict **model fitting for selected imputed datasets** in `00_config.R`.
+
+These options do **not** skip the imputation step itself. They only control which already-created imputed datasets are passed to Step 4, where `brms` models are fitted.
+
+To fit all imputations except imputations 45 and 51:
+
+```
+analysis_spec$model$skip_imputations <- c(45, 51)
+analysis_spec$model$only_imputations <- integer(0)
+```
+
+To fit only imputation 51, for example as a diagnostic re-run:
+
+```
+analysis_spec$model$skip_imputations <- integer(0)
+analysis_spec$model$only_imputations <- c(51)
+```
+
+Interpretation:
+
+```
+skip_imputations = do not fit brms models for these imputed datasets
+only_imputations = fit brms models only for these imputed datasets
+```
+
+These settings are useful when one imputed dataset is unusually slow or problematic. Completed valid fit files are still preserved and skipped on re-run.
+
+---
+
+# 8. Publication outputs and inference guidance
+
+After successful completion, publication outputs are written to:
+
+```
+results/publication/
+```
+
+Typical outputs include:
+
+```
+results/publication/tables/main_effect_table_display.csv
+results/publication/tables/main_effect_table_full.csv
+results/publication/tables/diagnostics_summary.csv
+results/publication/tables/analysis_metadata.csv
+results/publication/tables/analysis_metadata.rds
+results/publication/figures/forest_plot_odds_ratios.png
+results/publication/report/bayesian_mi_report_template.qmd
+```
+
+The generated Quarto report includes posterior results, diagnostics, figures and a methods/settings table based on `analysis_metadata.csv`. This table records key analysis settings such as the imputation strategy, target number of imputations, fitted imputations used in posterior summaries, model formula, family/link, priors, MCMC settings, parallel settings, posterior-summary settings and predictive-draw settings.
+
+Render the report with:
+
+```
+quarto render results/publication/report/bayesian_mi_report_template.qmd
+```
+
+---
+
+### Optional monotonic-effect post-processing
+
+For models that use `brms::mo()`, the standard posterior parameter table is not always the most interpretable summary. Monotonic effects are parameterised using an overall monotonic coefficient and simplex parameters, so category-specific odds ratios should be derived from posterior draws.
+
+Two optional scripts are provided for this purpose:
+
+```text
+09_check_mo_parameter_columns.R
+10_publication_mo_results.R
+```
+
+Run these after the main pipeline has completed and `results/parameter_draws.rds` has been created.
+
+First, check that the required monotonic-effect parameters were extracted:
+
+```text
+Rscript 09_check_mo_parameter_columns.R
+```
+
+Then create publication-ready monotonic-effect summaries:
+
+```text
+Rscript 10_publication_mo_results.R
+```
+
+Optional Quarto rendering:
+
+```text
+quarto render results/publication/mo_effects/report/mo_effects_report.qmd
+```
+
+The main output table is:
+
+```text
+results/publication/mo_effects/tables/mo_cumulative_or_table.csv
+```
+
+Additional outputs include:
+
+```text
+results/publication/mo_effects/tables/mo_adjacent_or_table.csv
+results/publication/mo_effects/tables/mo_average_or_table.csv
+results/publication/mo_effects/tables/mo_simplex_table.csv
+results/publication/mo_effects/figures/mo_cumulative_or_plot.png
+results/publication/mo_effects/figures/mo_adjacent_or_plot.png
+results/publication/mo_effects/report/mo_effects_report.qmd
+```
+
+For models using `mo()`, make sure `00_config.R` includes `bsp_` and `simo_` in the posterior draw extraction regex:
+
+```text
+analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
+```
+
+The `10_publication_mo_results.R` script can handle monotonic effects with interactions such as:
+
+```text
+time * mo(ordinal_variable)
+```
+
+In that case, it calculates category-specific monotonic-effect odds ratios at the configured time values.
+
+These scripts are not required for ordinary Gaussian, logistic, spline-only or factor-coded models. They are only needed when derived monotonic-effect odds ratios are desired.
+
+---
+
+# 9. Examples and tests
 
 The repository includes three public example analyses. These are intended to help users test the full pipeline before applying it to private study data.
 
@@ -996,10 +1563,33 @@ Rscript 01_validate_config.R
 Rscript run_all.R 2>&1 | tee run_all_birthwt_spline_monotonic_stdout.log
 ```
 
-Render the report:
+Render the main report:
 
 ```
 quarto render results/publication/report/bayesian_mi_report_template.qmd
+```
+
+For this example, the model includes mo(lwt_q). To create derived monotonic-effect odds-ratio summaries, also run:
+
+```
+Rscript 09_check_mo_parameter_columns.R
+Rscript 10_publication_mo_results.R
+quarto render results/publication/mo_effects/report/mo_effects_report.qmd
+```
+
+The main monotonic-effect table is:
+
+```
+results/publication/mo_effects/tables/mo_cumulative_or_table.csv
+```
+
+Supplementary monotonic-effect outputs include:
+
+```
+results/publication/mo_effects/tables/mo_adjacent_or_table.csv
+results/publication/mo_effects/tables/mo_simplex_table.csv
+results/publication/mo_effects/report/mo_effects_report.html
+results/publication/mo_effects/report/mo_effects_report.docx
 ```
 
 See also:
@@ -1078,646 +1668,9 @@ results/publication/report/bayesian_mi_report_template.html
 results/publication/report/bayesian_mi_report_template.docx
 ```
 
-
 ---
 
-## Parallel miceRanger imputation
-
-The pipeline can parallelise `miceRanger` imputation using `doParallel` and `foreach`.
-
-In `00_config.R`, the relevant settings are:
-
-```
-analysis_spec$parallel$impute_workers <- 4
-analysis_spec$parallel$num_impute_threads_per_worker <- 4
-```
-
-The approximate CPU demand during imputation is:
-
-```
-impute_workers * num_impute_threads_per_worker
-```
-
-For example:
-
-```
-4 workers * 4 threads per worker = about 16 active threads
-```
-
-Start conservatively, especially on laptops or when the imputation data are large, because parallel `miceRanger` can copy data to worker processes and increase memory use.
-
-Recommended starting values:
-
-```
-# Public examples or ordinary laptops
-analysis_spec$parallel$impute_workers <- 1
-analysis_spec$parallel$num_impute_threads_per_worker <- 1
-
-# High-memory workstation
-analysis_spec$parallel$impute_workers <- 4
-analysis_spec$parallel$num_impute_threads_per_worker <- 4
-```
-
-To test parallel imputation from scratch, remove old imputation outputs first:
-
-```
-rm -f objects/imputation_manifest.rds
-rm -f objects/imputation_spec.rds
-rm -rf objects/imputed_data
-rm -rf objects/imputed_wide
-rm -rf objects/model_data
-rm -rf fits results
-rm -f pipeline_error.flag pipeline_success.flag
-```
-
-Then re-run the pipeline.
-
-
-## Recommended high-performance settings
-
-The following settings were tested successfully on a high-memory machine. Edit these in `00_config.R` using RStudio or another text editor:
-
-```
-analysis_spec$imputation$m <- 100
-
-analysis_spec$model$chains <- 4
-analysis_spec$model$iter <- 2000
-analysis_spec$model$warmup <- 1000
-analysis_spec$model$run_smoke_fit <- TRUE
-
-analysis_spec$parallel$fit_workers <- 4
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$future_globals_maxsize_gb <- 80
-```
-
-This runs:
-
-```
-100 imputations
-4 chains per model
-4 imputed datasets fitted in parallel
-16 active chains total
-```
-
-For a new analysis, keep the following setting in `00_config.R`:
-
-```
-analysis_spec$model$run_smoke_fit <- TRUE
-```
-
-The smoke fit runs one sequential model first, before launching parallel workers. This catches formula, prior, data, or CmdStan problems early.
-
-After a configuration has been tested successfully, you may set the following in `00_config.R`:
-
-```
-analysis_spec$model$run_smoke_fit <- FALSE
-```
-
-to save a little time.
-
----
-
-## Important design notes
-
-This template does **not** use `brm_multiple()` for model fitting.
-
-Instead, it fits one `brms` model per imputed dataset and saves each fit immediately:
-
-```
-fits/fit_imp_001.rds
-fits/fit_imp_002.rds
-...
-fits/fit_imp_100.rds
-```
-
-This is intentionally safer for large datasets because:
-
-- the main R session does not hold all fitted models in memory
-- completed fits are preserved if the run stops
-- failed or slow imputations can be re-run separately
-- valid existing fits are skipped on re-run
-- worker processes return only small status objects to the main session
-
-Parallelism happens across imputations using `future` / `furrr`, with dynamic scheduling. This is configured inside the R scripts:
-
-```
-furrr::furrr_options(
-  seed = TRUE,
-  scheduling = Inf
-)
-```
-
-This improves load balancing when some imputed datasets take longer than others.
-
----
-
-## Common commands
-
-Validate config. Run in Terminal:
-
-```
-Rscript 01_validate_config.R
-```
-
-Run all steps. Run in Terminal:
-
-```
-Rscript run_all.R 2>&1 | tee run_all_stdout.log
-```
-
-Fit one imputed dataset only. Run in Terminal:
-
-```
-Rscript fit_single_imputation.R 1
-```
-
-For example, to fit the model only for imputed dataset 51, run in Terminal:
-
-```
-Rscript fit_single_imputation.R 51
-```
-
-Render the generated Quarto report after installing Quarto. Run in Terminal:
-
-```
-quarto render results/publication/report/bayesian_mi_report_template.qmd
-```
-
----
-
-## Restarting after interruption
-
-The pipeline is checkpointed. If a run is interrupted, run the following in Terminal:
-
-```
-Rscript run_all.R 2>&1 | tee run_all_stdout.log
-```
-
-Existing valid fit files are skipped.
-
-To clean only fitting and downstream results while keeping prepared/imputed data, run in Terminal:
-
-```
-rm -f fits/fit_imp_*.rds
-rm -f objects/fit_manifest.rds
-rm -f objects/fit_status.rds
-rm -f objects/fit_smoke_status.rds
-rm -f results/fit_status.csv
-rm -f results/fit_smoke_status.csv
-rm -f results/worker_logs/fit_worker_imp_*.log
-
-rm -f results/parameter_draws.rds
-rm -f results/parameter_summary.rds
-rm -f results/parameter_summary.csv
-rm -f results/parameter_draws_imp_*.rds
-rm -f objects/parameter_manifest.rds
-
-rm -f results/missing_y_draws.rds
-rm -f results/missing_y_summary.rds
-rm -f results/missing_y_summary.csv
-rm -f results/missing_y_draws_imp_*.rds
-
-rm -f pipeline_error.flag
-rm -f pipeline_success.flag
-rm -f run_all_stdout.log
-```
-or run ```bash 99_clean_fitting_results.sh```.
-
-To clean imputation and all downstream outputs, run in Terminal:
-
-```
-rm -f objects/imputation_manifest.rds
-rm -f objects/imputed_data/*.rds
-rm -f objects/imputed_wide/*.rds
-
-rm -f objects/model_data_manifest.rds
-rm -f objects/model_data/*.rds
-
-rm -f fits/fit_imp_*.rds
-rm -f objects/fit_manifest.rds
-rm -f objects/fit_status.rds
-rm -f objects/fit_smoke_status.rds
-rm -f results/fit_status.csv
-rm -f results/fit_smoke_status.csv
-rm -f results/worker_logs/fit_worker_imp_*.log
-
-rm -f results/parameter_draws.rds
-rm -f results/parameter_summary.rds
-rm -f results/parameter_summary.csv
-rm -f results/parameter_draws_imp_*.rds
-rm -f objects/parameter_manifest.rds
-
-rm -f results/missing_y_draws.rds
-rm -f results/missing_y_summary.rds
-rm -f results/missing_y_summary.csv
-rm -f results/missing_y_draws_imp_*.rds
-
-rm -f pipeline_error.flag
-rm -f pipeline_success.flag
-rm -f run_all_stdout.log
-```
-or run ```bash 99_cleanall.sh```.
-
----
-
-## Logging and monitoring
-
-The pipeline writes logs and status files:
-
-```
-pipeline_progress.log
-pipeline_stdout.log
-pipeline_heartbeat.txt
-pipeline_success.flag
-pipeline_error.flag
-results/worker_logs/
-```
-
-Monitor progress by running the following in Terminal:
-
-```
-tail -f pipeline_progress.log
-```
-
-Inspect worker-level fitting logs by running the following in Terminal:
-
-```
-ls -lh results/worker_logs
-cat results/worker_logs/fit_worker_imp_001.log
-```
-
-If the pipeline completes successfully, this file is created:
-
-```
-pipeline_success.flag
-```
-
-If an R-level error is caught, this file is created:
-
-```
-pipeline_error.flag
-```
-
-If the machine crashes or restarts unexpectedly, there may be no error flag. In that case, check the heartbeat and logs, then re-run. The checkpoint system should skip completed valid fits.
-
----
-
-## Troubleshooting CmdStan cache issues
-
-If a simple model fails with an error like:
-
-```
-Fitting failed. Unable to retrieve the metadata.
-No chains finished successfully. Unable to retrieve the fit.
-```
-
-and the data look valid, try clearing the CmdStanR cache. Run in Terminal:
-
-```
-rm -rf ~/.cmdstanr-cache
-mkdir -p ~/.cmdstanr-cache
-```
-
-Then re-run the direct debug fit or the pipeline.
-
-This can resolve stale or corrupted compiled-model cache issues.
-
----
-
-## Debugging model fitting
-
-A good sequence is:
-
-1. Validate the config. Run in Terminal:
-
-```
-Rscript 01_validate_config.R
-```
-
-2. Run one direct or smoke fit.
-
-3. If successful, run the full pipeline.
-
-4. If a specific imputed dataset is slow or problematic during model fitting, fit it alone. Run in Terminal:
-
-```
-Rscript fit_single_imputation.R 51
-```
-
-You can temporarily skip or restrict **model fitting for selected imputed datasets** in `00_config.R`.
-
-These options do **not** skip the imputation step itself. They only control which already-created imputed datasets are passed to Step 4, where `brms` models are fitted.
-
-To fit all imputations except imputations 45 and 51:
-
-```
-analysis_spec$model$skip_imputations <- c(45, 51)
-analysis_spec$model$only_imputations <- integer(0)
-```
-
-To fit only imputation 51, for example as a diagnostic re-run:
-
-```
-analysis_spec$model$skip_imputations <- integer(0)
-analysis_spec$model$only_imputations <- c(51)
-```
-
-Interpretation:
-
-```
-skip_imputations = do not fit brms models for these imputed datasets
-only_imputations = fit brms models only for these imputed datasets
-```
-
-These settings are useful when one imputed dataset is unusually slow or problematic. Completed valid fit files are still preserved and skipped on re-run.
-
----
-
-## Dependencies
-
-The pipeline requires both R packages and the Quarto command-line tool for report rendering.
-
-Core R packages:
-
-```
-install.packages(c(
-  "tidyverse",
-  "miceRanger",
-  "brms",
-  "posterior",
-  "bayestestR",
-  "future",
-  "furrr",
-  "doParallel",
-  "foreach",
-  "gt",
-  "flextable",
-  "officer",
-  "forcats",
-  "glue"
-))
-```
-
-
-Quarto is also required if you want to render the generated `.qmd` report. Run in Terminal:
-
-```
-# macOS with Homebrew
-brew install --cask quarto
-
-# Check installation
-quarto --version
-```
-
-Install `cmdstanr` and CmdStan. Run in R or RStudio:
-
-```
-install.packages(
-  "cmdstanr",
-  repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
-)
-
-cmdstanr::install_cmdstan()
-cmdstanr::check_cmdstan_toolchain(fix = TRUE)
-```
-
-If CmdStan is already installed, confirm the path in R or RStudio:
-
-```
-cmdstanr::cmdstan_path()
-```
-
----
-
-## Supported analysis patterns
-
-The template is designed to support:
-
-```
-single-time outcome, row-level covariates
-repeated outcome with subject-level covariates
-repeated outcome with time-varying covariates
-complete-case analysis without imputation
-row-level multiple imputation
-subject-level multiple imputation
-subject-wide imputation using repeated Y as auxiliary variables
-```
-
-Supported model families include:
-
-```
-gaussian
-bernoulli
-poisson
-negbinomial
-beta
-ordinal
-categorical
-```
-
-Model families and links are set in `00_config.R`.
-
----
-
-## Publication outputs
-
-After successful completion, publication outputs are written to:
-
-```
-results/publication/
-```
-
-Typical outputs include:
-
-```
-results/publication/tables/main_effect_table_display.csv
-results/publication/tables/main_effect_table_full.csv
-results/publication/tables/diagnostics_summary.csv
-results/publication/tables/analysis_metadata.csv
-results/publication/tables/analysis_metadata.rds
-results/publication/figures/forest_plot_odds_ratios.png
-results/publication/report/bayesian_mi_report_template.qmd
-```
-
-The generated Quarto report includes posterior results, diagnostics, figures, and a methods/settings table based on `analysis_metadata.csv`. This table records key analysis settings such as the imputation strategy, target number of imputations, fitted imputations used in posterior summaries, model formula, family/link, priors, MCMC settings, parallel settings, posterior-summary settings, and predictive-draw settings.
-
-Render the report with:
-
-```
-quarto render results/publication/report/bayesian_mi_report_template.qmd
-```
-
----
-
-## Notes for adapting to private study data
-
-For a new project:
-
-1. Replace or edit `00_variable_dictionary.csv`.
-2. Edit `00_config.R`.
-3. Run in Terminal:
-
-```
-Rscript 01_validate_config.R
-```
-
-4. If validation passes, run in Terminal:
-
-```
-Rscript run_all.R 2>&1 | tee run_all_stdout.log
-```
-
-Recommended approach for a new analysis:
-
-### 1. Quick test run
-
-For the first test of a new dataset or model, use small settings. Edit these in `00_config.R` using RStudio or another text editor:
-
-```
-analysis_spec$imputation$m <- 5
-
-analysis_spec$model$chains <- 1
-analysis_spec$model$iter <- 500
-analysis_spec$model$warmup <- 250
-analysis_spec$model$run_smoke_fit <- TRUE
-
-analysis_spec$parallel$fit_workers <- 1
-analysis_spec$parallel$cores_per_fit <- 1
-analysis_spec$parallel$future_globals_maxsize_gb <- 8
-
-analysis_spec$posterior_prediction$ndraws <- 200
-```
-
-This quick test is intended to check that:
-
-```
-the data are read correctly
-the variable dictionary is valid
-imputation runs
-the brms formula is correct
-priors are compatible with the model
-one model can be fitted successfully
-posterior summaries and publication outputs are created
-```
-
-### 2. Parallel test run
-
-After the quick test succeeds, test parallel fitting with modest settings:
-
-```
-analysis_spec$imputation$m <- 10
-
-analysis_spec$model$chains <- 4
-analysis_spec$model$iter <- 500
-analysis_spec$model$warmup <- 250
-analysis_spec$model$run_smoke_fit <- TRUE
-
-analysis_spec$parallel$fit_workers <- 2
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$future_globals_maxsize_gb <- 20
-```
-
-This checks that multiple chains and multiple imputed datasets can run safely on the machine.
-
-### 3. Full production run
-
-For the final analysis, increase the imputation and MCMC settings. For a high-memory machine, a typical setting is:
-
-```
-analysis_spec$imputation$m <- 100
-
-analysis_spec$model$chains <- 4
-analysis_spec$model$iter <- 2000
-analysis_spec$model$warmup <- 1000
-analysis_spec$model$run_smoke_fit <- TRUE
-
-analysis_spec$parallel$fit_workers <- 4
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$future_globals_maxsize_gb <- 80
-
-analysis_spec$posterior_prediction$ndraws <- 1000
-```
-
-For repeated runs of the same already-tested analysis, you may set:
-
-```
-analysis_spec$model$run_smoke_fit <- FALSE
-```
-
-but keep it as `TRUE` when changing the dataset, formula, priors, outcome family, or imputation strategy.
-
-For large analyses, avoid `brm_multiple()` unless you have a specific reason to use it. The one-fit-per-imputation design is usually safer and easier to restart.
-
-
-
-## Optional monotonic-effect post-processing
-
-For models that use `brms::mo()`, the standard posterior parameter table is not always the most interpretable summary. Monotonic effects are parameterised using an overall monotonic coefficient and simplex parameters, so category-specific odds ratios should be derived from posterior draws.
-
-Two optional scripts are provided for this purpose:
-
-```text
-09_check_mo_parameter_columns.R
-10_publication_mo_results.R
-```
-
-Run these after the main pipeline has completed and `results/parameter_draws.rds` has been created.
-
-First, check that the required monotonic-effect parameters were extracted:
-
-```text
-Rscript 09_check_mo_parameter_columns.R
-```
-
-Then create publication-ready monotonic-effect summaries:
-
-```text
-Rscript 10_publication_mo_results.R
-```
-
-Optional Quarto rendering:
-
-```text
-quarto render results/publication/mo_effects/report/mo_effects_report.qmd
-```
-
-The main output table is:
-
-```text
-results/publication/mo_effects/tables/mo_cumulative_or_table.csv
-```
-
-Additional outputs include:
-
-```text
-results/publication/mo_effects/tables/mo_adjacent_or_table.csv
-results/publication/mo_effects/tables/mo_average_or_table.csv
-results/publication/mo_effects/tables/mo_simplex_table.csv
-results/publication/mo_effects/figures/mo_cumulative_or_plot.png
-results/publication/mo_effects/figures/mo_adjacent_or_plot.png
-results/publication/mo_effects/report/mo_effects_report.qmd
-```
-
-For models using `mo()`, make sure `00_config.R` includes `bsp_` and `simo_` in the posterior draw extraction regex:
-
-```text
-analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
-```
-
-The `10_publication_mo_results.R` script can handle monotonic effects with interactions such as:
-
-```text
-time * mo(ordinal_variable)
-```
-
-In that case, it calculates category-specific monotonic-effect odds ratios at the configured time values.
-
-These scripts are not required for ordinary Gaussian, logistic, spline-only, or factor-coded models. They are only needed when derived monotonic-effect odds ratios are desired.
-
-
----
-
-## Test outputs
+### Test outputs
 
 The bash test scripts write isolated preserved runs under:
 
@@ -1757,7 +1710,6 @@ Add this to `.gitignore` if it is not already present:
 test/runs/
 ```
 
-
 The all-example test scripts cover:
 
 ```text
@@ -1767,3 +1719,380 @@ birthwt_spline_monotonic
 ```
 
 The `birthwt_spline_monotonic` example exercises custom `brms` formula support for `s()` and `mo()` terms.
+
+---
+
+## 10. Computing environment setup
+
+Before running the pipeline, prepare the R environment and CmdStan toolchain.
+
+The exact setup depends on the operating system and computing environment. The sections below cover macOS, Windows and Linux. If you are using a managed workstation, shared server or high-performance computing cluster, some system tools may need to be installed by an administrator or loaded through environment modules.
+
+---
+
+### 10.1 macOS setup
+
+Before running the pipeline, prepare the R environment and CmdStan toolchain. These instructions are for macOS. If running Windows, set up the Windows toolchain and R environment appropriately.
+
+### 1. Install system tools on macOS
+
+Run in Terminal to install the Apple command line tools:
+
+```
+xcode-select --install
+```
+
+Run in Terminal to confirm that `make` and a C++ compiler are available:
+
+```
+make --version
+clang++ --version
+```
+
+If these commands fail, restart the Terminal and try again.
+
+### 2. Install required R packages
+
+Run in R or RStudio to install the packages required for this pipeline:
+
+```
+install.packages(c(
+  "tidyverse",
+  "miceRanger",
+  "brms",
+  "posterior",
+  "bayestestR",
+  "future",
+  "furrr",
+  "doParallel",
+  "foreach",
+  "gt",
+  "flextable",
+  "officer",
+  "forcats",
+  "glue",
+  "readr",
+  "tibble",
+  "dplyr",
+  "stringr",
+  "purrr",
+  "rlang"
+))
+```
+
+Run in R or RStudio to install `cmdstanr` from the Stan R-universe repository:
+
+```
+install.packages(
+  "cmdstanr",
+  repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
+)
+```
+
+### 3. Install CmdStan
+
+Run in R or RStudio:
+
+```
+library(cmdstanr)
+
+cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+
+cmdstanr::install_cmdstan()
+```
+
+This may take several minutes because CmdStan is compiled locally.
+
+Run in R or RStudio to check the CmdStan path:
+
+```
+cmdstanr::cmdstan_path()
+```
+
+You should see something like:
+
+```
+/Users/yourname/.cmdstan/cmdstan-2.xx.x
+```
+
+### 4. Verify CmdStan works
+
+Run this small CmdStanR test in R or RStudio:
+
+```
+library(cmdstanr)
+
+cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+
+stan_file <- file.path(
+  cmdstanr::cmdstan_path(),
+  "examples",
+  "bernoulli",
+  "bernoulli.stan"
+)
+
+mod <- cmdstanr::cmdstan_model(stan_file)
+
+fit <- mod$sample(
+  data = list(
+    N = 10,
+    y = c(0, 1, 0, 0, 0, 1, 0, 1, 0, 0)
+  ),
+  chains = 1,
+  parallel_chains = 1,
+  iter_warmup = 10,
+  iter_sampling = 10,
+  refresh = 1
+)
+
+fit$summary()
+```
+
+If this runs successfully, CmdStan is ready.
+
+### 5. Verify brms + cmdstanr works
+
+Run this minimal `brms` test in R or RStudio:
+
+```
+library(brms)
+library(cmdstanr)
+
+options(brms.backend = "cmdstanr")
+
+fit_test <- brms::brm(
+  mpg ~ wt,
+  data = mtcars,
+  family = gaussian(),
+  chains = 1,
+  iter = 500,
+  warmup = 250,
+  cores = 1,
+  backend = "cmdstanr",
+  refresh = 10,
+  silent = 0
+)
+
+summary(fit_test)
+```
+
+If this succeeds, the local Bayesian modelling environment is ready for the pipeline.
+
+### 6. Install Quarto for report rendering
+
+The pipeline can generate a Quarto report template in:
+
+```
+results/publication/report/bayesian_mi_report_template.qmd
+```
+
+To render this report to HTML or DOCX, install Quarto.
+
+Run in Terminal on macOS with Homebrew:
+
+```
+brew install --cask quarto
+```
+
+Alternatively, download and install Quarto from the Quarto website.
+
+Run in Terminal to verify the installation:
+
+```
+quarto --version
+```
+
+If this command prints a version number, Quarto is ready.
+
+### 7. Optional: clear CmdStanR cache if fitting fails unexpectedly
+
+If a simple model fails with an error such as:
+
+```
+Fitting failed. Unable to retrieve the metadata.
+No chains finished successfully. Unable to retrieve the fit.
+```
+
+and the data look valid, run the following in Terminal to clear the CmdStanR cache:
+
+```
+rm -rf ~/.cmdstanr-cache
+mkdir -p ~/.cmdstanr-cache
+```
+
+Then re-run the validation or pipeline.
+
+### 8. Recommended reproducibility option: renv
+
+For long-term reproducibility, consider using `renv`. Run in R or RStudio:
+
+```
+install.packages("renv")
+renv::init()
+renv::snapshot()
+```
+
+This creates a project-specific package lockfile so the same package versions can be restored later. Run in R or RStudio:
+
+```
+renv::restore()
+```
+
+---
+
+### 10.2 Windows setup
+
+Install:
+
+```text
+R
+RStudio
+Rtools
+Quarto
+```
+
+Use the version of Rtools that matches your R version. After installing Rtools, open R or RStudio and run:
+
+```r
+Sys.which("make")
+Sys.which("g++")
+```
+
+Both should return valid paths.
+
+Install the required R packages and `cmdstanr` using the same R commands shown in the macOS section. Then run:
+
+```r
+library(cmdstanr)
+cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+cmdstanr::install_cmdstan()
+cmdstanr::cmdstan_path()
+```
+
+If toolchain problems persist, restart RStudio after installing Rtools. Then run the same CmdStan and `brms` verification examples shown in the macOS section.
+
+To verify Quarto from Command Prompt or PowerShell:
+
+```text
+quarto --version
+```
+
+---
+
+### 10.3 Linux setup
+
+Linux distributions differ, but the required system tools are generally:
+
+```text
+make
+g++
+tar
+gzip
+```
+
+For Ubuntu/Debian:
+
+```text
+sudo apt update
+sudo apt install -y build-essential gfortran make
+```
+
+For Fedora:
+
+```text
+sudo dnf groupinstall -y "Development Tools"
+sudo dnf install -y gcc-c++ gcc-gfortran make
+```
+
+For Red Hat Enterprise Linux or compatible systems, the exact commands may depend on the system configuration and repositories.
+
+On a shared server or cluster, system tools may be provided through environment modules, for example:
+
+```text
+module avail gcc
+module load gcc
+```
+
+Check with your system administrator or cluster documentation.
+
+Install the required R packages and `cmdstanr` using the same R commands shown in the macOS section. Then run:
+
+```r
+library(cmdstanr)
+cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+cmdstanr::install_cmdstan()
+cmdstanr::cmdstan_path()
+```
+
+Verify `brms` + `cmdstanr` using the same test shown in the macOS section.
+
+Install Quarto using the installer appropriate for your distribution. On Ubuntu/Debian, for example:
+
+```text
+sudo dpkg -i quarto-*-linux-amd64.deb
+```
+
+Then check:
+
+```text
+quarto --version
+```
+
+On a shared server, Quarto may be available as a module or may need to be installed in a user directory.
+
+---
+
+### Dependencies
+
+The pipeline requires both R packages and the Quarto command-line tool for report rendering.
+
+Core R packages:
+
+```
+install.packages(c(
+  "tidyverse",
+  "miceRanger",
+  "brms",
+  "posterior",
+  "bayestestR",
+  "future",
+  "furrr",
+  "doParallel",
+  "foreach",
+  "gt",
+  "flextable",
+  "officer",
+  "forcats",
+  "glue"
+))
+```
+
+Quarto is also required if you want to render the generated `.qmd` report. Run in Terminal:
+
+```
+# macOS with Homebrew
+brew install --cask quarto
+
+# Check installation
+quarto --version
+```
+
+Install `cmdstanr` and CmdStan. Run in R or RStudio:
+
+```
+install.packages(
+  "cmdstanr",
+  repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
+)
+
+cmdstanr::install_cmdstan()
+cmdstanr::check_cmdstan_toolchain(fix = TRUE)
+```
+
+If CmdStan is already installed, confirm the path in R or RStudio:
+
+```
+cmdstanr::cmdstan_path()
+```
+
+---
