@@ -7,7 +7,13 @@ setup_info <- setup_brms_cmdstan(paths$cache)
 
 safe_step("STEP 1: Validate configuration", {
   if (!file.exists(paths$raw_data)) {
-    stop("Raw data file not found: ", paths$raw_data, ". Run 00_create_airquality_example_data.R first.")
+    stop(
+      "Raw data file not found: ",
+      paths$raw_data,
+      ". Create the input data file specified in 00_config.R first. ",
+      "For the airquality example, run: ",
+      "Rscript examples/airquality_gaussian/00_create_airquality_example_data.R"
+    )
   }
   if (!file.exists(paths$variable_dictionary)) {
     stop("Variable dictionary not found: ", paths$variable_dictionary)

@@ -1,5 +1,6 @@
-# Run the full generic MI + brms pipeline.
-# For the public airquality example, run 00_create_airquality_example_data.R once first.
+# For the public airquality example, run:
+# Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
+# once before running the full pipeline.
 
 steps <- c(
   "01_validate_config.R",
