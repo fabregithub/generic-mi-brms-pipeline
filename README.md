@@ -43,6 +43,11 @@ The design prioritises reproducibility and restartability over keeping all fitte
 
 This repository is a workflow scaffold, not a substitute for statistical judgement. Before using it for a scientific analysis, check that the imputation strategy, model formula, priors, diagnostics and posterior summaries are appropriate for your study question.
 
+
+The multiple-imputation steps are intended for variables where a standard MICE-style assumption is scientifically defensible, typically missing completely at random or missing at random after conditioning on observed variables included in the imputation model. The pipeline does not automatically handle non-ignorable missingness, not-missing-at-random mechanisms, censoring, truncation, limit-of-detection problems or structural missingness.
+
+If a variable has non-standard missingness, such as left-censored values below a detection limit, skip-pattern missingness or values missing for design reasons, process or model that missingness appropriately before using this pipeline. Do not simply code such values as ordinary `NA` and rely on the default MICE workflow unless that is justified for the study.
+
 Some models can be computationally expensive. In particular, large mixed logistic models, spline terms, monotonic ordinal terms and many imputations can take substantial time. Always start with a small quick test before a production run.
 
 ---
@@ -256,6 +261,38 @@ Then point `00_config.R` to it:
 analysis_spec$data$raw_data_file <- "data/my_analysis_data.rds"
 ```
 
+### Check the missing-data mechanism before imputation
+
+Before using the imputation step, review why each variable is missing.
+
+The pipeline uses MICE-style multiple imputation through `miceRanger`. This is suitable when treating the missing values as missing completely at random or missing at random is reasonable after conditioning on observed variables in the imputation model.
+
+It is not a general solution for non-ignorable missingness or censoring. In particular, do not pass the following directly to the pipeline as ordinary `NA` values without careful pre-processing:
+
+```text
+left-censored measurements
+values below a detection limit
+right-censored or interval-censored measurements
+structural missingness
+skip-pattern missingness
+not-applicable responses
+missingness caused by study design
+known not-missing-at-random variables
+```
+
+For these cases, first create an analysis-ready representation outside the pipeline. Depending on the scientific context, this might involve:
+
+```text
+using a censored-data model outside this pipeline
+creating a below-detection-limit indicator
+using an appropriate substitution or interval representation
+creating explicit "not applicable" categories
+separating structural missingness from true missingness
+conducting sensitivity analyses for not-missing-at-random assumptions
+```
+
+Only variables that can reasonably be treated as ordinary missing values under the chosen imputation model should be set as imputation targets in `00_variable_dictionary.csv`.
+
 ### Decision tree: where to start
 
 ```text
@@ -339,6 +376,12 @@ Then use:
 y_prefix = "ps_"
 y_wide_regex = "^ps_"
 ```
+
+#### Imputation targets and missingness assumptions
+
+The imputation step is intended for ordinary missing data where a MICE-style imputation model is defensible. In the variable dictionary, set `impute_target = TRUE` only for variables to be imputed under that assumption.
+
+If a variable is left-censored, below a detection limit, structurally missing, not applicable by design or likely not missing at random, handle that issue before running the pipeline. Such values should not be treated as ordinary `NA` values unless that choice is explicitly justified.
 
 #### Variable groups
 
@@ -816,6 +859,8 @@ Some fields are straightforward:
 - `label`: human-readable label for tables and reports
 - `impute_target`: whether this variable should be imputed when missing
 - `use_in_model`: whether this variable should appear in the final brms model
+
+Set `impute_target = TRUE` only for variables whose missing values should be treated as ordinary missing data in the MICE-style imputation model. Do not set `impute_target = TRUE` for left-censored values, below-detection-limit values, structural missingness, skip-pattern missingness or known not-missing-at-random variables unless those issues have already been handled appropriately before the pipeline.
 
 The other fields need more explanation.
 
