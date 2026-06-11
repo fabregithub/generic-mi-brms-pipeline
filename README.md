@@ -35,7 +35,7 @@ The default example uses the built-in public dataset `datasets::airquality`, so 
 
 ## 1. Background and purpose
 
-This pipeline is intended for applied Bayesian regression analyses where the data may contain missing covariates, repeated outcomes, large models, or models that need careful checkpointing. It combines multiple imputation, one-fit-per-imputation Bayesian modelling, diagnostics, posterior summaries, posterior prediction and publication-oriented outputs.
+This pipeline is intended for applied Bayesian regression analyses where the data may contain missing covariates, repeated outcomes, large models or models that need careful checkpointing. It combines multiple imputation, one-fit-per-imputation Bayesian modelling, diagnostics, posterior summaries, posterior prediction and publication-oriented outputs.
 
 The design prioritises reproducibility and restartability over keeping all fitted models in memory. This is why the pipeline fits one `brms` model per imputed dataset, saves each fit immediately and reuses valid checkpoint files on rerun.
 
@@ -308,8 +308,8 @@ If your covariates are mostly measured once per subject
 If your predictors change over time
   -> use a repeated/time-varying pattern and check that timing is set correctly
 
-If there are no missing covariates to impute
-  -> set imputation$enabled = FALSE
+If there are no missing covariates to impute, or if you want a complete-data analysis
+  -> set imputation$enabled = FALSE, strategy = "none", and m = 1
 
 If you need ordinary linear/logistic effects
   -> use fixed_effects = "auto" and control variables through the dictionary
@@ -383,6 +383,54 @@ The imputation step is intended for ordinary missing data where a MICE-style imp
 
 If a variable is left-censored, below a detection limit, structurally missing, not applicable by design or likely not missing at random (MNAR), handle that issue before running the pipeline. Such values should not be treated as ordinary `NA` values unless that choice is explicitly justified.
 
+#### Skipping imputation when there is no missing data
+
+If the analysis dataset has no missing covariate data, or if you deliberately want to run a complete-data analysis without multiple imputation, turn imputation off in `00_config.R`:
+
+```r
+imputation = list(
+  enabled = FALSE,
+  strategy = "none",
+
+  # These are ignored when enabled = FALSE, but keeping m = 1
+  # makes the intended one-dataset workflow explicit.
+  m = 1,
+
+  maxiter = 0,
+  mean_match_k = 5,
+  verbose = FALSE,
+  impute_y = FALSE,
+  extra_exclude_targets = character(0)
+)
+```
+
+The concise equivalent is:
+
+```r
+analysis_spec$imputation$enabled <- FALSE
+analysis_spec$imputation$strategy <- "none"
+analysis_spec$imputation$m <- 1
+```
+
+With this setting, the pipeline prepares one model dataset and fits one `brms` model, rather than creating multiple imputed datasets.
+
+For a no-missing-data analysis, the cleanest dictionary setup is usually:
+
+```text
+impute_target = FALSE
+```
+
+for all variables.
+
+Before disabling imputation, confirm that there are no missing predictor values that the model needs:
+
+```r
+d <- readRDS(analysis_spec$data$raw_data_file)
+colSums(is.na(d))
+```
+
+If missing predictor values remain and imputation is disabled, those rows may be dropped or model-data checks may fail, depending on the variables and model formula.
+
 #### Variable groups
 
 The recommended default is:
@@ -391,7 +439,7 @@ The recommended default is:
 variables = NULL
 ```
 
-This means variable roles, types, timing, scaling, reference categories, imputation targets, model inclusion, and auxiliary-variable status are read from `00_variable_dictionary.csv`.
+This means variable roles, types, timing, scaling, reference categories, imputation targets, model inclusion and auxiliary-variable status are read from `00_variable_dictionary.csv`.
 
 Advanced users can override selected derived groups in `00_config.R`:
 
@@ -446,7 +494,7 @@ Use `init = "random"` unless there is a clear reason to use `init = 0`.
 
 Step 6 extracts posterior draws using `analysis_spec$model$parameter_draw_regex`.
 
-For ordinary fixed, random-effect SD, and residual parameters only:
+For ordinary fixed, random-effect SD and residual parameters only:
 
 ```r
 parameter_draw_regex = "^(b_|sd_|sigma)"
@@ -877,8 +925,8 @@ Recommended values:
 | `exposure` | Main exposure or predictor of scientific interest | treatment group, air pollution |
 | `covariate` | Adjustment variable / confounder / predictor | age, sex, income |
 | `auxiliary` | Used for imputation only, not included in final model | extra baseline score |
-| `id` | Subject, cluster, or row identifier | `ID`, `row_id` |
-| `time` | Measurement occasion, wave, visit, or follow-up time | `time`, `wave` |
+| `id` | Subject, cluster or row identifier | `ID`, `row_id` |
+| `time` | Measurement occasion, wave, visit or follow-up time | `time`, `wave` |
 | `cluster` | Grouping variable for random effects or clustering | school ID, hospital ID |
 | `strata` | Stratification variable, if relevant | site, cohort |
 
@@ -1009,7 +1057,7 @@ already standardised variables
 
 ### `reference`
 
-`reference` defines the reference category for binary, categorical, or ordinal variables.
+`reference` defines the reference category for binary, categorical or ordinal variables.
 
 Examples:
 
@@ -1339,7 +1387,7 @@ For a new analysis, keep the following setting in `00_config.R`:
 analysis_spec$model$run_smoke_fit <- TRUE
 ```
 
-The smoke fit runs one sequential model first, before launching parallel workers. This catches formula, prior, data, or CmdStan problems early.
+The smoke fit runs one sequential model first, before launching parallel workers. This catches formula, prior, data or CmdStan problems early.
 
 After a configuration has been tested successfully, you may set the following in `00_config.R`:
 
@@ -1950,7 +1998,7 @@ The bash test scripts write isolated preserved runs under:
 test/runs/
 ```
 
-This means example tests do not delete or overwrite root-level `objects/`, `fits/`, or `results/`.
+This means example tests do not delete or overwrite root-level `objects/`, `fits/` or `results/`.
 
 Run quick tests:
 
