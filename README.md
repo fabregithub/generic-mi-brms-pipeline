@@ -1,4 +1,4 @@
-# Generic MICE + brms Pipeline Template
+# Generic MICE + brms Pipeline Template (v0.8.3)
 
 This is a reusable R pipeline template for Bayesian regression analyses with optional multiple imputation.
 
@@ -255,10 +255,13 @@ The dataset should already contain consistent variable names, explicit ID variab
 saveRDS(my_data, "data/my_analysis_data.rds")
 ```
 
-Then point `00_config.R` to it:
+Then point `00_config.R` to it by editing the `data = list(...)` block:
 
 ```r
-analysis_spec$data$raw_data_file <- "data/my_analysis_data.rds"
+data = list(
+  raw_data_file = "data/my_analysis_data.rds",
+  ...
+)
 ```
 
 ### Check the missing-data mechanism before imputation
@@ -309,7 +312,8 @@ If your predictors change over time
   -> use a repeated/time-varying pattern and check that timing is set correctly
 
 If there are no missing covariates to impute, or if you want a complete-data analysis
-  -> set imputation$enabled = FALSE, strategy = "none", and m = 1
+  -> edit the imputation = list(...) block so enabled = FALSE,
+     strategy = "none", and m = 1
 
 If you need ordinary linear/logistic effects
   -> use fixed_effects = "auto" and control variables through the dictionary
@@ -385,7 +389,7 @@ If a variable is left-censored, below a detection limit, structurally missing, n
 
 #### Skipping imputation when there is no missing data
 
-If the analysis dataset has no missing covariate data, or if you deliberately want to run a complete-data analysis without multiple imputation, turn imputation off in `00_config.R`:
+If the analysis dataset has no missing covariate data, or if you deliberately want to run a complete-data analysis without multiple imputation, edit the `imputation = list(...)` block in `00_config.R` directly:
 
 ```r
 imputation = list(
@@ -404,13 +408,6 @@ imputation = list(
 )
 ```
 
-The concise equivalent is:
-
-```r
-analysis_spec$imputation$enabled <- FALSE
-analysis_spec$imputation$strategy <- "none"
-analysis_spec$imputation$m <- 1
-```
 
 With this setting, the pipeline prepares one model dataset and fits one `brms` model, rather than creating multiple imputed datasets.
 
@@ -425,7 +422,8 @@ for all variables.
 Before disabling imputation, confirm that there are no missing predictor values that the model needs:
 
 ```r
-d <- readRDS(analysis_spec$data$raw_data_file)
+source("00_config.R")
+d <- readRDS(paths$raw_data)
 colSums(is.na(d))
 ```
 
@@ -611,21 +609,36 @@ Recommended approach for a new analysis:
 
 For the first test of a new dataset or model, use small settings. Edit these in `00_config.R` using RStudio or another text editor:
 
-```
-analysis_spec$imputation$m <- 5
+```r
+imputation = list(
+  ...
+  m = 5,
+  ...
+)
 
-analysis_spec$model$chains <- 1
-analysis_spec$model$iter <- 500
-analysis_spec$model$warmup <- 250
-analysis_spec$model$run_smoke_fit <- TRUE
+model = list(
+  ...
+  chains = 1,
+  iter = 500,
+  warmup = 250,
+  run_smoke_fit = TRUE,
+  ...
+)
 
-analysis_spec$parallel$fit_workers <- 1
-analysis_spec$parallel$cores_per_fit <- 1
-analysis_spec$parallel$summary_workers <- 1
-analysis_spec$parallel$prediction_workers <- 1
-analysis_spec$parallel$future_globals_maxsize_gb <- 8
+parallel = list(
+  ...
+  fit_workers = 1,
+  cores_per_fit = 1,
+  summary_workers = 1,
+  prediction_workers = 1,
+  future_globals_maxsize_gb = 8
+)
 
-analysis_spec$posterior_prediction$ndraws <- 200
+posterior_prediction = list(
+  ...
+  ndraws = 200,
+  ...
+)
 ```
 
 This quick test is intended to check that:
@@ -644,19 +657,30 @@ posterior summaries and publication outputs are created
 
 After the quick test succeeds, test parallel fitting with modest settings:
 
-```
-analysis_spec$imputation$m <- 10
+```r
+imputation = list(
+  ...
+  m = 10,
+  ...
+)
 
-analysis_spec$model$chains <- 4
-analysis_spec$model$iter <- 500
-analysis_spec$model$warmup <- 250
-analysis_spec$model$run_smoke_fit <- TRUE
+model = list(
+  ...
+  chains = 4,
+  iter = 500,
+  warmup = 250,
+  run_smoke_fit = TRUE,
+  ...
+)
 
-analysis_spec$parallel$fit_workers <- 2
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$summary_workers <- 2
-analysis_spec$parallel$prediction_workers <- 2
-analysis_spec$parallel$future_globals_maxsize_gb <- 20
+parallel = list(
+  ...
+  fit_workers = 2,
+  cores_per_fit = 4,
+  summary_workers = 2,
+  prediction_workers = 2,
+  future_globals_maxsize_gb = 20
+)
 ```
 
 This checks that multiple chains and multiple imputed datasets can run safely on the machine.
@@ -665,27 +689,46 @@ This checks that multiple chains and multiple imputed datasets can run safely on
 
 For the final analysis, increase the imputation and MCMC settings. For a high-memory machine, a typical setting is:
 
-```
-analysis_spec$imputation$m <- 100
+```r
+imputation = list(
+  ...
+  m = 100,
+  ...
+)
 
-analysis_spec$model$chains <- 4
-analysis_spec$model$iter <- 2000
-analysis_spec$model$warmup <- 1000
-analysis_spec$model$run_smoke_fit <- TRUE
+model = list(
+  ...
+  chains = 4,
+  iter = 2000,
+  warmup = 1000,
+  run_smoke_fit = TRUE,
+  ...
+)
 
-analysis_spec$parallel$fit_workers <- 4
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$summary_workers <- 4
-analysis_spec$parallel$prediction_workers <- 4
-analysis_spec$parallel$future_globals_maxsize_gb <- 80
+parallel = list(
+  ...
+  fit_workers = 4,
+  cores_per_fit = 4,
+  summary_workers = 4,
+  prediction_workers = 4,
+  future_globals_maxsize_gb = 80
+)
 
-analysis_spec$posterior_prediction$ndraws <- 1000
+posterior_prediction = list(
+  ...
+  ndraws = 1000,
+  ...
+)
 ```
 
 For repeated runs of the same already-tested analysis, you may set:
 
-```
-analysis_spec$model$run_smoke_fit <- FALSE
+```r
+model = list(
+  ...
+  run_smoke_fit = FALSE,
+  ...
+)
 ```
 
 but keep it as `TRUE` when changing the dataset, formula, priors, outcome family or imputation strategy.
@@ -700,8 +743,12 @@ The generic pipeline can also handle repeated-outcome data where the outcome is 
 
 Use this imputation strategy in `00_config.R`:
 
-```
-analysis_spec$imputation$strategy <- "subject_wide_with_repeated_y_auxiliary"
+```r
+imputation = list(
+  ...
+  strategy = "subject_wide_with_repeated_y_auxiliary",
+  ...
+)
 ```
 
 This strategy does the following:
@@ -1208,8 +1255,12 @@ Notes:
 - `mo(lwt_q)` then models the ordinal effect as monotonic but not necessarily equally spaced.
 - The posterior draw regex for `mo()` models should include both `bsp_` and `simo_` parameters:
 
-```text
-analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
+```r
+model = list(
+  ...
+  parameter_draw_regex = "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)",
+  ...
+)
 ```
 
 ---
@@ -1261,37 +1312,46 @@ For large `brmsfit` objects, start conservatively with `summary_workers = 2` and
 #### Laptop or low-memory desktop
 
 ```r
-analysis_spec$parallel$impute_workers <- 1
-analysis_spec$parallel$num_impute_threads_per_worker <- 1
-analysis_spec$parallel$fit_workers <- 1
-analysis_spec$parallel$cores_per_fit <- 1
-analysis_spec$parallel$summary_workers <- 1
-analysis_spec$parallel$prediction_workers <- 1
-analysis_spec$parallel$future_globals_maxsize_gb <- 8
+parallel = list(
+  ...
+  impute_workers = 1,
+  num_impute_threads_per_worker = 1,
+  fit_workers = 1,
+  cores_per_fit = 1,
+  summary_workers = 1,
+  prediction_workers = 1,
+  future_globals_maxsize_gb = 8
+)
 ```
 
 #### Standard desktop or small workstation
 
 ```r
-analysis_spec$parallel$impute_workers <- 2
-analysis_spec$parallel$num_impute_threads_per_worker <- 2
-analysis_spec$parallel$fit_workers <- 2
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$summary_workers <- 2
-analysis_spec$parallel$prediction_workers <- 2
-analysis_spec$parallel$future_globals_maxsize_gb <- 20
+parallel = list(
+  ...
+  impute_workers = 2,
+  num_impute_threads_per_worker = 2,
+  fit_workers = 2,
+  cores_per_fit = 4,
+  summary_workers = 2,
+  prediction_workers = 2,
+  future_globals_maxsize_gb = 20
+)
 ```
 
 #### High-memory workstation
 
 ```r
-analysis_spec$parallel$impute_workers <- 4
-analysis_spec$parallel$num_impute_threads_per_worker <- 4
-analysis_spec$parallel$fit_workers <- 4
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$summary_workers <- 4
-analysis_spec$parallel$prediction_workers <- 4
-analysis_spec$parallel$future_globals_maxsize_gb <- 80
+parallel = list(
+  ...
+  impute_workers = 4,
+  num_impute_threads_per_worker = 4,
+  fit_workers = 4,
+  cores_per_fit = 4,
+  summary_workers = 4,
+  prediction_workers = 4,
+  future_globals_maxsize_gb = 80
+)
 ```
 
 #### Shared server or high-performance computing environment
@@ -1306,9 +1366,13 @@ The pipeline can parallelise `miceRanger` imputation using `doParallel` and `for
 
 In `00_config.R`, the relevant settings are:
 
-```
-analysis_spec$parallel$impute_workers <- 4
-analysis_spec$parallel$num_impute_threads_per_worker <- 4
+```r
+parallel = list(
+  ...
+  impute_workers = 4,
+  num_impute_threads_per_worker = 4,
+  ...
+)
 ```
 
 The approximate CPU demand during imputation is:
@@ -1327,14 +1391,22 @@ Start conservatively, especially on laptops or when the imputation data are larg
 
 Recommended starting values:
 
-```
+```r
 # Public examples or ordinary laptops
-analysis_spec$parallel$impute_workers <- 1
-analysis_spec$parallel$num_impute_threads_per_worker <- 1
+parallel = list(
+  ...
+  impute_workers = 1,
+  num_impute_threads_per_worker = 1,
+  ...
+)
 
 # High-memory workstation
-analysis_spec$parallel$impute_workers <- 4
-analysis_spec$parallel$num_impute_threads_per_worker <- 4
+parallel = list(
+  ...
+  impute_workers = 4,
+  num_impute_threads_per_worker = 4,
+  ...
+)
 ```
 
 To test parallel imputation from scratch, remove old imputation outputs first:
@@ -1357,19 +1429,30 @@ Then re-run the pipeline.
 
 The following settings were tested successfully on a high-memory machine. Edit these in `00_config.R` using RStudio or another text editor:
 
-```
-analysis_spec$imputation$m <- 100
+```r
+imputation = list(
+  ...
+  m = 100,
+  ...
+)
 
-analysis_spec$model$chains <- 4
-analysis_spec$model$iter <- 2000
-analysis_spec$model$warmup <- 1000
-analysis_spec$model$run_smoke_fit <- TRUE
+model = list(
+  ...
+  chains = 4,
+  iter = 2000,
+  warmup = 1000,
+  run_smoke_fit = TRUE,
+  ...
+)
 
-analysis_spec$parallel$fit_workers <- 4
-analysis_spec$parallel$cores_per_fit <- 4
-analysis_spec$parallel$summary_workers <- 4
-analysis_spec$parallel$prediction_workers <- 4
-analysis_spec$parallel$future_globals_maxsize_gb <- 80
+parallel = list(
+  ...
+  fit_workers = 4,
+  cores_per_fit = 4,
+  summary_workers = 4,
+  prediction_workers = 4,
+  future_globals_maxsize_gb = 80
+)
 ```
 
 This runs:
@@ -1383,16 +1466,24 @@ This runs:
 
 For a new analysis, keep the following setting in `00_config.R`:
 
-```
-analysis_spec$model$run_smoke_fit <- TRUE
+```r
+model = list(
+  ...
+  run_smoke_fit = TRUE,
+  ...
+)
 ```
 
 The smoke fit runs one sequential model first, before launching parallel workers. This catches formula, prior, data or CmdStan problems early.
 
 After a configuration has been tested successfully, you may set the following in `00_config.R`:
 
-```
-analysis_spec$model$run_smoke_fit <- FALSE
+```r
+model = list(
+  ...
+  run_smoke_fit = FALSE,
+  ...
+)
 ```
 
 to save a little time.
@@ -1602,16 +1693,24 @@ These options do **not** skip the imputation step itself. They only control whic
 
 To fit all imputations except imputations 45 and 51:
 
-```
-analysis_spec$model$skip_imputations <- c(45, 51)
-analysis_spec$model$only_imputations <- integer(0)
+```r
+model = list(
+  ...
+  skip_imputations = c(45, 51),
+  only_imputations = integer(0),
+  ...
+)
 ```
 
 To fit only imputation 51, for example as a diagnostic re-run:
 
-```
-analysis_spec$model$skip_imputations <- integer(0)
-analysis_spec$model$only_imputations <- c(51)
+```r
+model = list(
+  ...
+  skip_imputations = integer(0),
+  only_imputations = c(51),
+  ...
+)
 ```
 
 Interpretation:
@@ -1705,8 +1804,12 @@ results/publication/mo_effects/report/mo_effects_report.qmd
 
 For models using `mo()`, make sure `00_config.R` includes `bsp_` and `simo_` in the posterior draw extraction regex:
 
-```text
-analysis_spec$model$parameter_draw_regex <- "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)"
+```r
+model = list(
+  ...
+  parameter_draw_regex = "^(b_|bsp_|sd_|sigma|sds_|bs_|simo_)",
+  ...
+)
 ```
 
 The `10_publication_mo_results.R` script can handle monotonic effects with interactions such as:
