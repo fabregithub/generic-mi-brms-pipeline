@@ -1,4 +1,4 @@
-# Generic MICE + brms Pipeline Template (v0.8.3)
+# Generic MICE + brms Pipeline Template
 
 This is a reusable R pipeline template for Bayesian regression analyses with optional multiple imputation.
 
@@ -151,7 +151,15 @@ Two additional scripts are provided for models that use `brms::mo()`:
 10_publication_mo_results.R         optional; creates derived mo() odds-ratio summaries
 ```
 
-Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline or factor-coded models. They are only needed when you want publication-ready summaries of monotonic ordinal effects.
+One additional optional script is provided for adaptive imputation-count checks:
+
+```text
+11_check_imputation_stability.R      optional; checks whether posterior summaries are stable as m increases
+```
+
+Script `11` can also create stepwise publication-ready stability summaries, including tables and figures that quantify how much estimates, credible intervals, posterior direction probabilities and transformed summaries change when `m` is increased.
+
+Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline or factor-coded models. They are only needed when you want publication-ready summaries of monotonic ordinal effects. Script `11` is optional and is useful when model fitting is computationally expensive and you want to justify the chosen number of imputations.
 
 ---
 
@@ -602,6 +610,168 @@ Rscript 01_validate_config.R
 ```
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
+
+
+### Choosing the number of imputations adaptively
+
+There is no universal value of `m` that is automatically sufficient for every analysis. The required number of imputations depends on the fraction of missing information, the amount and pattern of missingness, the target estimands, and how reproducible the posterior summaries need to be. A large dataset does not automatically require `m = 100`, and a small dataset can sometimes require more than `m = 100` if the fraction of missing information is high or the target estimates are unstable.
+
+For computationally expensive analyses, such as large repeated-outcome logistic models, use a staged workflow. The safest rule is:
+
+```text
+Start with a modest m and increase m only if needed.
+Do not reduce m within the same saved run.
+```
+
+This matters because the pipeline saves imputation, model-data and fit manifests. If a run was created with `m = 100` and the config is later changed to `m = 45`, the saved imputation specification may no longer match the current config. In that situation, Step 3 may quite reasonably try to re-run imputation. To avoid this, the adaptive workflow should move upwards in `m`, not downwards.
+
+Recommended staged workflow:
+
+```text
+1. Start with a modest number of imputations, for example m = 20 or m = 24.
+2. Run the pipeline through at least Step 6 so per-imputation posterior draws are available.
+3. Run 11_check_imputation_stability.R.
+4. If the primary posterior summaries are stable, stop and use that m.
+5. If the primary posterior summaries are not stable, increase m, for example to 40.
+6. Rerun the pipeline. Existing valid imputations and fits should be reused when the run is extended consistently.
+7. Repeat with larger values, for example 60, 80, 100 or beyond, only if needed.
+```
+
+Convenient sequences are:
+
+```text
+20 -> 40 -> 60 -> 80 -> 100
+```
+
+or, if four models are fitted in parallel:
+
+```text
+24 -> 40 -> 60 -> 80 -> 100
+```
+
+The batching values can reflect the available computing layout. For example, if four models are fitted at a time, values such as `m = 24`, `40`, `60`, `80` and `100` are convenient. The batching convenience is not itself the scientific justification; the scientific justification is the stability of the prespecified primary summaries.
+
+For small samples, highly incomplete variables, weakly identified models or estimates near a decision boundary, more than `m = 100` may be needed. In those cases, either increase `m` further or report that the imputation-count stability check did not support a smaller value.
+
+#### Running the imputation-count stability script
+
+After Step 6 has created per-imputation posterior draw files, run:
+
+```bash
+Rscript 11_check_imputation_stability.R
+```
+
+This creates publication-ready stability outputs in:
+
+```text
+results/publication/mi_stability/
+```
+
+Typical outputs include:
+
+```text
+tables/imputation_stability_all_batches.csv
+tables/imputation_stability_final_comparison_full.csv
+tables/imputation_stability_final_comparison_display.csv
+tables/imputation_stability_settings.csv
+tables/imputation_stability_stepwise_summary.csv
+tables/imputation_stability_stepwise_comparison_full.csv
+figures/imputation_stability_trajectories.png
+figures/imputation_stability_stepwise_change.png
+report/imputation_stability_report.qmd
+```
+
+If Quarto is installed, the report can be rendered to HTML or DOCX.
+
+The stepwise stability summary is especially useful for deciding whether results have already flattened at an early value of `m`. For example, it compares transitions such as:
+
+```text
+m = 8  to m = 12
+m = 12 to m = 16
+m = 16 to m = 20
+m = 20 to m = 24
+```
+
+Key quantities to inspect include:
+
+```text
+Stable, %
+Maximum absolute estimate change
+Median absolute estimate change
+Maximum absolute CrI-endpoint change
+Maximum relative odds-ratio change, %
+CrI exclusion changed, n
+```
+
+If these values are already negligible at an early transition and remain negligible afterwards, it is defensible to stop increasing `m`, provided the checked estimands are the prespecified primary estimands.
+
+You can customise the stability check by adding an optional `mi_stability = list(...)` block in `00_config.R`:
+
+```r
+mi_stability = list(
+  # If NULL, the script chooses batch sizes from available imputations.
+  batch_sizes = c(12, 16, 20, 24),
+
+  # Use exact posterior draw column names for primary estimands,
+  # or leave NULL and select by parameter_regex.
+  primary_parameters = NULL,
+
+  # Default checks ordinary fixed-effect coefficients.
+  # For all extracted parameters, use ".*".
+  parameter_regex = "^b_",
+
+  # Usually TRUE for publication summaries.
+  exclude_intercept = TRUE,
+
+  # Practical stability thresholds.
+  # Replace these with thresholds appropriate for the scientific question.
+  estimate_tolerance = 0.05,
+  ci_endpoint_tolerance = 0.05,
+  relative_transformed_tolerance_pct = 5,
+  pd_tolerance = 0.02,
+
+  max_plot_parameters = 12,
+  render_quarto = TRUE
+)
+```
+
+#### If a larger run has already been started
+
+If you already started a larger run, for example with `m = 100`, and then decide after 45 completed fits that the results are stable, do not simply reduce `m` in `00_config.R` and rerun `run_all.R` from the beginning. That may cause the saved imputation specification to be treated as incompatible with the current config.
+
+Safer options are:
+
+```text
+Option 1: continue the larger run if the extra computation is acceptable.
+Option 2: run only downstream scripts on the completed fits, avoiding Step 3 imputation.
+Option 3: start a clean new run in a new output folder with the smaller final m.
+```
+
+For Option 2, the downstream sequence is usually:
+
+```bash
+Rscript 05_diagnostics.R
+Rscript 06_posterior_summary.R
+Rscript 07_posterior_prediction.R
+Rscript 08_publication_results.R
+Rscript 11_check_imputation_stability.R
+```
+
+This avoids re-running imputation. Use this only after confirming that the completed fit files and model-data files correspond to the same imputed datasets.
+
+Example reporting language:
+
+```text
+We used an adaptive multiple-imputation strategy because each imputed-data Bayesian model was computationally expensive. We first fitted an initial set of imputed datasets and assessed the stability of prespecified primary posterior summaries. We increased the number of imputations until the pooled posterior medians, credible intervals, posterior direction probabilities and substantive conclusions changed negligibly with additional imputations. The final analysis used m = XX imputations.
+```
+
+If the stepwise stability check shows early flattening, a more specific statement can be used:
+
+```text
+The stability assessment showed that posterior summaries changed negligibly after m = XX. The largest subsequent changes in posterior medians, credible-interval endpoints and odds-ratio summaries were below prespecified practical thresholds. The final analysis therefore used m = XX imputations.
+```
+
+This stability check assesses numerical Monte Carlo stability as `m` increases. It does not validate the missing-data mechanism and does not make MNAR or censored data problems ignorable.
 
 Recommended approach for a new analysis:
 
@@ -1821,6 +1991,32 @@ time * mo(ordinal_variable)
 In that case, it calculates category-specific monotonic-effect odds ratios at the configured time values.
 
 These scripts are not required for ordinary Gaussian, logistic, spline-only or factor-coded models. They are only needed when derived monotonic-effect odds ratios are desired.
+
+
+### Optional imputation-count stability outputs
+
+If `11_check_imputation_stability.R` is run, publication-ready imputation-count stability outputs are written to:
+
+```text
+results/publication/mi_stability/
+```
+
+These outputs summarise how selected posterior summaries change as the number of completed imputations increases. They are intended to support transparent reporting when an adaptive number of imputations is used, especially for expensive Bayesian models where blindly running `m = 100` or more may be impractical.
+
+Main outputs include:
+
+```text
+results/publication/mi_stability/tables/imputation_stability_all_batches.csv
+results/publication/mi_stability/tables/imputation_stability_final_comparison_display.csv
+results/publication/mi_stability/tables/imputation_stability_settings.csv
+results/publication/mi_stability/tables/imputation_stability_stepwise_summary.csv
+results/publication/mi_stability/tables/imputation_stability_stepwise_comparison_full.csv
+results/publication/mi_stability/figures/imputation_stability_trajectories.png
+results/publication/mi_stability/figures/imputation_stability_stepwise_change.png
+results/publication/mi_stability/report/imputation_stability_report.qmd
+```
+
+The stability check should focus on prespecified primary estimands rather than every nuisance parameter.
 
 ---
 

@@ -38,6 +38,7 @@ The run-level stdout logs are kept outside the runtime project root:
 
 ```text
 test/runs/<run_id>/logs/run_all_<example>_<mode>_stdout.log
+test/runs/<run_id>/logs/step11_imputation_stability_<example>_<mode>_stdout.log
 ```
 
 The parent run folder also contains:
@@ -71,6 +72,14 @@ extract special brms parameters such as simo_ and smooth terms
 create publication outputs for special parameters
 render the Quarto report
 ```
+
+All quick and parallel example tests also run a smoke check for:
+
+```text
+11_check_imputation_stability.R
+```
+
+The Step 11 smoke check runs after Step 6 posterior summaries have been created and verifies that imputation-count stability tables, figures and the report `.qmd` are produced.
 
 ## Quick tests
 
@@ -175,6 +184,11 @@ results/publication/tables/analysis_metadata.csv
 results/publication/report/bayesian_mi_report_template.qmd
 results/publication/report/bayesian_mi_report_template.html
 results/publication/report/bayesian_mi_report_template.docx
+results/publication/mi_stability/tables/imputation_stability_final_comparison_display.csv
+results/publication/mi_stability/tables/imputation_stability_stepwise_summary.csv
+results/publication/mi_stability/figures/imputation_stability_trajectories.png
+results/publication/mi_stability/figures/imputation_stability_stepwise_change.png
+results/publication/mi_stability/report/imputation_stability_report.qmd
 ```
 
 For the `birthwt_spline_monotonic` example, the tests also expect:

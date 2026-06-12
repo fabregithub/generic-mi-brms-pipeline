@@ -113,8 +113,6 @@ analysis_spec <- list(
 
   variables = NULL,
 
-  variables = NULL,
-
   imputation = list(
     enabled = TRUE,
     strategy = "row_level",
@@ -189,7 +187,7 @@ analysis_spec <- list(
     # For the public examples, use "random" unless there is a clear reason
     # to use init = 0.
     init = "random",
-,
+    
     silent = 0,
 
     run_smoke_fit = TRUE,

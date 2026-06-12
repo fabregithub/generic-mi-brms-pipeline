@@ -108,6 +108,7 @@ prepare_runtime_project() {
     "08_publication_results.R"
     "09_check_mo_parameter_columns.R"
     "10_publication_mo_results.R"
+    "11_check_imputation_stability.R"
     "fit_single_imputation.R"
     "run_all.R"
     "99_clean_fitting_results.sh"
@@ -177,6 +178,22 @@ analysis_spec$parallel$cores_per_fit <- 1
 analysis_spec$parallel$future_globals_maxsize_gb <- 8
 
 analysis_spec$posterior_prediction$ndraws <- 200
+
+# Step 11 imputation-count stability smoke-test settings.
+# Quarto rendering is disabled here because the main report rendering is already
+# tested separately by render_and_check_report().
+analysis_spec$mi_stability <- list(
+  batch_sizes = c(2, 3, 4, 5),
+  primary_parameters = NULL,
+  parameter_regex = "^b_",
+  exclude_intercept = TRUE,
+  estimate_tolerance = 0.10,
+  ci_endpoint_tolerance = 0.10,
+  relative_transformed_tolerance_pct = 10,
+  pd_tolerance = 0.05,
+  max_plot_parameters = 8,
+  render_quarto = FALSE
+)
 # ---- END automated test overrides ----
 EOF
   elif [[ "$mode" == "parallel" ]]; then
@@ -202,6 +219,22 @@ analysis_spec$parallel$cores_per_fit <- 2
 analysis_spec$parallel$future_globals_maxsize_gb <- 20
 
 analysis_spec$posterior_prediction$ndraws <- 300
+
+# Step 11 imputation-count stability smoke-test settings.
+# Quarto rendering is disabled here because the main report rendering is already
+# tested separately by render_and_check_report().
+analysis_spec$mi_stability <- list(
+  batch_sizes = c(4, 6, 8, 10),
+  primary_parameters = NULL,
+  parameter_regex = "^b_",
+  exclude_intercept = TRUE,
+  estimate_tolerance = 0.10,
+  ci_endpoint_tolerance = 0.10,
+  relative_transformed_tolerance_pct = 10,
+  pd_tolerance = 0.05,
+  max_plot_parameters = 8,
+  render_quarto = FALSE
+)
 # ---- END automated test overrides ----
 EOF
   else
@@ -226,6 +259,98 @@ render_and_check_report() {
 
   log "Report files created:"
   ls -lh results/publication/report/
+}
+
+check_imputation_stability_outputs() {
+  log "Checking Step 11 imputation-count stability outputs"
+
+  local required_files=(
+    "results/publication/mi_stability/tables/imputation_stability_all_batches.csv"
+    "results/publication/mi_stability/tables/imputation_stability_final_comparison_full.csv"
+    "results/publication/mi_stability/tables/imputation_stability_final_comparison_display.csv"
+    "results/publication/mi_stability/tables/imputation_stability_settings.csv"
+    "results/publication/mi_stability/tables/imputation_stability_stepwise_summary.csv"
+    "results/publication/mi_stability/tables/imputation_stability_stepwise_comparison_full.csv"
+    "results/publication/mi_stability/figures/imputation_stability_trajectories.png"
+    "results/publication/mi_stability/figures/imputation_stability_stepwise_change.png"
+    "results/publication/mi_stability/report/imputation_stability_report.qmd"
+  )
+
+  local f
+  for f in "${required_files[@]}"; do
+    if [[ ! -s "$f" ]]; then
+      die "Required Step 11 output is missing or empty: $f"
+    fi
+  done
+
+  Rscript - <<'EOF_CHECK_STEP11'
+stepwise <- readr::read_csv(
+  "results/publication/mi_stability/tables/imputation_stability_stepwise_summary.csv",
+  show_col_types = FALSE
+)
+
+final_cmp <- readr::read_csv(
+  "results/publication/mi_stability/tables/imputation_stability_final_comparison_full.csv",
+  show_col_types = FALSE
+)
+
+if (nrow(stepwise) < 1) {
+  stop("Stepwise summary has no rows.")
+}
+
+if (nrow(final_cmp) < 1) {
+  stop("Final comparison table has no rows.")
+}
+
+needed_stepwise <- c(
+  "m_previous",
+  "m_final",
+  "batch_transition",
+  "n_parameters",
+  "percent_stable",
+  "max_abs_Median_change"
+)
+
+needed_final <- c(
+  "Parameter",
+  "m_previous",
+  "m_final",
+  "Median_final",
+  "CI_low_final",
+  "CI_high_final",
+  "stable_by_thresholds"
+)
+
+missing_stepwise <- setdiff(needed_stepwise, names(stepwise))
+missing_final <- setdiff(needed_final, names(final_cmp))
+
+if (length(missing_stepwise) > 0) {
+  stop("Missing columns in Step 11 stepwise summary: ", paste(missing_stepwise, collapse = ", "))
+}
+
+if (length(missing_final) > 0) {
+  stop("Missing columns in Step 11 final comparison: ", paste(missing_final, collapse = ", "))
+}
+
+cat("Step 11 table content checks passed.\n")
+EOF_CHECK_STEP11
+
+  log "Step 11 imputation-count stability outputs passed"
+}
+
+run_imputation_stability_check() {
+  local log_file="$1"
+
+  if [[ ! -f "11_check_imputation_stability.R" ]]; then
+    die "11_check_imputation_stability.R not found in runtime project."
+  fi
+
+  require_file "objects/parameter_manifest.rds"
+
+  log "Running Step 11 imputation-count stability smoke check"
+  Rscript 11_check_imputation_stability.R 2>&1 | tee "$log_file"
+
+  check_imputation_stability_outputs
 }
 
 check_pipeline_success() {
@@ -349,6 +474,10 @@ run_pipeline() {
   fi
 
   render_and_check_report
+
+  local step11_log_file
+  step11_log_file="$(dirname "$log_file")/step11_imputation_stability_${example}_${mode}_stdout.log"
+  run_imputation_stability_check "$step11_log_file"
 }
 
 prepare_airquality_example() {
