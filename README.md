@@ -18,6 +18,19 @@ The default example uses the built-in public dataset `datasets::airquality`, so 
 
 ---
 
+## Translations
+
+This README is maintained in English as the primary version. Translations are available here:
+
+- [Français](docs/README.fr.md)
+- [Español](docs/README.es.md)
+- [Deutsch](docs/README.de.md)
+- [日本語](docs/README.ja.md)
+
+If there is any difference between a translation and the English version, the English version should be treated as authoritative.
+
+---
+
 ## Contents
 
 1. [Background and purpose](#1-background-and-purpose)
