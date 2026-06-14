@@ -2,23 +2,23 @@
 
 言語: [English](../README.md) | [Français](README.fr.md) | [Español](README.es.md) | [Deutsch](README.de.md) | 日本語
 
-> これは英語版 README の初期日本語訳です。内容に差異や曖昧さがある場合は、英語版を正とします。
+> これは英語版 README の日本語要約です。内容に差異や曖昧さがある場合は、英語版を正とします。
 
-このリポジトリは、任意で多重代入を行えるベイズ回帰分析用の再利用可能な R パイプラインテンプレートです。
+これは、多重代入法（multiple imputation by chained equation; MICE）の補完後に、ベイズ回帰分析を行うためのRパイプラインテンプレートです。
 
 対応内容：
 
 - データ検証
-- `miceRanger` による任意の多重代入
+- `miceRanger` によるMICE
 - `brms` + `cmdstanr` によるベイズ回帰
-- 代入データセットごとに 1 つのモデルを保存するチェックポイント方式
-- 代入間での並列モデルフィッティング
+- 補完データセットごとに1つのモデルを保存するチェックポイント方式
+- 補完データセット間での並列モデルフィッティング
 - 診断
 - 事後分布の要約
 - アウトカムが欠測している行に対する事後予測
-- 投稿・報告に使いやすい表、図、方法・設定メタデータ、レポートテンプレート
+- 論文・報告に使いやすい表、図、方法・設定メタデータ、レポートテンプレート
 
-デフォルト例では R 組み込みの公開データセット `datasets::airquality` を使うため、私的データなしでテンプレートをテスト・デモできます。
+実用例ではR組み込みの公開データセット `datasets::airquality` を使うため、私的データなしでテンプレートをテスト・試行できます。
 
 ---
 
@@ -27,35 +27,35 @@
 1. [背景と目的](#1-背景と目的)
 2. [パイプラインの構成](#2-パイプラインの構成)
 3. [クイックスタート](#3-クイックスタート)
-4. [私的な研究データへの適用](#4-私的な研究データへの適用)
+4. [実際の研究データへの適用](#4-私的な研究データへの適用)
 5. [変数辞書](#5-変数辞書)
 6. [並列化と性能調整](#6-並列化と性能調整)
 7. [ログ、監視、再開、トラブルシューティング](#7-ログ監視再開トラブルシューティング)
-8. [出版用出力と推論上の注意](#8-出版用出力と推論上の注意)
-9. [例とテスト](#9-例とテスト)
+8. [論文用出力と推論上の注意](#8-出版用出力と推論上の注意)
+9. [実例とテスト](#9-例とテスト)
 10. [計算環境のセットアップ](#10-計算環境のセットアップ)
 
 ---
 
 ## 1. 背景と目的
 
-このパイプラインは、欠測共変量、反復アウトカム、大規模モデル、または慎重なチェックポイント保存が必要なモデルを含む応用ベイズ回帰分析を想定しています。多重代入、代入データセットごとのベイズモデリング、診断、事後要約、事後予測、出版向け出力を組み合わせます。
+このパイプラインは、欠測共変量、反復アウトカム、大規模モデル、または慎重なチェックポイント保存が必要なモデルを含む応用ベイズ回帰分析を想定しています。MICE補完、補完データセットごとのベイズモデリング、診断、事後要約、事後予測、出版向け出力を組み合わせて一つのパイプラインにしています。
 
-設計上は、すべての適合済みモデルをメモリに保持することよりも、再現性と再開しやすさを優先しています。そのため、代入データセットごとに 1 つの `brms` モデルを適合し、各 fit をただちに保存し、再実行時には有効なチェックポイントファイルを再利用します。
+特に大規模データの場合、すべてのフィット済みモデルをメモリに保持するとメモリオーバーにより計算機がストップこともあります。そこで、再現性と再開しやすさを優先し、補完データセットごとに 1 つの `brms` モデルをフィットし、各 fit をただちに保存します。モデル毎にチェックポイントを記録し、再実行時には有効なチェックポイントファイルを再利用します。
 
 ### 注意点と限界
 
 このリポジトリはワークフローの雛形であり、統計的判断の代替ではありません。科学的分析に使う前に、代入戦略、モデル式、事前分布、診断、事後要約が研究課題に適しているか確認してください。
 
-多重代入ステップは、標準的な MICE 型の仮定が科学的に妥当な変数を対象とします。通常は、代入モデルに含まれる観測変数で条件づけた後に MCAR または MAR とみなせる場合です。このパイプラインは、MNAR メカニズム、打ち切り、切断、検出限界、構造的欠測を自動的には扱いません。
+多重代入ステップは、標準的な MICE 型の仮定が科学的に妥当な変数を対象とします。通常は、代入モデルに含まれる観測変数で条件づけた後に MCAR（missing completely at random）または MAR（missing at random）とみなせる場合を対象としています。このパイプラインは、MNAR（missing not at random）メカニズム、打ち切り、切断、検出限界（左打切データなど）、構造的欠測を自動的には扱いません。
 
-一部のモデルは計算コストが高くなります。必ず本番実行の前に小さなクイックテストから始めてください。
+一部のモデルは計算コストが高くなります。必ず本番実行の前に小規模のテストから始めてください。
 
 ### 重要な設計メモ
 
-このテンプレートはモデル適合に **`brm_multiple()` を使いません**。
+このテンプレートはモデルフィッティングに **`brm_multiple()` を使いません**。
 
-代わりに、代入データセットごとに 1 つの `brms` モデルを適合し、すぐに保存します。
+代わりに、補完データセットごとに 1 つの `brms` モデルをフィットし、すぐに保存します。
 
 ```text
 fits/fit_imp_001.rds
@@ -64,17 +64,17 @@ fits/fit_imp_002.rds
 fits/fit_imp_100.rds
 ```
 
-この方式は大規模データに対して安全です。理由は次のとおりです。
+この方式は大規模データに対して用いることを想定しており、メモリオーバーを防止できるため、より安全です。
 
 - メインの R セッションが全 fit をメモリに保持しない。
 - 実行が止まっても完了済み fit が残る。
-- 失敗または遅い代入を個別に再実行できる。
+- 失敗または遅いモデルフィッティングを個別に再実行できる。
 - 再実行時に有効な既存 fit をスキップできる。
-- worker プロセスがメインセッションへ返すのは小さなステータスオブジェクトだけである。
+- worker プロセス（多重代入やモデルフィッティングなど）がメインセッションへ返すのは小さなステータスオブジェクトだけである。
 
-並列化は `future` / `furrr` を使って代入間で行い、動的スケジューリングを使います。
+並列化は `future` / `furrr` を使って行い、動的スケジューリングを使います。
 
-```r
+```
 furrr::furrr_options(
   seed = TRUE,
   scheduling = Inf
@@ -83,19 +83,19 @@ furrr::furrr_options(
 
 ### 対応する分析パターン
 
-```text
+```
 単一時点アウトカム、行レベル共変量
 反復アウトカム、被験者レベル共変量
 反復アウトカム、時間変動共変量
 代入なしの complete-case 解析
-行レベル多重代入
-被験者レベル多重代入
+行レベルMICE
+被験者レベルMICE
 反復 Y を補助変数として用いる被験者ワイド代入
 ```
 
 対応するモデルファミリー：
 
-```text
+```
 gaussian
 bernoulli
 poisson
@@ -111,20 +111,20 @@ categorical
 
 ## 2. パイプラインの構成
 
-リポジトリは、ユーザーが編集する少数のファイルと、番号付きのパイプラインスクリプトで構成されています。多くのプロジェクトでは、通常次の 2 つだけを編集します。
+リポジトリは、ユーザーが編集する少数のファイルと、番号付きのパイプラインスクリプトで構成されています。多くのプロジェクトでは、通常次の 2 つのファイルだけを編集します。
 
-```text
+```
 00_config.R
 00_variable_dictionary.csv
 ```
 
-その他のスクリプトは通常、パイプライン本体のコードとして扱います。
+その他のスクリプトは通常、パイプライン本体のコードとして使い、ユーザーが特に編集することはありません。
 
 ### パイプラインスクリプト
 
 メインパイプラインは `run_all.R` で実行され、次のスクリプトを順に呼び出します。
 
-```text
+```
 01_validate_config.R
 02_prepare_data.R
 03_impute.R
@@ -137,13 +137,13 @@ categorical
 
 追加の任意スクリプト：
 
-```text
+```
 09_check_mo_parameter_columns.R      任意；抽出された mo() パラメータ列を確認
 10_publication_mo_results.R         任意；mo() の派生 odds ratio 要約を作成
 11_check_imputation_stability.R      任意；m を増やしたときの事後要約の安定性を確認
 ```
 
-`09` と `10` は、`brms::mo()` による単調順序効果の出版向け要約が必要な場合だけ使います。`11` は、モデル適合が高コストで、代入数の妥当性を示したい場合に有用です。
+`09` と `10` は、`brms::mo()` による単調順序効果の論文向け要約が必要な場合だけ使います。`11` は、モデルフィッティングが高コストで、代入数`m`の妥当性を示したい場合に有用です。
 
 ---
 
@@ -151,14 +151,16 @@ categorical
 
 この例では `datasets::airquality` を使います。
 
-```bash
+まず、gitサイトから、最新のパイプラインを入手してください。任意のフォルダで以下を実行します。
+
+```
 git clone https://github.com/fabregithub/generic-mi-brms-pipeline.git
 cd generic-mi-brms-pipeline
 ```
 
-続いて実行します。
+続いて以下を実行します。
 
-```bash
+```
 cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
 cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
 Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
@@ -168,7 +170,7 @@ Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 
 出力先：
 
-```text
+```
 objects/
 fits/
 results/
@@ -177,7 +179,7 @@ results/publication/
 
 ---
 
-## 4. 私的な研究データへの適用
+## 4. 実際の研究データへの適用
 
 推奨ワークフロー：
 
@@ -188,23 +190,23 @@ results/publication/
 5. 小さなクイックテストを実行する。
 6. 控えめな並列テストを実行する。
 7. 本番解析を実行する。
-8. 出版用出力をレンダリングして確認する。
+8. 論文用出力をレンダリングして確認する。
 
 入力データ例：
 
-```text
+```
 data/my_analysis_data.rds
 ```
 
 R で保存：
 
-```r
+```
 saveRDS(my_data, "data/my_analysis_data.rds")
 ```
 
 `00_config.R` で指定：
 
-```r
+```
 data = list(
   raw_data_file = "data/my_analysis_data.rds",
   ...
@@ -213,11 +215,11 @@ data = list(
 
 ### 欠測メカニズムの確認
 
-代入前に、各変数がなぜ欠測しているのかを確認してください。このパイプラインは `miceRanger` を用いた MICE 型多重代入を使います。観測変数で条件づけた後に MCAR または MAR とみなすことが妥当な場合に適しています。
+欠測補完前に、各変数がなぜ欠測しているのかを確認してください。このパイプラインは `miceRanger` を用いた MICE 型多重代入を使います。観測変数で条件づけた後に MCAR または MAR とみなすことが妥当な場合に適しています。
 
 次のものを通常の `NA` としてそのまま渡さないでください。
 
-```text
+```
 左打ち切り測定値
 検出限界未満の値
 右打ち切りまたは区間打ち切り測定値
@@ -229,9 +231,9 @@ data = list(
 
 これらはパイプライン前に適切に処理するか、感度分析で扱う必要があります。
 
-### 代入を使わない場合
+### 補完を使わない場合
 
-```r
+```
 imputation = list(
   enabled = FALSE,
   strategy = "none",
@@ -246,35 +248,35 @@ imputation = list(
 
 欠測の確認：
 
-```r
+```
 source("00_config.R")
 d <- readRDS(paths$raw_data)
 colSums(is.na(d))
 ```
 
-### 代入数の選び方
+### 補完データセット数の選び方
 
-`m` に万能の値はありません。計算コストが高い解析では、段階的に増やすのが安全です。
+補完データセット数`m` に万能の値はありません。計算コストが高い解析では、段階的に増やすのが安全です。
 
-```text
+```
 20 -> 40 -> 60 -> 80 -> 100
 ```
 
-4 モデルを並列で適合する場合は次も便利です。
+4 モデルを並列でフィッティングする場合は次も便利です。
 
-```text
+```
 24 -> 40 -> 60 -> 80 -> 100
 ```
 
 ステップ 6 の後に実行：
 
-```bash
+```
 Rscript 11_check_imputation_stability.R
 ```
 
 出力先：
 
-```text
+```
 results/publication/mi_stability/
 ```
 
@@ -286,7 +288,7 @@ results/publication/mi_stability/
 
 期待される列：
 
-```text
+```
 var
 label
 role
@@ -303,7 +305,7 @@ use_as_auxiliary
 
 - `var`: データセット内の正確な変数名。
 - `label`: 表やレポート用の人間可読ラベル。
-- `impute_target`: 欠測時に代入対象とするか。
+- `impute_target`: 欠測時に補完対象とするか。
 - `use_in_model`: 最終 `brms` モデルに含めるか。
 - `use_as_auxiliary`: 最終モデルには含めず、代入用の補助変数として使うか。
 
@@ -326,8 +328,8 @@ use_as_auxiliary
 | 設定 | 使用箇所 | 意味 |
 |---|---|---|
 | `impute_workers` | ステップ 3 | 並列 `miceRanger` worker 数 |
-| `num_impute_threads_per_worker` | ステップ 3 | 代入 worker ごとのスレッド数 |
-| `fit_workers` | ステップ 4 | 並列に適合する代入データセット数 |
+| `num_impute_threads_per_worker` | ステップ 3 | 補完 worker ごとのスレッド数 |
+| `fit_workers` | ステップ 4 | 並列にフィッティングする補完データセット数 |
 | `cores_per_fit` | ステップ 4 | `brms` fit ごとの chain/core 数 |
 | `summary_workers` | ステップ 6 | 事後 draw 抽出用 worker 数 |
 | `prediction_workers` | ステップ 7 | 事後予測用 worker 数 |
@@ -335,7 +337,7 @@ use_as_auxiliary
 
 例：
 
-```r
+```
 parallel = list(
   impute_workers = 2,
   num_impute_threads_per_worker = 2,
@@ -354,9 +356,9 @@ parallel = list(
 
 ## 7. ログ、監視、再開、トラブルシューティング
 
-よく使うコマンド：
+通常使うコマンド：
 
-```bash
+```
 Rscript 01_validate_config.R
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 Rscript fit_single_imputation.R 1
@@ -365,7 +367,7 @@ quarto render results/publication/report/bayesian_mi_report_template.qmd
 
 実行が中断された場合は、再度実行します。
 
-```bash
+```
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
@@ -373,7 +375,7 @@ Rscript run_all.R 2>&1 | tee run_all_stdout.log
 
 ログとステータスファイル：
 
-```text
+```
 pipeline_progress.log
 pipeline_stdout.log
 pipeline_heartbeat.txt
@@ -384,13 +386,13 @@ results/worker_logs/
 
 進捗監視：
 
-```bash
+```
 tail -f pipeline_progress.log
 ```
 
 CmdStanR キャッシュの問題が疑われる場合：
 
-```bash
+```
 rm -rf ~/.cmdstanr-cache
 mkdir -p ~/.cmdstanr-cache
 ```
@@ -399,15 +401,15 @@ mkdir -p ~/.cmdstanr-cache
 
 ## 8. 出版用出力と推論上の注意
 
-正常終了後、出版用出力は次に作成されます。
+正常終了後、論文用出力は次に作成されます。
 
-```text
+```
 results/publication/
 ```
 
 代表的な出力：
 
-```text
+```
 results/publication/tables/main_effect_table_display.csv
 results/publication/tables/main_effect_table_full.csv
 results/publication/tables/diagnostics_summary.csv
@@ -418,13 +420,13 @@ results/publication/report/bayesian_mi_report_template.qmd
 
 レポートのレンダリング：
 
-```bash
+```
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
 `brms::mo()` を使うモデルでは：
 
-```bash
+```
 Rscript 09_check_mo_parameter_columns.R
 Rscript 10_publication_mo_results.R
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
@@ -432,11 +434,11 @@ quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 
 ---
 
-## 9. 例とテスト
+## 9. 実例とテスト
 
-含まれる公開例：
+含まれる公開データ実例：
 
-```text
+```
 examples/airquality_gaussian
 examples/birthwt_logistic
 examples/birthwt_spline_monotonic
@@ -444,19 +446,19 @@ examples/birthwt_spline_monotonic
 
 クイックテスト：
 
-```bash
+```
 bash test/test_all_examples_quick.sh
 ```
 
 並列テスト：
 
-```bash
+```
 bash test/test_all_examples_parallel.sh
 ```
 
 例を切り替える前のクリーンアップ：
 
-```bash
+```
 rm -rf objects fits results
 rm -f pipeline_error.flag pipeline_success.flag
 rm -f pipeline_progress.log pipeline_heartbeat.txt pipeline_stdout.log run_all_stdout.log
@@ -464,7 +466,7 @@ rm -f pipeline_progress.log pipeline_heartbeat.txt pipeline_stdout.log run_all_s
 
 または：
 
-```bash
+```
 bash 99_cleanall.sh
 ```
 
@@ -476,7 +478,7 @@ R、システムツール、必要な R パッケージ、CmdStan/CmdStanR、レ
 
 主要 R パッケージ：
 
-```r
+```
 install.packages(c(
   "tidyverse", "miceRanger", "brms", "posterior", "bayestestR",
   "future", "furrr", "doParallel", "foreach", "gt", "flextable",
@@ -487,7 +489,7 @@ install.packages(c(
 
 `cmdstanr` と CmdStan：
 
-```r
+```
 install.packages(
   "cmdstanr",
   repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
@@ -501,13 +503,13 @@ cmdstanr::cmdstan_path()
 
 Quarto の確認：
 
-```bash
+```
 quarto --version
 ```
 
 長期的な再現性のためには `renv` の利用も検討してください。
 
-```r
+```
 install.packages("renv")
 renv::init()
 renv::snapshot()

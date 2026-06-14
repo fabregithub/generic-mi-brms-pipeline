@@ -71,7 +71,7 @@ This template does **not** use `brm_multiple()` for model fitting.
 
 Instead, it fits one `brms` model per imputed dataset and saves each fit immediately:
 
-```
+```text
 fits/fit_imp_001.rds
 fits/fit_imp_002.rds
 ...
@@ -88,7 +88,7 @@ This is intentionally safer for large datasets because:
 
 Parallelism happens across imputations using `future` / `furrr`, with dynamic scheduling. This is configured inside the R scripts:
 
-```
+```r
 furrr::furrr_options(
   seed = TRUE,
   scheduling = Inf
@@ -103,7 +103,7 @@ This improves load balancing when some imputed datasets take longer than others.
 
 The template is designed to support:
 
-```
+```text
 single-time outcome, row-level covariates
 repeated outcome with subject-level covariates
 repeated outcome with time-varying covariates
@@ -115,7 +115,7 @@ subject-wide imputation using repeated Y as auxiliary variables
 
 Supported model families include:
 
-```
+```text
 gaussian
 bernoulli
 poisson
@@ -180,7 +180,7 @@ Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline o
 
 Usually edit only:
 
-```
+```text
 00_config.R
 00_variable_dictionary.csv
 ```
@@ -221,7 +221,7 @@ First, obtain a local copy of the template repository.
 
 Using Git:
 
-```
+```bash
 git clone https://github.com/fabregithub/generic-mi-brms-pipeline.git
 cd generic-mi-brms-pipeline
 ```
@@ -230,7 +230,7 @@ Alternatively, download the repository as a ZIP file from GitHub, unzip it, and 
 
 Then run:
 
-```
+```bash
 cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
 cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
 Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
@@ -240,7 +240,7 @@ Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 
 Outputs are written to:
 
-```
+```text
 objects/
 fits/
 results/
@@ -614,13 +614,13 @@ For a new project:
 2. Edit `00_config.R`.
 3. Run in Terminal:
 
-```
+```bash
 Rscript 01_validate_config.R
 ```
 
 4. If validation passes, run in Terminal:
 
-```
+```bash
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
@@ -826,7 +826,7 @@ posterior_prediction = list(
 
 This quick test is intended to check that:
 
-```
+```text
 the data are read correctly
 the variable dictionary is valid
 imputation runs
@@ -936,7 +936,7 @@ imputation = list(
 
 This strategy does the following:
 
-```
+```text
 1. Starts from long data, one row per subject-time observation.
 2. Creates a subject-wide imputation dataset, one row per subject.
 3. Converts the repeated outcome into wide auxiliary variables, for example:
@@ -948,7 +948,7 @@ This strategy does the following:
 
 Required `00_config.R` fields:
 
-```
+```r
 analysis_spec$data$id_var
 analysis_spec$data$time_var
 analysis_spec$outcome$y_var
@@ -958,7 +958,7 @@ analysis_spec$outcome$y_wide_regex
 
 Example:
 
-```
+```r
 data = list(
   raw_data_file = "data/my_repeated_data.rds",
   id_var = "ID",
@@ -990,25 +990,25 @@ imputation = list(
 
 In `00_variable_dictionary.csv`, subject-level covariates should have:
 
-```
+```r
 timing = single
 ```
 
 or:
 
-```
+```r
 timing = baseline
 ```
 
 Repeated or time-varying variables should have:
 
-```
+```r
 timing = repeated
 ```
 
 or:
 
-```
+```r
 timing = time_varying
 ```
 
@@ -1018,13 +1018,13 @@ If `impute_y = FALSE`, repeated outcome values are not imputed as targets. They 
 
 Ordinal variables should be marked in the dictionary:
 
-```
+```r
 type = ordinal
 ```
 
 The pipeline converts these variables to ordered factors before modelling. They can then be used in a custom `brms` formula:
 
-```
+```r
 custom_formula = brms::bf(
   y ~ mo(education) + mo(income) + age_z + sex + (1 | id)
 )
@@ -1040,7 +1040,7 @@ The pipeline uses `00_variable_dictionary.csv` as the default source of truth fo
 
 This means the following information should normally be specified only in the dictionary:
 
-```
+```text
 role
 type
 timing
@@ -1053,13 +1053,13 @@ use_as_auxiliary
 
 Therefore, the standard setting in `00_config.R` is:
 
-```
+```r
 variables = NULL
 ```
 
 The pipeline automatically derives internal variable groups from the dictionary, including:
 
-```
+```text
 exposure_vars
 covariate_vars
 auxiliary_vars
@@ -1073,7 +1073,7 @@ scale_vars
 
 For example, if `00_variable_dictionary.csv` contains:
 
-```
+```text
 var,role,type,timing,scale,use_in_model
 Solar.R,covariate,continuous,single,z,TRUE
 Wind,covariate,continuous,single,z,TRUE
@@ -1083,13 +1083,13 @@ Month,covariate,categorical,single,no,TRUE
 
 and `analysis_spec$model$fixed_effects` is:
 
-```
+```r
 fixed_effects = "auto"
 ```
 
 the model uses:
 
-```
+```r
 Solar.R_z + Wind_z + Temp_z + Month
 ```
 
@@ -1099,7 +1099,7 @@ Advanced users can override selected derived groups in `00_config.R`.
 
 Example:
 
-```
+```r
 variables = list(
   scale_vars = c("age", "income"),
   auxiliary_vars = c("baseline_score")
@@ -1118,7 +1118,7 @@ The file `00_variable_dictionary.csv` is the main machine-readable description o
 
 Expected columns are:
 
-```
+```text
 var
 label
 role
@@ -1162,7 +1162,7 @@ Recommended values:
 
 For most standard regression analyses, the most common roles are:
 
-```
+```text
 outcome
 binary_outcome
 exposure
@@ -1174,7 +1174,7 @@ auxiliary
 
 Example:
 
-```
+```text
 var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
 low,Low birth weight,binary_outcome,binary,single,no,0,FALSE,TRUE,FALSE
 age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
@@ -1199,7 +1199,7 @@ Recommended values:
 
 Examples:
 
-```
+```text
 age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
 smoke,Smoking during pregnancy,covariate,binary,single,no,0,TRUE,TRUE,FALSE
 race,Race,covariate,categorical,single,no,1,TRUE,TRUE,FALSE
@@ -1228,7 +1228,7 @@ Recommended values:
 
 Examples:
 
-```
+```text
 ps,Psychological stress,binary_outcome,binary,repeated,no,0,FALSE,TRUE,TRUE
 time,Measurement wave,time,integer,repeated,no,,FALSE,TRUE,FALSE
 c_sex,Child sex,covariate,binary,baseline,no,0,TRUE,TRUE,FALSE
@@ -1256,19 +1256,19 @@ Recommended values:
 
 Currently, the most important supported value is:
 
-```
+```text
 z
 ```
 
 Example:
 
-```
+```text
 age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
 ```
 
 This creates:
 
-```
+```text
 age_z
 ```
 
@@ -1278,7 +1278,7 @@ Use `z` for continuous predictors when coefficients should represent the effect 
 
 Do not use `z` for:
 
-```
+```text
 outcomes
 ID variables
 binary/categorical variables
@@ -1291,14 +1291,14 @@ already standardised variables
 
 Examples:
 
-```
+```text
 smoke,Smoking during pregnancy,covariate,binary,single,no,0,TRUE,TRUE,FALSE
 race,Race,covariate,categorical,single,no,1,TRUE,TRUE,FALSE
 ```
 
 For a binary variable coded `0/1`, setting:
 
-```
+```text
 reference = 0
 ```
 
@@ -1320,7 +1320,7 @@ This is useful for variables that help predict missingness or missing values, bu
 
 Examples:
 
-```
+```text
 extra_score,Extra baseline score,auxiliary,continuous,baseline,z,,TRUE,FALSE,TRUE
 hospital_id,Hospital ID,auxiliary,categorical,single,no,,FALSE,FALSE,TRUE
 ```
@@ -1339,25 +1339,25 @@ Common use cases:
 
 1. Auxiliary predictor only:
 
-```
+```text
 baseline_score,Baseline questionnaire score,auxiliary,continuous,baseline,z,,FALSE,FALSE,TRUE
 ```
 
 2. Variable to impute and include:
 
-```
+```text
 income,Household income,covariate,categorical,baseline,no,1,TRUE,TRUE,FALSE
 ```
 
 3. Outcome not imputed:
 
-```
+```text
 low,Low birth weight,binary_outcome,binary,single,no,0,FALSE,TRUE,FALSE
 ```
 
 4. Repeated outcome as imputation auxiliary:
 
-```
+```text
 ps,Psychological stress,binary_outcome,binary,repeated,no,0,FALSE,TRUE,TRUE
 ```
 
@@ -1365,7 +1365,7 @@ Whether repeated outcomes are used as auxiliary predictors depends on the imputa
 
 ### Example: Gaussian demo
 
-```
+```text
 var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
 Ozone,Ozone concentration,outcome,continuous,single,no,,FALSE,TRUE,FALSE
 Solar.R,Solar radiation,covariate,continuous,single,z,,TRUE,TRUE,FALSE
@@ -1377,7 +1377,7 @@ row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 
 ### Example: Logistic demo
 
-```
+```text
 var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
 low,Low birth weight,binary_outcome,binary,single,no,0,FALSE,TRUE,FALSE
 age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
@@ -1425,7 +1425,7 @@ row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 
 In `00_config.R`, this dictionary is paired with a custom formula:
 
-```text
+```r
 custom_formula = brms::bf(
   low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z
 )
@@ -1560,13 +1560,13 @@ parallel = list(
 
 The approximate CPU demand during imputation is:
 
-```
+```text
 impute_workers * num_impute_threads_per_worker
 ```
 
 For example:
 
-```
+```text
 4 workers * 4 threads per worker = about 16 active threads
 ```
 
@@ -1594,7 +1594,7 @@ parallel = list(
 
 To test parallel imputation from scratch, remove old imputation outputs first:
 
-```
+```bash
 rm -f objects/imputation_manifest.rds
 rm -f objects/imputation_spec.rds
 rm -rf objects/imputed_data
@@ -1640,7 +1640,7 @@ parallel = list(
 
 This runs:
 
-```
+```text
 100 imputations
 4 chains per model
 4 imputed datasets fitted in parallel
@@ -1681,31 +1681,31 @@ to save a little time.
 
 Validate config. Run in Terminal:
 
-```
+```bash
 Rscript 01_validate_config.R
 ```
 
 Run all steps. Run in Terminal:
 
-```
+```bash
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
 Fit one imputed dataset only. Run in Terminal:
 
-```
+```bash
 Rscript fit_single_imputation.R 1
 ```
 
 For example, to fit the model only for imputed dataset 51, run in Terminal:
 
-```
+```bash
 Rscript fit_single_imputation.R 51
 ```
 
 Render the generated Quarto report after installing Quarto. Run in Terminal:
 
-```
+```bash
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -1715,7 +1715,7 @@ quarto render results/publication/report/bayesian_mi_report_template.qmd
 
 The pipeline is checkpointed. If a run is interrupted, run the following in Terminal:
 
-```
+```bash
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
@@ -1723,7 +1723,7 @@ Existing valid fit files are skipped.
 
 To clean only fitting and downstream results while keeping prepared/imputed data, run in Terminal:
 
-```
+```bash
 rm -f fits/fit_imp_*.rds
 rm -f objects/fit_manifest.rds
 rm -f objects/fit_status.rds
@@ -1751,7 +1751,7 @@ or run ```bash 99_clean_fitting_results.sh```.
 
 To clean imputation and all downstream outputs, run in Terminal:
 
-```
+```bash
 rm -f objects/imputation_manifest.rds
 rm -f objects/imputed_data/*.rds
 rm -f objects/imputed_wide/*.rds
@@ -1790,7 +1790,7 @@ or run ```bash 99_cleanall.sh```.
 
 The pipeline writes logs and status files:
 
-```
+```text
 pipeline_progress.log
 pipeline_stdout.log
 pipeline_heartbeat.txt
@@ -1801,26 +1801,26 @@ results/worker_logs/
 
 Monitor progress by running the following in Terminal:
 
-```
+```bash
 tail -f pipeline_progress.log
 ```
 
 Inspect worker-level fitting logs by running the following in Terminal:
 
-```
+```bash
 ls -lh results/worker_logs
 cat results/worker_logs/fit_worker_imp_001.log
 ```
 
 If the pipeline completes successfully, this file is created:
 
-```
+```text
 pipeline_success.flag
 ```
 
 If an R-level error is caught, this file is created:
 
-```
+```text
 pipeline_error.flag
 ```
 
@@ -1832,14 +1832,14 @@ If the machine crashes or restarts unexpectedly, there may be no error flag. In 
 
 If a simple model fails with an error like:
 
-```
+```text
 Fitting failed. Unable to retrieve the metadata.
 No chains finished successfully. Unable to retrieve the fit.
 ```
 
 and the data look valid, try clearing the CmdStanR cache. Run in Terminal:
 
-```
+```bash
 rm -rf ~/.cmdstanr-cache
 mkdir -p ~/.cmdstanr-cache
 ```
@@ -1856,7 +1856,7 @@ A good sequence is:
 
 1. Validate the config. Run in Terminal:
 
-```
+```bash
 Rscript 01_validate_config.R
 ```
 
@@ -1866,7 +1866,7 @@ Rscript 01_validate_config.R
 
 4. If a specific imputed dataset is slow or problematic during model fitting, fit it alone. Run in Terminal:
 
-```
+```bash
 Rscript fit_single_imputation.R 51
 ```
 
@@ -1898,7 +1898,7 @@ model = list(
 
 Interpretation:
 
-```
+```text
 skip_imputations = do not fit brms models for these imputed datasets
 only_imputations = fit brms models only for these imputed datasets
 ```
@@ -1911,13 +1911,13 @@ These settings are useful when one imputed dataset is unusually slow or problema
 
 After successful completion, publication outputs are written to:
 
-```
+```text
 results/publication/
 ```
 
 Typical outputs include:
 
-```
+```text
 results/publication/tables/main_effect_table_display.csv
 results/publication/tables/main_effect_table_full.csv
 results/publication/tables/diagnostics_summary.csv
@@ -1931,7 +1931,7 @@ The generated Quarto report includes posterior results, diagnostics, figures and
 
 Render the report with:
 
-```
+```bash
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2039,7 +2039,7 @@ The repository includes three public example analyses. These are intended to hel
 
 The example folders are:
 
-```
+```text
 examples
 ├── airquality_gaussian
 │   ├── 00_config_airquality_gaussian.R
@@ -2058,7 +2058,7 @@ examples
 
 Each example contains:
 
-```
+```text
 a config file
 a variable dictionary
 a data-creation script
@@ -2066,7 +2066,7 @@ a data-creation script
 
 To use an example, copy its config file and variable dictionary to the project root as:
 
-```
+```text
 00_config.R
 00_variable_dictionary.csv
 ```
@@ -2079,7 +2079,7 @@ This is the default Gaussian example.
 
 It tests:
 
-```
+```text
 continuous outcome
 gaussian(identity) model
 row-level imputation
@@ -2089,7 +2089,7 @@ posterior prediction for rows with missing outcome values
 
 Model outline:
 
-```
+```text
 Dataset: datasets::airquality
 Outcome: Ozone
 Model family: gaussian(identity)
@@ -2098,7 +2098,7 @@ Model: Ozone ~ Solar.R_z + Wind_z + Temp_z + Month
 
 Run in Terminal from the project root:
 
-```
+```bash
 cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
 cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
 
@@ -2109,7 +2109,7 @@ Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 
 Render the report:
 
-```
+```bash
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2119,7 +2119,7 @@ This example tests the Bernoulli/logit workflow with a binary outcome.
 
 It tests:
 
-```
+```text
 binary outcome
 bernoulli(logit) model
 row-level imputation
@@ -2129,7 +2129,7 @@ ordinary fixed-effect reporting
 
 Model outline:
 
-```
+```text
 Dataset: MASS::birthwt
 Outcome: low
 Model family: bernoulli(logit)
@@ -2138,7 +2138,7 @@ Model: low ~ age_z + lwt_z + race + smoke + ptl_z + ht + ui + ftv_z
 
 Run in Terminal from the project root:
 
-```
+```bash
 cp examples/birthwt_logistic/00_config_birthwt_logistic.R 00_config.R
 cp examples/birthwt_logistic/00_variable_dictionary_birthwt_logistic.csv 00_variable_dictionary.csv
 
@@ -2149,7 +2149,7 @@ Rscript run_all.R 2>&1 | tee run_all_birthwt_logistic_stdout.log
 
 Render the report:
 
-```
+```bash
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2159,7 +2159,7 @@ This example tests custom `brms` formulae with `s()` and `mo()` terms.
 
 It tests:
 
-```
+```text
 custom_formula
 s() smooth terms
 mo() monotonic effects
@@ -2171,7 +2171,7 @@ odds-ratio reporting for ordinary fixed effects
 
 Model outline:
 
-```
+```text
 Dataset: MASS::birthwt
 Outcome: low
 Model family: bernoulli(logit)
@@ -2182,7 +2182,7 @@ Here, `lwt_q` is an ordered quintile version of maternal weight, created by the 
 
 Run in Terminal from the project root:
 
-```
+```bash
 cp examples/birthwt_spline_monotonic/00_config_birthwt_spline_monotonic.R 00_config.R
 cp examples/birthwt_spline_monotonic/00_variable_dictionary_birthwt_spline_monotonic.csv 00_variable_dictionary.csv
 
@@ -2193,13 +2193,13 @@ Rscript run_all.R 2>&1 | tee run_all_birthwt_spline_monotonic_stdout.log
 
 Render the main report:
 
-```
+```bash
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
 For this example, the model includes mo(lwt_q). To create derived monotonic-effect odds-ratio summaries, also run:
 
-```
+```bash
 Rscript 09_check_mo_parameter_columns.R
 Rscript 10_publication_mo_results.R
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
@@ -2207,13 +2207,13 @@ quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 
 The main monotonic-effect table is:
 
-```
+```text
 results/publication/mo_effects/tables/mo_cumulative_or_table.csv
 ```
 
 Supplementary monotonic-effect outputs include:
 
-```
+```text
 results/publication/mo_effects/tables/mo_adjacent_or_table.csv
 results/publication/mo_effects/tables/mo_simplex_table.csv
 results/publication/mo_effects/report/mo_effects_report.html
@@ -2222,7 +2222,7 @@ results/publication/mo_effects/report/mo_effects_report.docx
 
 See also:
 
-```
+```text
 examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md
 ```
 
@@ -2230,7 +2230,7 @@ examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md
 
 When switching from one example to another, clean the previous outputs first. Run in Terminal:
 
-```
+```bash
 rm -rf objects fits results
 rm -f pipeline_error.flag
 rm -f pipeline_success.flag
@@ -2242,7 +2242,7 @@ rm -f run_all_stdout.log
 
 If the repository includes a cleaning script, you can instead run:
 
-```
+```bash
 bash 99_cleanall.sh
 ```
 
@@ -2252,7 +2252,7 @@ The repository may include optional bash scripts to test the examples automatica
 
 Quick tests use small settings such as:
 
-```
+```text
 m = 5
 chains = 1
 iter = 500
@@ -2265,13 +2265,13 @@ prediction_workers = 1
 
 Run in Terminal:
 
-```
+```bash
 bash test/test_all_examples_quick.sh
 ```
 
 Parallel tests use modest parallel settings such as:
 
-```
+```text
 m = 10
 chains = 4
 iter = 500
@@ -2284,13 +2284,13 @@ prediction_workers = 2
 
 Run in Terminal:
 
-```
+```bash
 bash test/test_all_examples_parallel.sh
 ```
 
 A successful example test should create:
 
-```
+```text
 results/diagnostics.rds
 results/parameter_summary.rds
 results/publication/tables/main_effect_table_display.csv
@@ -2306,7 +2306,7 @@ results/publication/report/bayesian_mi_report_template.docx
 
 The bash test scripts write isolated preserved runs under:
 
-```
+```text
 test/runs/
 ```
 
@@ -2314,31 +2314,31 @@ This means example tests do not delete or overwrite root-level `objects/`, `fits
 
 Run quick tests:
 
-```
+```bash
 bash test/test_all_examples_quick.sh
 ```
 
 Run parallel tests:
 
-```
+```bash
 bash test/test_all_examples_parallel.sh
 ```
 
 List preserved test runs:
 
-```
+```bash
 bash test/list_test_runs.sh
 ```
 
 To clean all preserved test runs manually:
 
-```
+```bash
 rm -rf test/runs
 ```
 
 Add this to `.gitignore` if it is not already present:
 
-```
+```text
 test/runs/
 ```
 
@@ -2370,13 +2370,13 @@ Before running the pipeline, prepare the R environment and CmdStan toolchain. Th
 
 Run in Terminal to install the Apple command line tools:
 
-```
+```bash
 xcode-select --install
 ```
 
 Run in Terminal to confirm that `make` and a C++ compiler are available:
 
-```
+```bash
 make --version
 clang++ --version
 ```
@@ -2387,7 +2387,7 @@ If these commands fail, restart the Terminal and try again.
 
 Run in R or RStudio to install the packages required for this pipeline:
 
-```
+```r
 install.packages(c(
   "tidyverse",
   "miceRanger",
@@ -2414,7 +2414,7 @@ install.packages(c(
 
 Run in R or RStudio to install `cmdstanr` from the Stan R-universe repository:
 
-```
+```r
 install.packages(
   "cmdstanr",
   repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
@@ -2425,7 +2425,7 @@ install.packages(
 
 Run in R or RStudio:
 
-```
+```r
 library(cmdstanr)
 
 cmdstanr::check_cmdstan_toolchain(fix = TRUE)
@@ -2437,13 +2437,13 @@ This may take several minutes because CmdStan is compiled locally.
 
 Run in R or RStudio to check the CmdStan path:
 
-```
+```r
 cmdstanr::cmdstan_path()
 ```
 
 You should see something like:
 
-```
+```text
 /Users/yourname/.cmdstan/cmdstan-2.xx.x
 ```
 
@@ -2451,7 +2451,7 @@ You should see something like:
 
 Run this small CmdStanR test in R or RStudio:
 
-```
+```r
 library(cmdstanr)
 
 cmdstanr::check_cmdstan_toolchain(fix = TRUE)
@@ -2486,7 +2486,7 @@ If this runs successfully, CmdStan is ready.
 
 Run this minimal `brms` test in R or RStudio:
 
-```
+```r
 library(brms)
 library(cmdstanr)
 
@@ -2514,7 +2514,7 @@ If this succeeds, the local Bayesian modelling environment is ready for the pipe
 
 The pipeline can generate a Quarto report template in:
 
-```
+```text
 results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2522,7 +2522,7 @@ To render this report to HTML or DOCX, install Quarto.
 
 Run in Terminal on macOS with Homebrew:
 
-```
+```bash
 brew install --cask quarto
 ```
 
@@ -2530,7 +2530,7 @@ Alternatively, download and install Quarto from the Quarto website.
 
 Run in Terminal to verify the installation:
 
-```
+```bash
 quarto --version
 ```
 
@@ -2540,14 +2540,14 @@ If this command prints a version number, Quarto is ready.
 
 If a simple model fails with an error such as:
 
-```
+```text
 Fitting failed. Unable to retrieve the metadata.
 No chains finished successfully. Unable to retrieve the fit.
 ```
 
 and the data look valid, run the following in Terminal to clear the CmdStanR cache:
 
-```
+```bash
 rm -rf ~/.cmdstanr-cache
 mkdir -p ~/.cmdstanr-cache
 ```
@@ -2558,7 +2558,7 @@ Then re-run the validation or pipeline.
 
 For long-term reproducibility, consider using `renv`. Run in R or RStudio:
 
-```
+```r
 install.packages("renv")
 renv::init()
 renv::snapshot()
@@ -2566,7 +2566,7 @@ renv::snapshot()
 
 This creates a project-specific package lockfile so the same package versions can be restored later. Run in R or RStudio:
 
-```
+```r
 renv::restore()
 ```
 
@@ -2680,7 +2680,7 @@ The pipeline requires both R packages and the Quarto command-line tool for repor
 
 Core R packages:
 
-```
+```r
 install.packages(c(
   "tidyverse",
   "miceRanger",
@@ -2701,7 +2701,7 @@ install.packages(c(
 
 Quarto is also required if you want to render the generated `.qmd` report. Run in Terminal:
 
-```
+```bash
 # macOS with Homebrew
 brew install --cask quarto
 
@@ -2711,7 +2711,7 @@ quarto --version
 
 Install `cmdstanr` and CmdStan. Run in R or RStudio:
 
-```
+```r
 install.packages(
   "cmdstanr",
   repos = c("https://stan-dev.r-universe.dev", getOption("repos"))
@@ -2723,7 +2723,7 @@ cmdstanr::check_cmdstan_toolchain(fix = TRUE)
 
 If CmdStan is already installed, confirm the path in R or RStudio:
 
-```
+```r
 cmdstanr::cmdstan_path()
 ```
 
