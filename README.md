@@ -18,19 +18,6 @@ The default example uses the built-in public dataset `datasets::airquality`, so 
 
 ---
 
-## Translations
-
-This README is maintained in English as the primary version. Translations are available here:
-
-- [Français](docs/README.fr.md)
-- [Español](docs/README.es.md)
-- [Deutsch](docs/README.de.md)
-- [日本語](docs/README.ja.md)
-
-If there is any difference between a translation and the English version, the English version should be treated as authoritative.
-
----
-
 ## Contents
 
 1. [Background and purpose](#1-background-and-purpose)
@@ -222,6 +209,7 @@ First, obtain a local copy of the template repository.
 Using Git:
 
 ```bash
+# Bash command block
 git clone https://github.com/fabregithub/generic-mi-brms-pipeline.git
 cd generic-mi-brms-pipeline
 ```
@@ -231,6 +219,7 @@ Alternatively, download the repository as a ZIP file from GitHub, unzip it, and 
 Then run:
 
 ```bash
+# Bash command block
 cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
 cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
 Rscript examples/airquality_gaussian/00_create_airquality_example_data.R
@@ -615,12 +604,14 @@ For a new project:
 3. Run in Terminal:
 
 ```bash
+# Bash command block
 Rscript 01_validate_config.R
 ```
 
 4. If validation passes, run in Terminal:
 
 ```bash
+# Bash command block
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
@@ -671,6 +662,7 @@ For small samples, highly incomplete variables, weakly identified models or esti
 After Step 6 has created per-imputation posterior draw files, run:
 
 ```bash
+# Bash command block
 Rscript 11_check_imputation_stability.R
 ```
 
@@ -763,6 +755,7 @@ Option 3: start a clean new run in a new output folder with the smaller final m.
 For Option 2, the downstream sequence is usually:
 
 ```bash
+# Bash command block
 Rscript 05_diagnostics.R
 Rscript 06_posterior_summary.R
 Rscript 07_posterior_prediction.R
@@ -948,7 +941,7 @@ This strategy does the following:
 
 Required `00_config.R` fields:
 
-```r
+```text
 analysis_spec$data$id_var
 analysis_spec$data$time_var
 analysis_spec$outcome$y_var
@@ -1089,7 +1082,7 @@ fixed_effects = "auto"
 
 the model uses:
 
-```r
+```text
 Solar.R_z + Wind_z + Temp_z + Month
 ```
 
@@ -1298,7 +1291,7 @@ race,Race,covariate,categorical,single,no,1,TRUE,TRUE,FALSE
 
 For a binary variable coded `0/1`, setting:
 
-```text
+```r
 reference = 0
 ```
 
@@ -1425,7 +1418,7 @@ row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 
 In `00_config.R`, this dictionary is paired with a custom formula:
 
-```r
+```text
 custom_formula = brms::bf(
   low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z
 )
@@ -1595,6 +1588,7 @@ parallel = list(
 To test parallel imputation from scratch, remove old imputation outputs first:
 
 ```bash
+# Bash command block
 rm -f objects/imputation_manifest.rds
 rm -f objects/imputation_spec.rds
 rm -rf objects/imputed_data
@@ -1682,30 +1676,35 @@ to save a little time.
 Validate config. Run in Terminal:
 
 ```bash
+# Bash command block
 Rscript 01_validate_config.R
 ```
 
 Run all steps. Run in Terminal:
 
 ```bash
+# Bash command block
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
 Fit one imputed dataset only. Run in Terminal:
 
 ```bash
+# Bash command block
 Rscript fit_single_imputation.R 1
 ```
 
 For example, to fit the model only for imputed dataset 51, run in Terminal:
 
 ```bash
+# Bash command block
 Rscript fit_single_imputation.R 51
 ```
 
 Render the generated Quarto report after installing Quarto. Run in Terminal:
 
 ```bash
+# Bash command block
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -1716,6 +1715,7 @@ quarto render results/publication/report/bayesian_mi_report_template.qmd
 The pipeline is checkpointed. If a run is interrupted, run the following in Terminal:
 
 ```bash
+# Bash command block
 Rscript run_all.R 2>&1 | tee run_all_stdout.log
 ```
 
@@ -1724,6 +1724,7 @@ Existing valid fit files are skipped.
 To clean only fitting and downstream results while keeping prepared/imputed data, run in Terminal:
 
 ```bash
+# Bash command block
 rm -f fits/fit_imp_*.rds
 rm -f objects/fit_manifest.rds
 rm -f objects/fit_status.rds
@@ -1747,11 +1748,12 @@ rm -f pipeline_error.flag
 rm -f pipeline_success.flag
 rm -f run_all_stdout.log
 ```
-or run ```bash 99_clean_fitting_results.sh```.
+or run the Bash command `bash 99_clean_fitting_results.sh`.
 
 To clean imputation and all downstream outputs, run in Terminal:
 
 ```bash
+# Bash command block
 rm -f objects/imputation_manifest.rds
 rm -f objects/imputed_data/*.rds
 rm -f objects/imputed_wide/*.rds
@@ -1782,7 +1784,7 @@ rm -f pipeline_error.flag
 rm -f pipeline_success.flag
 rm -f run_all_stdout.log
 ```
-or run ```bash 99_cleanall.sh```.
+or run the Bash command `bash 99_cleanall.sh`.
 
 ---
 
@@ -1802,12 +1804,14 @@ results/worker_logs/
 Monitor progress by running the following in Terminal:
 
 ```bash
+# Bash command block
 tail -f pipeline_progress.log
 ```
 
 Inspect worker-level fitting logs by running the following in Terminal:
 
 ```bash
+# Bash command block
 ls -lh results/worker_logs
 cat results/worker_logs/fit_worker_imp_001.log
 ```
@@ -1840,6 +1844,7 @@ No chains finished successfully. Unable to retrieve the fit.
 and the data look valid, try clearing the CmdStanR cache. Run in Terminal:
 
 ```bash
+# Bash command block
 rm -rf ~/.cmdstanr-cache
 mkdir -p ~/.cmdstanr-cache
 ```
@@ -1857,6 +1862,7 @@ A good sequence is:
 1. Validate the config. Run in Terminal:
 
 ```bash
+# Bash command block
 Rscript 01_validate_config.R
 ```
 
@@ -1867,6 +1873,7 @@ Rscript 01_validate_config.R
 4. If a specific imputed dataset is slow or problematic during model fitting, fit it alone. Run in Terminal:
 
 ```bash
+# Bash command block
 Rscript fit_single_imputation.R 51
 ```
 
@@ -1932,6 +1939,7 @@ The generated Quarto report includes posterior results, diagnostics, figures and
 Render the report with:
 
 ```bash
+# Bash command block
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2099,6 +2107,7 @@ Model: Ozone ~ Solar.R_z + Wind_z + Temp_z + Month
 Run in Terminal from the project root:
 
 ```bash
+# Bash command block
 cp examples/airquality_gaussian/00_config_airquality_gaussian.R 00_config.R
 cp examples/airquality_gaussian/00_variable_dictionary_airquality_gaussian.csv 00_variable_dictionary.csv
 
@@ -2110,6 +2119,7 @@ Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 Render the report:
 
 ```bash
+# Bash command block
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2139,6 +2149,7 @@ Model: low ~ age_z + lwt_z + race + smoke + ptl_z + ht + ui + ftv_z
 Run in Terminal from the project root:
 
 ```bash
+# Bash command block
 cp examples/birthwt_logistic/00_config_birthwt_logistic.R 00_config.R
 cp examples/birthwt_logistic/00_variable_dictionary_birthwt_logistic.csv 00_variable_dictionary.csv
 
@@ -2150,6 +2161,7 @@ Rscript run_all.R 2>&1 | tee run_all_birthwt_logistic_stdout.log
 Render the report:
 
 ```bash
+# Bash command block
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
@@ -2183,6 +2195,7 @@ Here, `lwt_q` is an ordered quintile version of maternal weight, created by the 
 Run in Terminal from the project root:
 
 ```bash
+# Bash command block
 cp examples/birthwt_spline_monotonic/00_config_birthwt_spline_monotonic.R 00_config.R
 cp examples/birthwt_spline_monotonic/00_variable_dictionary_birthwt_spline_monotonic.csv 00_variable_dictionary.csv
 
@@ -2194,12 +2207,14 @@ Rscript run_all.R 2>&1 | tee run_all_birthwt_spline_monotonic_stdout.log
 Render the main report:
 
 ```bash
+# Bash command block
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
 For this example, the model includes mo(lwt_q). To create derived monotonic-effect odds-ratio summaries, also run:
 
 ```bash
+# Bash command block
 Rscript 09_check_mo_parameter_columns.R
 Rscript 10_publication_mo_results.R
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
@@ -2231,6 +2246,7 @@ examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md
 When switching from one example to another, clean the previous outputs first. Run in Terminal:
 
 ```bash
+# Bash command block
 rm -rf objects fits results
 rm -f pipeline_error.flag
 rm -f pipeline_success.flag
@@ -2243,6 +2259,7 @@ rm -f run_all_stdout.log
 If the repository includes a cleaning script, you can instead run:
 
 ```bash
+# Bash command block
 bash 99_cleanall.sh
 ```
 
@@ -2266,6 +2283,7 @@ prediction_workers = 1
 Run in Terminal:
 
 ```bash
+# Bash command block
 bash test/test_all_examples_quick.sh
 ```
 
@@ -2285,6 +2303,7 @@ prediction_workers = 2
 Run in Terminal:
 
 ```bash
+# Bash command block
 bash test/test_all_examples_parallel.sh
 ```
 
@@ -2315,24 +2334,28 @@ This means example tests do not delete or overwrite root-level `objects/`, `fits
 Run quick tests:
 
 ```bash
+# Bash command block
 bash test/test_all_examples_quick.sh
 ```
 
 Run parallel tests:
 
 ```bash
+# Bash command block
 bash test/test_all_examples_parallel.sh
 ```
 
 List preserved test runs:
 
 ```bash
+# Bash command block
 bash test/list_test_runs.sh
 ```
 
 To clean all preserved test runs manually:
 
 ```bash
+# Bash command block
 rm -rf test/runs
 ```
 
@@ -2371,12 +2394,14 @@ Before running the pipeline, prepare the R environment and CmdStan toolchain. Th
 Run in Terminal to install the Apple command line tools:
 
 ```bash
+# Bash command block
 xcode-select --install
 ```
 
 Run in Terminal to confirm that `make` and a C++ compiler are available:
 
 ```bash
+# Bash command block
 make --version
 clang++ --version
 ```
@@ -2523,6 +2548,7 @@ To render this report to HTML or DOCX, install Quarto.
 Run in Terminal on macOS with Homebrew:
 
 ```bash
+# Bash command block
 brew install --cask quarto
 ```
 
@@ -2531,6 +2557,7 @@ Alternatively, download and install Quarto from the Quarto website.
 Run in Terminal to verify the installation:
 
 ```bash
+# Bash command block
 quarto --version
 ```
 
@@ -2548,6 +2575,7 @@ No chains finished successfully. Unable to retrieve the fit.
 and the data look valid, run the following in Terminal to clear the CmdStanR cache:
 
 ```bash
+# Bash command block
 rm -rf ~/.cmdstanr-cache
 mkdir -p ~/.cmdstanr-cache
 ```
@@ -2566,7 +2594,7 @@ renv::snapshot()
 
 This creates a project-specific package lockfile so the same package versions can be restored later. Run in R or RStudio:
 
-```r
+```text
 renv::restore()
 ```
 
@@ -2702,6 +2730,7 @@ install.packages(c(
 Quarto is also required if you want to render the generated `.qmd` report. Run in Terminal:
 
 ```bash
+# Bash command block
 # macOS with Homebrew
 brew install --cask quarto
 
