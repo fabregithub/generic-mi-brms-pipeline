@@ -190,7 +190,23 @@ analysis_spec <- list(
     # Missing Ozone rows will be predicted later using posterior_predict().
     impute_y = FALSE,
 
-    extra_exclude_targets = character(0)
+    extra_exclude_targets = character(0),
+
+    # ----------------------------------------------------------
+    # Optional: reproducibility and safe extension
+    # ----------------------------------------------------------
+    # Base seed for miceRanger. Defaults to analysis_spec$model$seed if left
+    # NULL. Each batch of new imputations (the initial m, or a later
+    # extension batch) is seeded deterministically as seed + (number of
+    # imputations that already existed before that batch).
+    seed = NULL,
+
+    # FALSE by default. Step 3 normally refuses to fit more imputations than
+    # already exist on disk. Set to TRUE to let Step 3 generate only the
+    # additional imputations needed to reach the current m, without
+    # touching any existing imputed-data file. Used automatically by the
+    # mi_stability$auto_increment loop below.
+    allow_extend = FALSE
   ),
 
   # ------------------------------------------------------------
@@ -452,7 +468,60 @@ analysis_spec <- list(
     min_mac_available_before_brm_gb = 5,
 
     gc_before_check = TRUE
-  )
+  ),
+
+  # ------------------------------------------------------------
+  # Optional: automatic imputation-count stability loop
+  # ------------------------------------------------------------
+  # Placeholder, inactive by default (auto_increment = FALSE). With this
+  # left FALSE, run_all.R fits a single fixed m, exactly as if this block
+  # were absent. Set auto_increment <- TRUE to let run_all.R fit imputations
+  # in batches and stop increasing m automatically once posterior summaries
+  # are stable, instead of fitting analysis_spec$imputation$m up front.
+  # analysis_spec$imputation$m is then used as the ceiling, not the
+  # starting point. See README.md, "Choosing the number of imputations
+  # adaptively".
+  mi_stability = list(
+    auto_increment = FALSE,
+
+    # NULL defaults to analysis_spec$parallel$fit_workers, rounded up to a
+    # multiple of fit_workers if you override it here.
+    increment_size = NULL,
+
+    # The remaining settings are shared with the manual
+    # 11_check_imputation_stability.R script and only matter if
+    # auto_increment = TRUE or you run that script directly.
+    parameter_regex = "^b_",
+    exclude_intercept = TRUE,
+    estimate_tolerance = 0.05,
+    ci_endpoint_tolerance = 0.05,
+    relative_transformed_tolerance_pct = 5,
+    pd_tolerance = 0.02
+  ),
+
+  # ------------------------------------------------------------
+  # Optional: monotonic-effect (mo()) labels
+  # ------------------------------------------------------------
+  # Placeholder, inactive unless your model formula contains mo(). If your
+  # formula has no mo() term, run_all.R skips 09/10 automatically and this
+  # block is simply ignored. If it does contain mo() and this is left NULL,
+  # 10_publication_mo_results.R still runs, using generic "Level 1",
+  # "Level 2", ... category labels. Run 09_check_mo_parameter_columns.R for
+  # a ready-to-paste vars = list(...) block with the right number of levels
+  # for each detected mo() variable, then add real labels/levels below.
+  mo_effects = NULL
+
+  # Example, once you have run 09_check_mo_parameter_columns.R:
+  # mo_effects = list(
+  #   vars = list(
+  #     your_ordinal_var = list(
+  #       label = "Human-readable label",
+  #       levels = c("Level 1", "Level 2", "Level 3")
+  #     )
+  #   ),
+  #   time_var = NULL,    # set only if your formula has time * mo(variable)
+  #   time_values = NULL  # e.g. 1:6
+  # )
 )
 
 # ============================================================

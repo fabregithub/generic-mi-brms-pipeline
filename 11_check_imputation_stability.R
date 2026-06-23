@@ -60,7 +60,13 @@ safe_step("STEP 11: Imputation-count stability checks", {
   relative_transformed_tolerance_pct <- cfg$relative_transformed_tolerance_pct %||% 5
   pd_tolerance <- cfg$pd_tolerance %||% 0.02
   max_plot_parameters <- cfg$max_plot_parameters %||% 12
-  render_quarto <- cfg$render_quarto %||% TRUE
+  # Defaults to FALSE: the tables/figures this script produces are also
+  # embedded directly into the main report's "Imputation-count stability"
+  # chapter (see 08_publication_results.R), which run_all.R renders once
+  # everything has finished. Set this TRUE if you want this script's own
+  # standalone report rendered in addition to the combined main report,
+  # e.g. to inspect every evaluated batch in more detail.
+  render_quarto <- cfg$render_quarto %||% FALSE
 
   stability_dir <- file.path(paths$results, "publication", "mi_stability")
   table_dir <- file.path(stability_dir, "tables")

@@ -93,11 +93,78 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     )
   }
 
-  summarise_one_parameter <- function(parameter_draws, param, ci, alpha, centrality, rope_range) {
-    x <- parameter_draws[[param]]
-    x <- x[is.finite(x)]
+  # ------------------------------------------------------------
+  # Weighted-statistics helpers for MI pooling.
+  #
+  # Each draw from imputation i carries weight 1/(m * K_i), so every
+  # imputation contributes exactly 1/m regardless of how many finite
+  # draws it happened to produce (fixes unequal-K_i weighting).
+  # ------------------------------------------------------------
 
-    if (length(x) == 0) {
+  weighted_mean_ <- function(x, w) sum(x * w) / sum(w)
+
+  weighted_var_ <- function(x, w) {
+    mu <- weighted_mean_(x, w)
+    sum(w * (x - mu)^2) / sum(w)
+  }
+
+  weighted_quantile_ <- function(x, w, probs) {
+    ord <- order(x)
+    x <- x[ord]
+    w <- w[ord]
+    cw <- (cumsum(w) - 0.5 * w) / sum(w)
+    as.numeric(stats::approx(cw, x, xout = probs, rule = 2)$y)
+  }
+
+  # Sarle's bimodality coefficient (no extra package dependency).
+  # BC > ~0.555 (uniform-distribution threshold) flags likely
+  # bimodal/multimodal shape, in which case we must NOT apply a
+  # symmetric variance-inflation correction (it would smear distinct
+  # modes instead of preserving genuine between-imputation structure).
+  bimodality_coefficient_ <- function(x, w) {
+    mu <- weighted_mean_(x, w)
+    s2 <- weighted_var_(x, w)
+    if (!is.finite(s2) || s2 <= 0) {
+      return(NA_real_)
+    }
+    skew <- weighted_mean_((x - mu)^3, w) / s2^1.5
+    kurt <- weighted_mean_((x - mu)^4, w) / s2^2
+    (skew^2 + 1) / kurt
+  }
+
+  # Choose a support-respecting transform so the correction (which
+  # assumes rough symmetry) is applied on a scale where that
+  # assumption is defensible.
+  choose_transform_ <- function(x) {
+    if (all(x > 0)) {
+      list(
+        name = "log",
+        fwd = log,
+        inv = exp
+      )
+    } else if (all(x > 0 & x < 1)) {
+      list(
+        name = "logit",
+        fwd = function(v) log(v / (1 - v)),
+        inv = function(v) 1 / (1 + exp(-v))
+      )
+    } else {
+      list(
+        name = "identity",
+        fwd = identity,
+        inv = identity
+      )
+    }
+  }
+
+  pool_one_parameter <- function(parameter_draws, param, ci, alpha, rope_range, m_total) {
+    df <- tibble::tibble(
+      imputation = parameter_draws$imputation,
+      value = parameter_draws[[param]]
+    ) %>%
+      dplyr::filter(is.finite(.data$value))
+
+    if (nrow(df) == 0) {
       return(
         tibble::tibble(
           Parameter = param,
@@ -110,40 +177,108 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
           CI_high = NA_real_,
           pd = NA_real_,
           ROPE_Percentage = NA_real_,
-          n_draws = 0L
+          n_draws = 0L,
+          m_imputations = 0L,
+          between_var = NA_real_,
+          within_var = NA_real_,
+          variance_corrected = FALSE,
+          transform_used = NA_character_,
+          bimodality_coef = NA_real_
         )
       )
     }
 
-    ci_low <- as.numeric(stats::quantile(x, probs = alpha, names = FALSE))
-    ci_high <- as.numeric(stats::quantile(x, probs = 1 - alpha, names = FALSE))
+    # Per-imputation statistics (Q_i, U_i, K_i) drive both the
+    # weighting and the Rubin's-rule finite-m correction.
+    per_imp <- df %>%
+      dplyr::group_by(.data$imputation) %>%
+      dplyr::summarise(
+        Q_i = mean(.data$value),
+        U_i = stats::var(.data$value),
+        K_i = dplyr::n(),
+        .groups = "drop"
+      )
+
+    m <- nrow(per_imp)
+
+    if (m < m_total) {
+      log_msg(
+        "Note:", param, "has draws from only", m, "of", m_total,
+        "imputations (e.g. a special-term parameter not present in every fit)."
+      )
+    }
+
+    df <- df %>%
+      dplyr::left_join(per_imp %>% dplyr::select(imputation, K_i), by = "imputation") %>%
+      dplyr::mutate(weight = 1 / (m * .data$K_i))
+
+    Qbar <- sum(per_imp$Q_i) / m
+    Ubar <- mean(per_imp$U_i, na.rm = TRUE)
+    B <- if (m > 1) stats::var(per_imp$Q_i) else 0
+    V_mix <- Ubar + B
+    T_var <- V_mix + B / m
+
+    bc <- bimodality_coefficient_(df$value, df$weight)
+    unimodal <- is.finite(bc) && bc <= 0.555
+
+    scale_factor <- if (is.finite(V_mix) && V_mix > 0) sqrt(T_var / V_mix) else NA_real_
+
+    apply_correction <- unimodal && is.finite(scale_factor) && m > 1
+
+    transform_used <- "none"
+    corrected_value <- df$value
+
+    if (apply_correction) {
+      tr <- choose_transform_(df$value)
+      y <- tr$fwd(df$value)
+
+      if (all(is.finite(y))) {
+        ybar <- weighted_mean_(y, df$weight)
+        y_corrected <- ybar + scale_factor * (y - ybar)
+        corrected_value <- tr$inv(y_corrected)
+        transform_used <- tr$name
+      } else {
+        apply_correction <- FALSE
+      }
+    }
+
+    w <- df$weight
+    x <- corrected_value
+
+    ci_low <- weighted_quantile_(x, w, alpha)
+    ci_high <- weighted_quantile_(x, w, 1 - alpha)
+    med <- weighted_quantile_(x, w, 0.5)
 
     pd <- max(
-      mean(x > 0, na.rm = TRUE),
-      mean(x < 0, na.rm = TRUE)
+      sum(w[x > 0]) / sum(w),
+      sum(w[x < 0]) / sum(w)
     )
 
     rope_percentage <- NA_real_
 
     if (!is.null(rope_range) && length(rope_range) == 2) {
-      rope_percentage <- mean(
-        x >= rope_range[1] & x <= rope_range[2],
-        na.rm = TRUE
-      ) * 100
+      in_rope <- x >= rope_range[1] & x <= rope_range[2]
+      rope_percentage <- sum(w[in_rope]) / sum(w) * 100
     }
 
     tibble::tibble(
       Parameter = param,
       Parameter_Class = classify_parameter(param),
-      Median = stats::median(x),
-      Mean = mean(x),
-      SD = stats::sd(x),
+      Median = med,
+      Mean = weighted_mean_(x, w),
+      SD = sqrt(weighted_var_(x, w)),
       CI = ci,
       CI_low = ci_low,
       CI_high = ci_high,
       pd = pd,
       ROPE_Percentage = rope_percentage,
-      n_draws = length(x)
+      n_draws = nrow(df),
+      m_imputations = m,
+      between_var = B,
+      within_var = Ubar,
+      variance_corrected = apply_correction,
+      transform_used = transform_used,
+      bimodality_coef = bc
     )
   }
 
@@ -338,17 +473,22 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
 
   rope_range <- resolve_rope(summary_spec)
 
-  # This is usually much cheaper than extracting draws, but use map_dfr rather
-  # than a for-loop to keep the code vectorised and readable.
+  m_total <- dplyr::n_distinct(parameter_draws$imputation)
+
+  # Proper MI pooling per parameter: weight draws by 1/(m*K_i) so every
+  # imputation contributes equally regardless of how many finite draws
+  # it produced, then apply the Rubin's-rule finite-m variance
+  # correction (B/m) only where the pooled shape is unimodal enough for
+  # the correction's symmetry assumption to be safe.
   parameter_summary <- purrr::map_dfr(
     parameter_cols,
-    ~ summarise_one_parameter(
+    ~ pool_one_parameter(
       parameter_draws = parameter_draws,
       param = .x,
       ci = ci,
       alpha = alpha,
-      centrality = centrality,
-      rope_range = rope_range
+      rope_range = rope_range,
+      m_total = m_total
     )
   )
 

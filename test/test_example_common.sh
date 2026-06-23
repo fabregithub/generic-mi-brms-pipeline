@@ -251,8 +251,14 @@ render_and_check_report() {
 
   require_file "$report_qmd"
 
-  log "Rendering Quarto report"
-  quarto render "$report_qmd"
+  # run_all.R now renders the main report itself (HTML + DOCX) once Step 11
+  # has produced the imputation-count stability tables/figures it embeds.
+  # Only re-render here if that didn't happen for some reason, to avoid an
+  # unnecessary duplicate render on every test run.
+  if [[ ! -s "$report_html" || ! -s "$report_docx" ]]; then
+    log "Main report not found from run_all.R; rendering Quarto report"
+    quarto render "$report_qmd"
+  fi
 
   require_file "$report_html"
   require_file "$report_docx"

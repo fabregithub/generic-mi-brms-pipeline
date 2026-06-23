@@ -34,17 +34,23 @@ suppressPackageStartupMessages({
   library(tidyverse)
 })
 
+source("00_config.R")
+source("00_common_functions.R")
+
 `%||%` <- function(x, y) {
   if (is.null(x)) y else x
 }
 
 # ------------------------------------------------------------
-# User-editable settings
+# Settings: discovered from the model formula, overridable via
+# analysis_spec$mo_effects in 00_config.R (see 09_check_mo_parameter_columns.R
+# for a ready-to-paste config skeleton with the right number of levels).
 # ------------------------------------------------------------
 
-parameter_draws_file <- "results/parameter_draws.rds"
+parameter_draws_file <- file.path(paths$results, "parameter_draws.rds")
+model_spec_file <- file.path(paths$objects, "model_spec.rds")
 
-output_root <- "results/publication/mo_effects"
+output_root <- file.path(paths$publication, "mo_effects")
 table_dir <- file.path(output_root, "tables")
 figure_dir <- file.path(output_root, "figures")
 report_dir <- file.path(output_root, "report")
@@ -53,23 +59,48 @@ dir.create(table_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(figure_dir, recursive = TRUE, showWarnings = FALSE)
 dir.create(report_dir, recursive = TRUE, showWarnings = FALSE)
 
-# Match the variables inside mo(), not derived *_c names.
-mo_vars <- list(
-  C6yincome = list(
-    label = "Household income",
-    levels = c("1", "2", "3", "4", "5", "6")
-  ),
-  medu = list(
-    label = "Maternal education",
-    levels = c("0", "1", "2", "3")
-  )
+if (!file.exists(model_spec_file)) {
+  stop("File not found: ", model_spec_file, ". Run Step 4 first.")
+}
+if (!file.exists(parameter_draws_file)) {
+  stop("File not found: ", parameter_draws_file, ". Run Step 6 first.")
+}
+
+model_spec <- readRDS(model_spec_file)
+mo_effects_cfg <- analysis_spec$mo_effects %||% list()
+
+detected_vars <- extract_special_term_vars(model_spec$formula, fun = "mo")
+
+if (length(detected_vars) == 0) {
+  message("No mo() terms found in the fitted model's formula. Nothing to do.")
+  quit(save = "no", status = 0)
+}
+
+# mo_vars: named list of var -> list(label, levels). Falls back to generic
+# placeholder labels/levels for any detected variable not configured in
+# analysis_spec$mo_effects$vars, so this still runs without manual config,
+# just with less informative labels.
+configured_vars <- mo_effects_cfg$vars %||% list()
+
+mo_vars <- purrr::map(
+  rlang::set_names(detected_vars),
+  function(var) {
+    cfg <- configured_vars[[var]]
+
+    if (!is.null(cfg)) {
+      return(list(label = cfg$label %||% var, levels = cfg$levels))
+    }
+
+    NULL # levels resolved later, once the simplex dimension is known
+  }
 )
 
-# If your model contains time * mo(variable), ORs are calculated at these time values.
-time_var <- "time"
-time_values <- 1:6
+# If your model contains time * mo(variable), ORs are calculated at these
+# time values. Configure via analysis_spec$mo_effects$time_var/time_values.
+time_var <- mo_effects_cfg$time_var %||% NULL
+time_values <- mo_effects_cfg$time_values %||% NULL
 
-ci_prob <- 0.95
+ci_prob <- analysis_spec$summary$ci %||% 0.95
 alpha <- (1 - ci_prob) / 2
 
 # ------------------------------------------------------------
@@ -82,6 +113,10 @@ fmt_num <- function(x, digits = 2) {
 
 fmt_ci <- function(low, high, digits = 2) {
   paste0(fmt_num(low, digits), " to ", fmt_num(high, digits))
+}
+
+escape_regex <- function(x) {
+  gsub("([.\\^$|()\\[\\]{}*+?])", "\\\\\\1", x, perl = TRUE)
 }
 
 contains_fixed <- function(x, pattern) {
@@ -112,29 +147,48 @@ find_mo_parameter_cols <- function(draws, var, time_var = NULL) {
   coefficient_cols_all <- nms[stringr::str_detect(nms, "^(b_|bsp_)")]
   simo_cols_all <- nms[stringr::str_detect(nms, "^simo_")]
 
-  mo_token <- paste0("mo", var)
+  # Anchor on the exact brms-mangled token "mo<var>" right after the
+  # b_/bsp_/simo_ prefix, followed only by an interaction marker, a
+  # simplex-index digit, or the end of the name. This avoids the
+  # unanchored substring matching that could previously bind to an
+  # unrelated column whose name happened to contain `var` as a substring
+  # (e.g. "medu" incorrectly matching "medu2").
+  #
+  # When mo() is called with an explicit id = "..." argument (used to
+  # share a simplex across multiple mo() terms), brms inserts an
+  # "idEQ<id>" infix right after "mo<var>", e.g. bsp_momeduidEQmedu or
+  # simo_momeduidEQmedu1[1]. The optional group below accounts for that,
+  # whether or not id was used.
+  token_re <- escape_regex(paste0("mo", var))
+  id_infix_re <- "(idEQ[A-Za-z0-9._]+)?"
 
   related_coef <- coefficient_cols_all[
-    contains_fixed(coefficient_cols_all, mo_token) |
-      contains_fixed(coefficient_cols_all, var)
+    stringr::str_detect(coefficient_cols_all, paste0("^(b_|bsp_)", token_re, id_infix_re, "($|:)"))
   ]
 
   related_simo <- simo_cols_all[
-    contains_fixed(simo_cols_all, mo_token) |
-      contains_fixed(simo_cols_all, var)
+    stringr::str_detect(simo_cols_all, paste0("^simo_", token_re, id_infix_re, "\\d*(:|\\[)"))
   ]
 
   main_b_candidates <- related_coef[!has_interaction_marker(related_coef)]
-  time_b_candidates <- related_coef[
-    has_interaction_marker(related_coef) &
-      contains_fixed(related_coef, time_var %||% "")
-  ]
+  time_b_candidates <- if (is.null(time_var)) {
+    character(0)
+  } else {
+    related_coef[
+      has_interaction_marker(related_coef) &
+        contains_fixed(related_coef, time_var)
+    ]
+  }
 
   main_simo_candidates <- related_simo[!has_interaction_marker(related_simo)]
-  time_simo_candidates <- related_simo[
-    has_interaction_marker(related_simo) &
-      contains_fixed(related_simo, time_var %||% "")
-  ]
+  time_simo_candidates <- if (is.null(time_var)) {
+    character(0)
+  } else {
+    related_simo[
+      has_interaction_marker(related_simo) &
+        contains_fixed(related_simo, time_var)
+    ]
+  }
 
   if (length(main_b_candidates) != 1) {
     stop(
@@ -230,6 +284,10 @@ compute_mo_or_draws <- function(draws, var, levels, label = var,
 
   D <- ncol(zeta_main)
   K <- D + 1L
+
+  if (is.null(levels)) {
+    levels <- paste0("Level ", seq_len(K))
+  }
 
   if (length(levels) != K) {
     stop(
@@ -623,13 +681,13 @@ mo_simplex_draws <- purrr::map_dfr(mo_results, "simplex_draws")
 mo_or_summary <- summarise_or_draws(mo_or_draws)
 mo_simplex_summary <- summarise_simplex_draws(mo_simplex_draws)
 
-saveRDS(mo_or_draws, "results/mo_or_draws.rds", compress = FALSE)
-saveRDS(mo_or_summary, "results/mo_or_summary.rds", compress = FALSE)
-readr::write_csv(mo_or_summary, "results/mo_or_summary.csv")
+saveRDS(mo_or_draws, file.path(paths$results, "mo_or_draws.rds"), compress = FALSE)
+saveRDS(mo_or_summary, file.path(paths$results, "mo_or_summary.rds"), compress = FALSE)
+readr::write_csv(mo_or_summary, file.path(paths$results, "mo_or_summary.csv"))
 
-saveRDS(mo_simplex_draws, "results/mo_simplex_draws.rds", compress = FALSE)
-saveRDS(mo_simplex_summary, "results/mo_simplex_summary.rds", compress = FALSE)
-readr::write_csv(mo_simplex_summary, "results/mo_simplex_summary.csv")
+saveRDS(mo_simplex_draws, file.path(paths$results, "mo_simplex_draws.rds"), compress = FALSE)
+saveRDS(mo_simplex_summary, file.path(paths$results, "mo_simplex_summary.rds"), compress = FALSE)
+readr::write_csv(mo_simplex_summary, file.path(paths$results, "mo_simplex_summary.csv"))
 
 average_or_table <- make_or_display_table(mo_or_summary, "average_adjacent")
 adjacent_or_table <- make_or_display_table(mo_or_summary, "adjacent_increment")

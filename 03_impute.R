@@ -51,8 +51,20 @@ safe_step("STEP 3: Imputation", {
     stop("analysis_spec$imputation$m must be a positive integer.")
   }
 
+  # Base seed for imputation. miceRanger has no native seed/resume support
+  # for partial runs, so each *batch* of new imputations (whether the
+  # initial m, or an extension batch added later) is seeded deterministically
+  # as base_seed + (number of imputations that already existed before this
+  # batch). This is reproducible across repeated incremental runs, but is
+  # not bit-identical to a hypothetical single-shot miceRanger(m = target_m)
+  # call, since miceRanger generates all m chains of a single call together.
+  base_seed <- analysis_spec$imputation$seed %||% analysis_spec$model$seed %||% 12345
+  allow_extend <- isTRUE(analysis_spec$imputation$allow_extend)
+
   existing_imputed_files <- valid_existing_imputation_files(paths)
   n_existing <- length(existing_imputed_files)
+  n_new <- target_m
+  extending <- FALSE
 
   if (n_existing > 0) {
     log_msg("Existing valid imputed dataset files found:", n_existing)
@@ -89,24 +101,36 @@ safe_step("STEP 3: Imputation", {
       )
     }
 
-    if (n_existing < target_m) {
+    if (n_existing < target_m && !allow_extend) {
       stop(
         "Existing imputed datasets were found, but fewer than the current requested m. ",
         "Refusing to overwrite them automatically. ",
         "Existing valid imputations: ", n_existing, "; requested m: ", target_m, ". ",
-        "To extend m safely, use a deliberate extension workflow or start a clean new run. ",
-        "Do not rely on Step 3 to overwrite an existing imputation set."
+        "To extend m, set analysis_spec$imputation$allow_extend <- TRUE, ",
+        "or start a clean new run. Do not rely on Step 3 to overwrite an existing imputation set."
       )
     }
+
+    # n_existing < target_m && allow_extend: generate only the new batch.
+    extending <- TRUE
+    n_new <- target_m - n_existing
+    log_msg(
+      "Extending imputation set: ", n_existing, " existing + ", n_new,
+      " new = ", target_m, " total."
+    )
   }
 
+  batch_seed <- base_seed + n_existing
+
   if (!isTRUE(analysis_spec$imputation$enabled) || identical(analysis_spec$imputation$strategy, "none")) {
-    imputed_list <- list(dat)
+    imputed_list <- rep(list(dat), n_new)
   } else if (identical(analysis_spec$imputation$strategy, "row_level")) {
     if (!requireNamespace("miceRanger", quietly = TRUE)) {
       stop("Package 'miceRanger' is required for imputation.")
     }
     imputation_spec <- make_row_level_imputation_spec(dat, analysis_spec, var_dict)
+    imputation_spec$m <- n_new
+    imputation_spec$seed <- batch_seed
     saveRDS(imputation_spec, file.path(paths$objects, "imputation_spec.rds"), compress = FALSE)
 
     log_msg(
@@ -115,7 +139,8 @@ safe_step("STEP 3: Imputation", {
       "| num_impute_threads_per_worker:",
       analysis_spec$parallel$num_impute_threads_per_worker %||%
         analysis_spec$parallel$num_impute_threads %||%
-        1
+        1,
+      "| batch_seed:", batch_seed
     )
 
     imputed_list <- run_row_level_imputation(dat, imputation_spec, analysis_spec)
@@ -152,6 +177,8 @@ safe_step("STEP 3: Imputation", {
       analysis_spec = analysis_spec,
       var_dict = var_dict
     )
+    imputation_spec$m <- n_new
+    imputation_spec$seed <- batch_seed
 
     saveRDS(imputation_spec, file.path(paths$objects, "imputation_spec.rds"), compress = FALSE)
 
@@ -161,7 +188,8 @@ safe_step("STEP 3: Imputation", {
       "| num_impute_threads_per_worker:",
       analysis_spec$parallel$num_impute_threads_per_worker %||%
         analysis_spec$parallel$num_impute_threads %||%
-        1
+        1,
+      "| batch_seed:", batch_seed
     )
 
     imputed_wide_list <- run_row_level_imputation(
@@ -186,7 +214,10 @@ safe_step("STEP 3: Imputation", {
     )
   }
 
-  imputed_files <- file.path(paths$imputed_data, sprintf("imputed_%03d.rds", seq_along(imputed_list)))
+  # When extending, new files are numbered starting right after the highest
+  # existing index, so existing files are never touched.
+  new_indices <- seq(n_existing + 1L, n_existing + length(imputed_list))
+  imputed_files <- file.path(paths$imputed_data, sprintf("imputed_%03d.rds", new_indices))
 
   # Final defensive check before writing.
   existing_target_files <- imputed_files[file.exists(imputed_files)]
@@ -202,7 +233,16 @@ safe_step("STEP 3: Imputation", {
     saveRDS(imputed_list[[i]], imputed_files[i], compress = FALSE)
   }
 
-  imputation_manifest <- tibble::tibble(imputation = seq_along(imputed_files), imputed_file = imputed_files)
+  if (extending) {
+    imputation_manifest <- dplyr::bind_rows(
+      tibble::tibble(imputation = seq_len(n_existing), imputed_file = existing_imputed_files),
+      tibble::tibble(imputation = new_indices, imputed_file = imputed_files)
+    )
+    log_msg("Appended", length(imputed_files), "new imputation(s) to the existing manifest.")
+  } else {
+    imputation_manifest <- tibble::tibble(imputation = new_indices, imputed_file = imputed_files)
+  }
+
   saveRDS(imputation_manifest, file.path(paths$objects, "imputation_manifest.rds"), compress = FALSE)
   log_msg("Saved imputation manifest with", nrow(imputation_manifest), "imputation(s).")
 }, analysis_spec)

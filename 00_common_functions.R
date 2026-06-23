@@ -665,7 +665,8 @@ make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
     maxiter = analysis_spec$imputation$maxiter,
     verbose = analysis_spec$imputation$verbose %||% FALSE,
     vars = vars,
-    mean_match_k = analysis_spec$imputation$mean_match_k
+    mean_match_k = analysis_spec$imputation$mean_match_k,
+    seed = analysis_spec$imputation$seed
   )
 }
 
@@ -768,6 +769,13 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
       },
       add = TRUE
     )
+  }
+
+  # miceRanger() has no seed= argument; it consumes whatever the global RNG
+  # state happens to be. Seed explicitly so a given imputation_spec$seed
+  # always reproduces the same batch of m datasets.
+  if (!is.null(imputation_spec$seed)) {
+    set.seed(imputation_spec$seed)
   }
 
   mice_obj <- miceRanger::miceRanger(
@@ -912,7 +920,8 @@ make_subject_wide_imputation_spec <- function(subject_wide, analysis_spec, var_d
     maxiter = analysis_spec$imputation$maxiter,
     verbose = analysis_spec$imputation$verbose %||% FALSE,
     vars = vars,
-    mean_match_k = analysis_spec$imputation$mean_match_k
+    mean_match_k = analysis_spec$imputation$mean_match_k,
+    seed = analysis_spec$imputation$seed
   )
 }
 
@@ -1136,3 +1145,189 @@ summarise_missing_y_draws <- function(pred_draws_long, analysis_spec, summary_sp
       )) %>% as_tibble() %>% mutate(!!row_id := unique(df_i[[row_id]]), .before = 1)
     })
 }
+
+# ------------------------------------------------------------
+# Imputation-count stability: lightweight two-batch check
+# ------------------------------------------------------------
+#
+# A minimal, dependency-light comparison restricted to exactly the two batch
+# sizes supplied, used by run_all.R's automatic m-increment loop to decide
+# whether to stop fitting more imputations. The full multi-batch diagnostic
+# report (11_check_imputation_stability.R) still runs once, at whatever m
+# the loop settles on, and is the source of truth for the published report;
+# this function only gates the loop and is not itself a publication output.
+evaluate_mi_stability_batches <- function(paths, analysis_spec, m_previous, m_final) {
+  cfg <- analysis_spec$mi_stability %||% list()
+
+  parameter_regex <- cfg$parameter_regex %||% "^b_"
+  primary_parameters <- cfg$primary_parameters %||% NULL
+  exclude_intercept <- cfg$exclude_intercept %||% TRUE
+
+  ci <- analysis_spec$summary$ci %||% 0.95
+  alpha <- (1 - ci) / 2
+
+  estimate_tolerance <- cfg$estimate_tolerance %||% 0.05
+  ci_endpoint_tolerance <- cfg$ci_endpoint_tolerance %||% 0.05
+  pd_tolerance <- cfg$pd_tolerance %||% 0.02
+
+  manifest_file <- file.path(paths$objects, "parameter_manifest.rds")
+
+  if (!rds_ok(manifest_file)) {
+    stop("parameter_manifest.rds not found. Run Step 6 first.")
+  }
+
+  pm <- readRDS(manifest_file)
+  file_col <- intersect(
+    c("parameter_draw_file", "draw_file", "file", "parameter_file"),
+    names(pm)
+  )[1]
+
+  draw_manifest <- pm %>%
+    dplyr::transmute(
+      imputation = as.integer(.data$imputation),
+      parameter_draw_file = as.character(.data[[file_col]])
+    ) %>%
+    dplyr::filter(!is.na(.data$imputation)) %>%
+    dplyr::filter(purrr::map_lgl(.data$parameter_draw_file, rds_ok)) %>%
+    dplyr::arrange(.data$imputation)
+
+  if (nrow(draw_manifest) < m_final) {
+    stop(
+      "Requested batch size ", m_final,
+      " exceeds the number of valid per-imputation draw files (",
+      nrow(draw_manifest), ")."
+    )
+  }
+
+  first_draws <- readRDS(draw_manifest$parameter_draw_file[1])
+  meta_cols <- c("imputation", ".chain", ".iteration", ".draw")
+  parameter_cols <- setdiff(names(first_draws), meta_cols)
+  parameter_cols <- parameter_cols[vapply(first_draws[parameter_cols], is.numeric, logical(1))]
+
+  if (!is.null(primary_parameters) && length(primary_parameters) > 0) {
+    parameter_cols <- intersect(parameter_cols, primary_parameters)
+  } else if (!is.null(parameter_regex) && nzchar(parameter_regex)) {
+    parameter_cols <- parameter_cols[stringr::str_detect(parameter_cols, parameter_regex)]
+  }
+
+  if (isTRUE(exclude_intercept)) {
+    parameter_cols <- parameter_cols[
+      !parameter_cols %in% c("b_Intercept", "Intercept", "(Intercept)")
+    ]
+  }
+
+  rm(first_draws)
+
+  if (length(parameter_cols) == 0) {
+    stop("No parameter columns selected for the imputation-stability check.")
+  }
+
+  summarise_one <- function(x) {
+    x <- x[is.finite(x)]
+
+    if (length(x) == 0) {
+      return(c(Median = NA_real_, CI_low = NA_real_, CI_high = NA_real_, pd = NA_real_))
+    }
+
+    c(
+      Median = stats::median(x),
+      CI_low = as.numeric(stats::quantile(x, alpha, names = FALSE)),
+      CI_high = as.numeric(stats::quantile(x, 1 - alpha, names = FALSE)),
+      pd = max(mean(x > 0), mean(x < 0))
+    )
+  }
+
+  summarise_batch <- function(batch_n) {
+    batch_files <- draw_manifest$parameter_draw_file[seq_len(batch_n)]
+
+    batch_draws <- purrr::map_dfr(batch_files, function(f) {
+      d <- readRDS(f)
+      d[, intersect(names(d), parameter_cols), drop = FALSE]
+    })
+
+    purrr::map_dfr(parameter_cols, function(p) {
+      s <- summarise_one(batch_draws[[p]])
+      tibble::tibble(
+        Parameter = p,
+        Median = s[["Median"]],
+        CI_low = s[["CI_low"]],
+        CI_high = s[["CI_high"]],
+        pd = s[["pd"]]
+      )
+    })
+  }
+
+  summary_previous <- summarise_batch(m_previous)
+  summary_final <- summarise_batch(m_final)
+
+  comparison <- summary_final %>%
+    dplyr::rename_with(~ paste0(.x, "_final"), -Parameter) %>%
+    dplyr::left_join(
+      summary_previous %>% dplyr::rename_with(~ paste0(.x, "_previous"), -Parameter),
+      by = "Parameter"
+    ) %>%
+    dplyr::mutate(
+      abs_Median_change = abs(.data$Median_final - .data$Median_previous),
+      max_abs_CI_endpoint_change = pmax(
+        abs(.data$CI_low_final - .data$CI_low_previous),
+        abs(.data$CI_high_final - .data$CI_high_previous),
+        na.rm = TRUE
+      ),
+      abs_pd_change = abs(.data$pd_final - .data$pd_previous),
+      stable_by_thresholds =
+        .data$abs_Median_change <= estimate_tolerance &
+        .data$max_abs_CI_endpoint_change <= ci_endpoint_tolerance &
+        .data$abs_pd_change <= pd_tolerance
+    )
+
+  list(
+    m_previous = m_previous,
+    m_final = m_final,
+    n_parameters = nrow(comparison),
+    n_stable = sum(comparison$stable_by_thresholds, na.rm = TRUE),
+    all_stable = nrow(comparison) > 0 && all(comparison$stable_by_thresholds, na.rm = TRUE),
+    detail = comparison
+  )
+}
+
+# ------------------------------------------------------------
+# Optional runtime overrides
+# ------------------------------------------------------------
+#
+# Every numbered pipeline script re-sources 00_config.R as its first step,
+# and 00_config.R itself is routinely replaced wholesale per example/study
+# (see test/test_example_common.sh's prepare_*_example() helpers, which copy
+# an example's own 00_config_*.R over the project's 00_config.R). So an
+# override hook cannot live in 00_config.R itself without being silently
+# lost the moment a different config file replaces it.
+#
+# This file, 00_common_functions.R, is shared and never replaced per-example,
+# and is always sourced immediately after 00_config.R -- so analysis_spec
+# and paths already exist in the calling environment by the time this runs.
+# That makes it the right place for an orchestrator (currently only
+# run_all.R's automatic m-increment loop) to persist a small override to
+# disk and have it reapplied after every fresh source() of 00_config.R.
+# Absent the override file, behaviour is unchanged from a plain config read.
+#
+# The override file holds a nested list keyed by top-level analysis_spec
+# section, e.g. list(imputation = list(m = 8), model = list(run_smoke_fit
+# = FALSE)), so an orchestrator can patch fields in more than one section
+# (e.g. disabling the repeated smoke fit across loop batches, in addition
+# to incrementing m).
+mi_runtime_override_file <- file.path(paths$objects, "mi_runtime_override.rds")
+
+if (file.exists(mi_runtime_override_file)) {
+  mi_runtime_override <- readRDS(mi_runtime_override_file)
+
+  for (mi_override_section in names(mi_runtime_override)) {
+    section_overrides <- mi_runtime_override[[mi_override_section]]
+
+    for (mi_override_name in names(section_overrides)) {
+      analysis_spec[[mi_override_section]][[mi_override_name]] <- section_overrides[[mi_override_name]]
+    }
+  }
+
+  rm(mi_runtime_override)
+}
+
+rm(mi_runtime_override_file)

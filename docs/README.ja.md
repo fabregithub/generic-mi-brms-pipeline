@@ -32,8 +32,9 @@
 6. [並列化と性能調整](#6-並列化と性能調整)
 7. [ログ、監視、再開、トラブルシューティング](#7-ログ監視再開トラブルシューティング)
 8. [論文用出力と推論上の注意](#8-出版用出力と推論上の注意)
-9. [実例とテスト](#9-例とテスト)
-10. [計算環境のセットアップ](#10-計算環境のセットアップ)
+9. [論文執筆ガイド](#9-論文執筆ガイド)
+10. [実例とテスト](#10-例とテスト)
+11. [計算環境のセットアップ](#11-計算環境のセットアップ)
 
 ---
 
@@ -135,15 +136,17 @@ categorical
 08_publication_results.R
 ```
 
-追加の任意スクリプト：
+`run_all.R` は続けて次の 2 つのスクリプトも自動実行します。
 
 ```
-09_check_mo_parameter_columns.R      任意；抽出された mo() パラメータ列を確認
-10_publication_mo_results.R         任意；mo() の派生 odds ratio 要約を作成
-11_check_imputation_stability.R      任意；m を増やしたときの事後要約の安定性を確認
+09_check_mo_parameter_columns.R      モデル式に mo() 項が含まれる場合のみ自動実行
+10_publication_mo_results.R          モデル式に mo() 項が含まれる場合のみ自動実行
+11_check_imputation_stability.R      常に実行され、代入数 m の安定性に関する最終レポートを作成
 ```
 
-`09` と `10` は、`brms::mo()` による単調順序効果の論文向け要約が必要な場合だけ使います。`11` は、モデルフィッティングが高コストで、代入数`m`の妥当性を示したい場合に有用です。
+`run_all.R` は、フィットしたモデル自身の式から `mo()` 項を直接検出します。変数名のリストを手動で管理する必要はありません。そのため、通常のガウス・ロジスティック・スプラインのみ・因子コーディングのモデルでは `09`/`10` は自動的にスキップされます。
+
+`analysis_spec$mi_stability$auto_increment <- TRUE` を設定すると、`run_all.R` は `m` を段階的に自動で増やし、事後要約が安定した時点でフィッティングを停止します。詳細はセクション 4 を参照してください。
 
 ---
 
@@ -256,7 +259,20 @@ colSums(is.na(d))
 
 ### 補完データセット数の選び方
 
-補完データセット数`m` に万能の値はありません。計算コストが高い解析では、段階的に増やすのが安全です。
+補完データセット数`m` に万能の値はありません。大規模データでは小規模データよりも小さい `m` で結果が安定する一方、各 fit はより長くかかるため、最初から大きな `m` を固定すると計算時間を浪費しがちです。
+
+**自動増分ループ（推奨）。** `analysis_spec$imputation$m` を上限として設定し、次を追加します。
+
+```r
+analysis_spec$mi_stability <- list(
+  auto_increment = TRUE,
+  increment_size = NULL  # 既定値は fit_workers
+)
+```
+
+`run_all.R` は `m` を段階的にフィットします（既定のバッチサイズは `fit_workers`。各バッチが並列 worker をすべて使い切るように設定されます）。各バッチの後に安定性を確認し、設定したしきい値を満たした時点、または設定した `m` に達した時点のいずれか早い方で `m` の増加を停止します。各バッチは決定的にシード化されます（`analysis_spec$imputation$seed`、既定値は `analysis_spec$model$seed` に基づきます）。
+
+**手動の段階的ワークフロー。** 自分でバッチを確認しながら進めたい場合は、`analysis_spec$imputation$allow_extend <- TRUE` を設定し、`m` を段階的に増やします。
 
 ```
 20 -> 40 -> 60 -> 80 -> 100
@@ -267,6 +283,8 @@ colSums(is.na(d))
 ```
 24 -> 40 -> 60 -> 80 -> 100
 ```
+
+`allow_extend = TRUE` の場合、より大きい `m` で再実行すると新しい補完データセットだけが追加され、既存の補完データセットは変更されません。
 
 ステップ 6 の後に実行：
 
@@ -424,7 +442,9 @@ results/publication/report/bayesian_mi_report_template.qmd
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
-`brms::mo()` を使うモデルでは：
+ステップ 6 では、補完データセット間の事後 draw を単純に連結するのではありません。各補完データセットが等しい重み（1/m）で寄与するように調整し、さらに有限の `m` に対する分散補正（Rubin の結合則）を、プールした事後分布の形状がそれを適用しても妥当な場合にのみ適用します。詳細は `results/parameter_summary.csv` の `m_imputations`、`variance_corrected` などの列を参照してください。
+
+`brms::mo()` を使うモデルでは、`run_all.R` が次を自動実行します。
 
 ```
 Rscript 09_check_mo_parameter_columns.R
@@ -432,9 +452,43 @@ Rscript 10_publication_mo_results.R
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 ```
 
+これらのスクリプトは、モデル式から `mo()` 変数を直接検出します。手動で編集する変数リストは不要です。ラベルやカテゴリ名を独自に設定したい場合は、`00_config.R` に任意の `analysis_spec$mo_effects` ブロックを追加してください（`09_check_mo_parameter_columns.R` が貼り付け用のひな型を出力します）。
+
 ---
 
-## 9. 実例とテスト
+## 9. 論文執筆ガイド
+
+論文用出力は、手作業で再計算するのではなく、論文に直接引用できるように設計されています。
+
+| 論文の段落 | 元になるファイル |
+|---|---|
+| 欠測データ・補完 | `results/publication/tables/analysis_metadata.csv` |
+| モデル仕様、MCMC 設定 | `results/publication/tables/analysis_metadata.csv` |
+| 適応的な補完数の根拠 | `results/publication/mi_stability/tables/imputation_stability_stepwise_summary_display.csv` |
+| 主効果の結果 | `results/publication/tables/main_effect_table_display.csv` |
+| 単調効果（`mo()`）の結果 | `results/publication/mo_effects/tables/mo_cumulative_or_table.csv` |
+
+「方法」セクションの文例（`analysis_metadata.csv` の値に置き換えてください）：
+
+```
+欠測共変量データは、ランダムフォレストを用いた連鎖方程式による多重代入法
+（miceRanger）で処理し、m = XX の補完データセットを生成した。各補完
+データセットには brms と cmdstanr バックエンドを用いて個別のベイズモデル
+をフィットし、事後 draw は各補完データセットに等しい重みを与えて統合した。
+```
+
+主効果の「結果」セクションの文例（`main_effect_table_display.csv` から）：
+
+```
+[変数] は [アウトカム] と関連していた：推定値 = XX（95% CrI：XX〜XX；
+事後方向確率 = XX）。
+```
+
+このガイドは、科学的な解釈、臨床的・実質的な意義、研究の限界、文献の引用までは執筆しません。これらは依然として人間の判断が必要です。
+
+---
+
+## 10. 実例とテスト
 
 含まれる公開データ実例：
 
@@ -472,7 +526,7 @@ bash 99_cleanall.sh
 
 ---
 
-## 10. 計算環境のセットアップ
+## 11. 計算環境のセットアップ
 
 R、システムツール、必要な R パッケージ、CmdStan/CmdStanR、レポートレンダリング用の Quarto が必要です。
 

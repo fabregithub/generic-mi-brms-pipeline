@@ -28,8 +28,9 @@ The default example uses the built-in public dataset `datasets::airquality`, so 
 6. [Parallelisation and performance tuning](#6-parallelisation-and-performance-tuning)
 7. [Logging, monitoring, restarting, troubleshooting and debugging](#7-logging-monitoring-restarting-troubleshooting-and-debugging)
 8. [Publication outputs and inference guidance](#8-publication-outputs-and-inference-guidance)
-9. [Examples and tests](#9-examples-and-tests)
-10. [Computing environment setup](#10-computing-environment-setup)
+9. [Manuscript writing guide](#9-manuscript-writing-guide)
+10. [Examples and tests](#10-examples-and-tests)
+11. [Computing environment setup](#11-computing-environment-setup)
 
 ---
 
@@ -90,27 +91,23 @@ This improves load balancing when some imputed datasets take longer than others.
 
 The template is designed to support:
 
-```text
-single-time outcome, row-level covariates
-repeated outcome with subject-level covariates
-repeated outcome with time-varying covariates
-complete-case analysis without imputation
-row-level multiple imputation
-subject-level multiple imputation
-subject-wide imputation using repeated Y as auxiliary variables
-```
+- `single-time outcome, row-level covariates`
+- `repeated outcome with subject-level covariates`
+- `repeated outcome with time-varying covariates`
+- `complete-case analysis without imputation`
+- `row-level multiple imputation`
+- `subject-level multiple imputation`
+- `subject-wide imputation using repeated Y as auxiliary variables`
 
 Supported model families include:
 
-```text
-gaussian
-bernoulli
-poisson
-negbinomial
-beta
-ordinal
-categorical
-```
+- `gaussian`
+- `bernoulli`
+- `poisson`
+- `negbinomial`
+- `beta`
+- `ordinal`
+- `categorical`
 
 Model families and links are set in `00_config.R`.
 
@@ -120,10 +117,8 @@ Model families and links are set in `00_config.R`.
 
 The repository is organised around a small set of user-edited files and a sequence of numbered pipeline scripts. In most projects, users only need to edit:
 
-```text
-00_config.R
-00_variable_dictionary.csv
-```
+- `00_config.R`
+- `00_variable_dictionary.csv`
 
 All other scripts should usually be treated as pipeline code.
 
@@ -133,33 +128,30 @@ All other scripts should usually be treated as pipeline code.
 
 The core pipeline is run by `run_all.R`, which calls these scripts in order:
 
-```text
-01_validate_config.R
-02_prepare_data.R
-03_impute.R
-04_fit_models.R
-05_diagnostics.R
-06_posterior_summary.R
-07_posterior_prediction.R
-08_publication_results.R
-```
+1. `01_validate_config.R`
+2. `02_prepare_data.R`
+3. `03_impute.R`
+4. `04_fit_models.R`
+5. `05_diagnostics.R`
+6. `06_posterior_summary.R`
+7. `07_posterior_prediction.R`
+8. `11_check_imputation_stability.R` -- always runs, producing the imputation-count stability tables/figures
+9. `08_publication_results.R` -- writes and renders the combined main report
 
-Two additional scripts are provided for models that use `brms::mo()`:
+Step 11 runs *before* Step 8, not after, even though Step 11's checks are about whether `m` was large enough -- a question that only makes sense once fitting is done. The reason for the order is that Step 8's report template embeds Step 11's tables and figures directly, in an "Imputation-count stability" chapter (see [How Step 8's report embeds Step 11's results](#how-step-8s-report-embeds-step-11s-results) below), so Step 11's output files need to already exist on disk by the time Step 8 writes and renders the report.
 
-```text
-09_check_mo_parameter_columns.R      optional; checks extracted mo() parameter columns
-10_publication_mo_results.R         optional; creates derived mo() odds-ratio summaries
-```
+`run_all.R` then automatically runs two more scripts:
 
-One additional optional script is provided for adaptive imputation-count checks:
+- `09_check_mo_parameter_columns.R` -- runs automatically only if the fitted model's formula contains `mo()` terms
+- `10_publication_mo_results.R` -- runs automatically only if the fitted model's formula contains `mo()` terms
 
-```text
-11_check_imputation_stability.R      optional; checks whether posterior summaries are stable as m increases
-```
+`run_all.R` detects `mo()` terms directly from the fitted model's own formula (via `extract_special_term_vars()`), so steps 09-10 are skipped automatically for ordinary Gaussian, logistic, spline-only or factor-coded models, and run automatically whenever the formula contains `mo()`. You do not need to remember to run them manually, and you do not need to edit them per study; see [Section 8](#8-publication-outputs-and-inference-guidance) for how they discover monotonic-effect variables generically.
 
-Script `11` can also create stepwise publication-ready stability summaries, including tables and figures that quantify how much estimates, credible intervals, posterior direction probabilities and transformed summaries change when `m` is increased.
+Step 11 runs on whichever final `m` the run settled on. It creates stepwise publication-ready stability summaries, including tables and figures that quantify how much estimates, credible intervals, posterior direction probabilities and transformed summaries change when `m` is increased.
 
-Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline or factor-coded models. They are only needed when you want publication-ready summaries of monotonic ordinal effects. Script `11` is optional and is useful when model fitting is computationally expensive and you want to justify the chosen number of imputations.
+If `analysis_spec$mi_stability$auto_increment = TRUE`, `run_all.R` also drives Steps 3/4/6 through an automatic imputation-count loop instead of fitting a single fixed `m` up front: it fits a small batch of imputations, checks stability against the previous batch, and stops increasing `m` as soon as the configured stability thresholds are met (or once the configured `m` is reached). See [Choosing the number of imputations adaptively](#choosing-the-number-of-imputations-adaptively) for details.
+
+All of `01`-`07`, `11`, `08`, and `09`-`10` (when applicable) can also be run manually and standalone with `Rscript <script>.R`, which is useful for debugging or for resuming a partially completed run. If you run Step 8 manually before Step 11 has ever been run, its report's "Imputation-count stability" chapter is simply omitted, rather than failing.
 
 ---
 
@@ -167,10 +159,8 @@ Scripts `09` and `10` are not required for ordinary Gaussian, logistic, spline o
 
 Usually edit only:
 
-```text
-00_config.R
-00_variable_dictionary.csv
-```
+- `00_config.R`
+- `00_variable_dictionary.csv`
 
 `00_config.R` defines the analysis structure, including:
 
@@ -202,7 +192,7 @@ The `examples/` folder contains ready-to-run public-data configurations. These a
 
 This quick start uses the public Gaussian example based on `datasets::airquality`.
 
-If R, CmdStan or Quarto are not yet installed, see [Section 10](#10-computing-environment-setup) first.
+If R, CmdStan or Quarto are not yet installed, see [Section 11](#11-computing-environment-setup) first.
 
 First, obtain a local copy of the template repository.
 
@@ -229,12 +219,51 @@ Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 
 Outputs are written to:
 
-```text
-objects/
-fits/
-results/
-results/publication/
+- `objects/`
+- `fits/`
+- `results/`
+- `results/publication/`
+
+### Common commands
+
+Once a project is set up (its own `00_config.R` and `00_variable_dictionary.csv` in place), these are the commands you will use most often, whether for the quick-start example above or your own study data.
+
+Validate config. Run in Terminal:
+
+```bash
+# Bash command block
+Rscript 01_validate_config.R
 ```
+
+Run all steps. Run in Terminal:
+
+```bash
+# Bash command block
+Rscript run_all.R 2>&1 | tee run_all_stdout.log
+```
+
+Fit one imputed dataset only. Run in Terminal:
+
+```bash
+# Bash command block
+Rscript fit_single_imputation.R 1
+```
+
+For example, to fit the model only for imputed dataset 51, run in Terminal:
+
+```bash
+# Bash command block
+Rscript fit_single_imputation.R 51
+```
+
+`run_all.R` (via `08_publication_results.R`) renders the main Quarto report automatically, so this step is not normally needed. If you want to re-render it manually, for example after editing the generated `.qmd` by hand, run in Terminal:
+
+```bash
+# Bash command block
+quarto render results/publication/report/bayesian_mi_report_template.qmd
+```
+
+For what to do if a run is interrupted, how to monitor a long run, or how to debug a problematic imputed dataset, see [Section 7](#7-logging-monitoring-restarting-troubleshooting-and-debugging).
 
 ---
 
@@ -253,11 +282,7 @@ For a new study, the recommended workflow is:
 
 ### Data preparation
 
-Before running the pipeline, prepare one clean input dataset, for example:
-
-```text
-data/my_analysis_data.rds
-```
+Before running the pipeline, prepare one clean input dataset, for example `data/my_analysis_data.rds`.
 
 The dataset should already contain consistent variable names, explicit ID variables if needed, explicit time or wave variables for repeated data, and any derived variables that are not created by the pipeline. Save the dataset in R with:
 
@@ -282,27 +307,23 @@ The pipeline uses MICE-style multiple imputation through `miceRanger`. This is s
 
 It is not a general solution for non-ignorable missingness or censoring. In particular, do not pass the following directly to the pipeline as ordinary `NA` values without careful pre-processing:
 
-```text
-left-censored measurements
-values below a detection limit
-right-censored or interval-censored measurements
-structural missingness
-skip-pattern missingness
-not-applicable responses
-missingness caused by study design
-known MNAR variables
-```
+- left-censored measurements
+- values below a detection limit
+- right-censored or interval-censored measurements
+- structural missingness
+- skip-pattern missingness
+- not-applicable responses
+- missingness caused by study design
+- known MNAR variables
 
 For these cases, first create an analysis-ready representation outside the pipeline. Depending on the scientific context, this might involve:
 
-```text
-using a censored-data model outside this pipeline
-creating a below-detection-limit indicator
-using an appropriate substitution or interval representation
-creating explicit "not applicable" categories
-separating structural missingness from true missingness
-conducting sensitivity analyses for MNAR assumptions
-```
+- using a censored-data model outside this pipeline
+- creating a below-detection-limit indicator
+- using an appropriate substitution or interval representation
+- creating explicit "not applicable" categories
+- separating structural missingness from true missingness
+- conducting sensitivity analyses for MNAR assumptions
 
 Only variables that can reasonably be treated as ordinary missing values under the chosen imputation model should be set as imputation targets in `00_variable_dictionary.csv`.
 
@@ -373,16 +394,7 @@ Choose a link that is valid for the selected family and appropriate for the scie
 
 These are only needed for repeated-outcome wide imputation. For ordinary single-time analyses, keep both as `NULL`.
 
-For example, if the long outcome is `ps` and `time` is `1, 2, ..., 6`, the subject-wide auxiliary outcome columns may be:
-
-```text
-ps_1
-ps_2
-ps_3
-ps_4
-ps_5
-ps_6
-```
+For example, if the long outcome is `ps` and `time` is `1, 2, ..., 6`, the subject-wide auxiliary outcome columns may be `ps_1`, `ps_2`, `ps_3`, `ps_4`, `ps_5`, `ps_6`.
 
 Then use:
 
@@ -421,13 +433,35 @@ imputation = list(
 
 With this setting, the pipeline prepares one model dataset and fits one `brms` model, rather than creating multiple imputed datasets.
 
-For a no-missing-data analysis, the cleanest dictionary setup is usually:
+#### Imputation seeding and extending an existing run
 
-```text
-impute_target = FALSE
+Two further `imputation = list(...)` settings control reproducibility and safe extension:
+
+```r
+imputation = list(
+  ...
+  # Base seed for miceRanger. Defaults to analysis_spec$model$seed if not set.
+  # miceRanger has no native per-chain seed/resume support, so each batch of
+  # new imputations (the initial m, or a later extension batch) is seeded
+  # deterministically as seed + (number of imputations that already existed
+  # before that batch). This reproduces the same imputed datasets across
+  # repeated runs, though it is not bit-identical to a hypothetical
+  # single-shot miceRanger(m = target_m) call.
+  seed = 12345,
+
+  # FALSE by default. Step 3 normally refuses to fit more imputations than
+  # already exist on disk, to avoid silently treating a config edit as a
+  # request to overwrite existing imputed data. Set this to TRUE to let
+  # Step 3 generate only the additional imputations needed to reach the
+  # current m, appending them to the existing manifest without touching
+  # any existing imputed-data file. run_all.R's automatic m-increment loop
+  # (analysis_spec$mi_stability$auto_increment) sets this internally.
+  allow_extend = FALSE,
+  ...
+)
 ```
 
-for all variables.
+For a no-missing-data analysis, the cleanest dictionary setup is usually `impute_target = FALSE` for all variables.
 
 Before disabling imputation, confirm that there are no missing predictor values that the model needs:
 
@@ -528,6 +562,15 @@ This includes:
 
 Use the general default if the model contains `s()` or `mo()` terms.
 
+#### How Step 6 pools draws across imputations
+
+Step 6 does not simply concatenate every imputation's posterior draws and summarise the pooled sample directly. Two corrections are applied per parameter:
+
+1. Each draw is weighted by `1 / (m * K_i)`, where `K_i` is the number of finite draws from imputation `i`. This makes every imputation contribute exactly `1/m` to every summary statistic, regardless of how many draws a particular imputation happened to produce after filtering non-finite values (e.g. for monotonic simplex parameters).
+2. A finite-`m` variance correction (the `B/m` term from Rubin's combining rule) is applied on top of the weighted pooled sample, but only when a per-parameter shape diagnostic (a bimodality coefficient) indicates the pooled posterior is unimodal enough for the correction's symmetry assumption to be safe, and only on a support-respecting transform (log for strictly positive parameters, logit for (0, 1)-bounded parameters). For visibly multimodal parameters, the correction is skipped and the uncorrected weighted pooled sample is reported instead, since a symmetric rescale would distort genuine between-imputation structure rather than represent it.
+
+`results/parameter_summary.csv`/`.rds` record this per parameter via the `m_imputations`, `between_var`, `within_var`, `variance_corrected`, `transform_used` and `bimodality_coef` columns, so you can audit whether and how each parameter was corrected.
+
 #### Posterior summaries and ROPE
 
 The `summary` block controls posterior summaries:
@@ -618,40 +661,74 @@ Rscript run_all.R 2>&1 | tee run_all_stdout.log
 
 ### Choosing the number of imputations adaptively
 
-There is no universal value of `m` that is automatically sufficient for every analysis. The required number of imputations depends on the fraction of missing information, the amount and pattern of missingness, the target estimands, and how reproducible the posterior summaries need to be. A large dataset does not automatically require `m = 100`, and a small dataset can sometimes require more than `m = 100` if the fraction of missing information is high or the target estimates are unstable.
+There is no universal value of `m` that is automatically sufficient for every analysis. The required number of imputations depends on the fraction of missing information, the amount and pattern of missingness, the target estimands, and how reproducible the posterior summaries need to be. A large dataset does not automatically require `m = 100`, and a small dataset can sometimes require more than `m = 100` if the fraction of missing information is high or the target estimates are unstable. With large datasets in particular, models tend to stabilise at a smaller `m` than with small datasets, while each fit also takes longer -- so paying for a fixed `m = 100` up front can waste a large amount of compute time.
 
-For computationally expensive analyses, such as large repeated-outcome logistic models, use a staged workflow. The safest rule is:
+There are two ways to use this adaptive idea: an **automatic loop** that `run_all.R` drives for you, and a **manual staged workflow** that you drive yourself, one batch at a time. The automatic loop is recommended for most analyses; the manual workflow remains useful for closer manual inspection between batches, or for resuming an already-started large run.
 
-```text
-Start with a modest m and increase m only if needed.
-Do not reduce m within the same saved run.
+#### Automatic m-increment loop (recommended)
+
+Set `analysis_spec$mi_stability$auto_increment <- TRUE` in `00_config.R`:
+
+```r
+analysis_spec$imputation$m <- 100  # acts as the ceiling, not the starting point
+
+analysis_spec$mi_stability <- list(
+  auto_increment = TRUE,
+
+  # Defaults to analysis_spec$parallel$fit_workers, rounded up to a multiple
+  # of fit_workers if you override it, so every batch fully occupies the
+  # parallel workers with none left idle. For example, with fit_workers = 4,
+  # the default batches are m = 4, 8, 12, ...
+  increment_size = NULL,
+
+  # Same tolerances used by the manual stability check below.
+  parameter_regex = "^b_",
+  exclude_intercept = TRUE,
+  estimate_tolerance = 0.05,
+  ci_endpoint_tolerance = 0.05,
+  pd_tolerance = 0.02
+)
 ```
 
-This matters because the pipeline saves imputation, model-data and fit manifests. If a run was created with `m = 100` and the config is later changed to `m = 45`, the saved imputation specification may no longer match the current config. In that situation, Step 3 may quite reasonably try to re-run imputation. To avoid this, the adaptive workflow should move upwards in `m`, not downwards.
+Then run the pipeline as usual:
+
+```bash
+# Bash command block
+Rscript run_all.R 2>&1 | tee run_all_stdout.log
+```
+
+`run_all.R` then:
+
+1. Fits the first batch of imputations (size = `increment_size`).
+2. Runs Steps 3, 4 and 6 for that batch.
+3. Fits the next batch, extending (not replacing) the existing imputations and fits.
+4. Compares the new cumulative results against the previous batch using the configured tolerances.
+5. Stops increasing `m` as soon as every selected parameter is stable, or once the configured `analysis_spec$imputation$m` is reached, whichever comes first.
+6. Runs Steps 5, 7, 8, (9-10 if `mo()` is present) and 11 once, on whatever `m` the loop settled on.
+
+Each batch's imputations are seeded deterministically (`base_seed + n_existing`, where `base_seed` is `analysis_spec$imputation$seed`, defaulting to `analysis_spec$model$seed`), so repeated incremental runs reproduce the same imputed datasets. This is not bit-identical to a hypothetical single-shot `miceRanger(m = target_m)` call, because `miceRanger` generates all `m` chains of one call together with no native per-chain seed/resume support, but it is fully deterministic and reproducible across repeated incremental runs of this pipeline.
+
+The loop only ever adds new imputations and fits; it never reduces or overwrites a finished batch. If you want to extend an `auto_increment = FALSE` run that already has some imputations on disk, you can also use the same extension mechanism manually -- see [If a larger run has already been started](#if-a-larger-run-has-already-been-started) below.
+
+`analysis_spec$model$run_smoke_fit` does not need any special handling for the loop. The smoke fit's job is to catch formula/prior/data/CmdStan problems early, once -- so the loop runs it only for the first batch, then automatically disables it for every subsequent batch, regardless of how `run_smoke_fit` is set in `00_config.R`. You can safely leave `run_smoke_fit = TRUE` for the whole run; it will not be repeated before every batch's parallel fitting.
+
+#### Manual staged workflow
+
+If you prefer to inspect the stability check yourself between batches rather than letting `run_all.R` decide automatically, use the manual workflow instead. The safest rule is:
+
+> Start with a modest `m` and increase `m` only if needed. Do not reduce `m` within the same saved run.
 
 Recommended staged workflow:
 
-```text
-1. Start with a modest number of imputations, for example m = 20 or m = 24.
+1. Start with a modest number of imputations, for example `m = 20` or `m = 24`, and set `analysis_spec$imputation$allow_extend <- TRUE` in `00_config.R`.
 2. Run the pipeline through at least Step 6 so per-imputation posterior draws are available.
-3. Run 11_check_imputation_stability.R.
-4. If the primary posterior summaries are stable, stop and use that m.
-5. If the primary posterior summaries are not stable, increase m, for example to 40.
-6. Rerun the pipeline. Existing valid imputations and fits should be reused when the run is extended consistently.
+3. Run `11_check_imputation_stability.R`.
+4. If the primary posterior summaries are stable, stop and use that `m`.
+5. If the primary posterior summaries are not stable, increase `analysis_spec$imputation$m`, for example to 40.
+6. Rerun the pipeline. With `allow_extend = TRUE`, existing valid imputations and fits are reused and only the new ones are added.
 7. Repeat with larger values, for example 60, 80, 100 or beyond, only if needed.
-```
 
-Convenient sequences are:
-
-```text
-20 -> 40 -> 60 -> 80 -> 100
-```
-
-or, if four models are fitted in parallel:
-
-```text
-24 -> 40 -> 60 -> 80 -> 100
-```
+Convenient sequences are `20 -> 40 -> 60 -> 80 -> 100`, or, if four models are fitted in parallel, `24 -> 40 -> 60 -> 80 -> 100`.
 
 The batching values can reflect the available computing layout. For example, if four models are fitted at a time, values such as `m = 24`, `40`, `60`, `80` and `100` are convenient. The batching convenience is not itself the scientific justification; the scientific justification is the stability of the prespecified primary summaries.
 
@@ -666,47 +743,32 @@ After Step 6 has created per-imputation posterior draw files, run:
 Rscript 11_check_imputation_stability.R
 ```
 
-This creates publication-ready stability outputs in:
-
-```text
-results/publication/mi_stability/
-```
+This creates publication-ready stability outputs in `results/publication/mi_stability/`.
 
 Typical outputs include:
 
-```text
-tables/imputation_stability_all_batches.csv
-tables/imputation_stability_final_comparison_full.csv
-tables/imputation_stability_final_comparison_display.csv
-tables/imputation_stability_settings.csv
-tables/imputation_stability_stepwise_summary.csv
-tables/imputation_stability_stepwise_comparison_full.csv
-figures/imputation_stability_trajectories.png
-figures/imputation_stability_stepwise_change.png
-report/imputation_stability_report.qmd
-```
+- `tables/imputation_stability_all_batches.csv`
+- `tables/imputation_stability_final_comparison_full.csv`
+- `tables/imputation_stability_final_comparison_display.csv`
+- `tables/imputation_stability_settings.csv`
+- `tables/imputation_stability_stepwise_summary.csv`
+- `tables/imputation_stability_stepwise_comparison_full.csv`
+- `figures/imputation_stability_trajectories.png`
+- `figures/imputation_stability_stepwise_change.png`
+- `report/imputation_stability_report.qmd`
 
 If Quarto is installed, the report can be rendered to HTML or DOCX.
 
-The stepwise stability summary is especially useful for deciding whether results have already flattened at an early value of `m`. For example, it compares transitions such as:
-
-```text
-m = 8  to m = 12
-m = 12 to m = 16
-m = 16 to m = 20
-m = 20 to m = 24
-```
+The stepwise stability summary is especially useful for deciding whether results have already flattened at an early value of `m`. For example, it compares transitions such as `m = 8 to m = 12`, `m = 12 to m = 16`, `m = 16 to m = 20`, and `m = 20 to m = 24`.
 
 Key quantities to inspect include:
 
-```text
-Stable, %
-Maximum absolute estimate change
-Median absolute estimate change
-Maximum absolute CrI-endpoint change
-Maximum relative odds-ratio change, %
-CrI exclusion changed, n
-```
+- Stable, %
+- Maximum absolute estimate change
+- Median absolute estimate change
+- Maximum absolute CrI-endpoint change
+- Maximum relative odds-ratio change, %
+- CrI exclusion changed, n
 
 If these values are already negligible at an early transition and remain negligible afterwards, it is defensible to stop increasing `m`, provided the checked estimands are the prespecified primary estimands.
 
@@ -736,7 +798,12 @@ mi_stability = list(
   pd_tolerance = 0.02,
 
   max_plot_parameters = 12,
-  render_quarto = TRUE
+
+  # FALSE by default: this script's own tables/figures are also embedded in
+  # the main report's "Imputation-count stability" chapter (see Section 8),
+  # which run_all.R renders after this script runs. Set this TRUE only if
+  # you also want this script's standalone, more detailed report rendered.
+  render_quarto = FALSE
 )
 ```
 
@@ -746,11 +813,18 @@ If you already started a larger run, for example with `m = 100`, and then decide
 
 Safer options are:
 
-```text
-Option 1: continue the larger run if the extra computation is acceptable.
-Option 2: run only downstream scripts on the completed fits, avoiding Step 3 imputation.
-Option 3: start a clean new run in a new output folder with the smaller final m.
+- **Option 1:** continue the larger run if the extra computation is acceptable.
+- **Option 2:** run only downstream scripts on the completed fits, avoiding Step 3 imputation.
+- **Option 3:** start a clean new run in a new output folder with the smaller final `m`.
+- **Option 4:** extend the existing imputations to a larger `m` using `allow_extend`.
+
+Option 4 only ever moves `m` upwards. If 20 imputations already exist on disk and you raise `analysis_spec$imputation$m` to 30, setting:
+
+```r
+analysis_spec$imputation$allow_extend <- TRUE
 ```
+
+makes Step 3 generate only the 10 new imputations and append them to the existing manifest; the original 20 imputed-data files are never touched or regenerated. This is exactly the mechanism `run_all.R`'s automatic increment loop uses internally, and is also the right tool for manually extending a fixed-`m` run after inspecting Step 11's output yourself.
 
 For Option 2, the downstream sequence is usually:
 
@@ -759,25 +833,15 @@ For Option 2, the downstream sequence is usually:
 Rscript 05_diagnostics.R
 Rscript 06_posterior_summary.R
 Rscript 07_posterior_prediction.R
-Rscript 08_publication_results.R
 Rscript 11_check_imputation_stability.R
+Rscript 08_publication_results.R
 ```
+
+Step 11 runs before Step 8 here for the same reason `run_all.R` orders them this way: Step 8's report embeds Step 11's tables/figures, so they need to exist on disk first.
 
 This avoids re-running imputation. Use this only after confirming that the completed fit files and model-data files correspond to the same imputed datasets.
 
-Example reporting language:
-
-```text
-We used an adaptive multiple-imputation strategy because each imputed-data Bayesian model was computationally expensive. We first fitted an initial set of imputed datasets and assessed the stability of prespecified primary posterior summaries. We increased the number of imputations until the pooled posterior medians, credible intervals, posterior direction probabilities and substantive conclusions changed negligibly with additional imputations. The final analysis used m = XX imputations.
-```
-
-If the stepwise stability check shows early flattening, a more specific statement can be used:
-
-```text
-The stability assessment showed that posterior summaries changed negligibly after m = XX. The largest subsequent changes in posterior medians, credible-interval endpoints and odds-ratio summaries were below prespecified practical thresholds. The final analysis therefore used m = XX imputations.
-```
-
-This stability check assesses numerical Monte Carlo stability as `m` increases. It does not validate the missing-data mechanism and does not make MNAR or censored data problems ignorable.
+This stability check assesses numerical Monte Carlo stability as `m` increases. It does not validate the missing-data mechanism and does not make MNAR or censored data problems ignorable. For ready-to-adapt Methods text describing this adaptive-`m` justification, see [Section 9](#9-manuscript-writing-guide).
 
 Recommended approach for a new analysis:
 
@@ -819,15 +883,13 @@ posterior_prediction = list(
 
 This quick test is intended to check that:
 
-```text
-the data are read correctly
-the variable dictionary is valid
-imputation runs
-the brms formula is correct
-priors are compatible with the model
-one model can be fitted successfully
-posterior summaries and publication outputs are created
-```
+- the data are read correctly
+- the variable dictionary is valid
+- imputation runs
+- the `brms` formula is correct
+- priors are compatible with the model
+- one model can be fitted successfully
+- posterior summaries and publication outputs are created
 
 ### 2. Parallel test run
 
@@ -929,25 +991,20 @@ imputation = list(
 
 This strategy does the following:
 
-```text
 1. Starts from long data, one row per subject-time observation.
 2. Creates a subject-wide imputation dataset, one row per subject.
-3. Converts the repeated outcome into wide auxiliary variables, for example:
-   ps_1, ps_2, ps_3, ps_4, ps_5, ps_6
+3. Converts the repeated outcome into wide auxiliary variables, for example `ps_1, ps_2, ps_3, ps_4, ps_5, ps_6`.
 4. Imputes subject-level covariates once per subject.
 5. Joins the imputed subject-level variables back to the original long outcome data.
-6. Fits the brms model on the long data.
-```
+6. Fits the `brms` model on the long data.
 
 Required `00_config.R` fields:
 
-```text
-analysis_spec$data$id_var
-analysis_spec$data$time_var
-analysis_spec$outcome$y_var
-analysis_spec$outcome$y_prefix
-analysis_spec$outcome$y_wide_regex
-```
+- `analysis_spec$data$id_var`
+- `analysis_spec$data$time_var`
+- `analysis_spec$outcome$y_var`
+- `analysis_spec$outcome$y_prefix`
+- `analysis_spec$outcome$y_wide_regex`
 
 Example:
 
@@ -1025,6 +1082,8 @@ custom_formula = brms::bf(
 
 For large mixed logistic models, `mo()` can be much slower than ordinary factor coding. A practical approach is to use the factor-coded model as the main analysis and use `mo()` as a sensitivity analysis with fewer imputations.
 
+You do not need to hardcode `mo()` variable names anywhere. `09_check_mo_parameter_columns.R` and `10_publication_mo_results.R` discover them directly from the fitted model's own formula, and `run_all.R` runs both scripts automatically only when `mo()` terms are present. See [Section 8](#8-publication-outputs-and-inference-guidance) for how to optionally supply nicer labels and category levels.
+
 ---
 
 ### Variable roles: dictionary by default, config as optional override
@@ -1033,16 +1092,14 @@ The pipeline uses `00_variable_dictionary.csv` as the default source of truth fo
 
 This means the following information should normally be specified only in the dictionary:
 
-```text
-role
-type
-timing
-scale
-reference
-impute_target
-use_in_model
-use_as_auxiliary
-```
+- `role`
+- `type`
+- `timing`
+- `scale`
+- `reference`
+- `impute_target`
+- `use_in_model`
+- `use_as_auxiliary`
 
 Therefore, the standard setting in `00_config.R` is:
 
@@ -1052,17 +1109,15 @@ variables = NULL
 
 The pipeline automatically derives internal variable groups from the dictionary, including:
 
-```text
-exposure_vars
-covariate_vars
-auxiliary_vars
-continuous_vars
-categorical_vars
-ordinal_vars
-subject_level_vars
-time_varying_vars
-scale_vars
-```
+- `exposure_vars`
+- `covariate_vars`
+- `auxiliary_vars`
+- `continuous_vars`
+- `categorical_vars`
+- `ordinal_vars`
+- `subject_level_vars`
+- `time_varying_vars`
+- `scale_vars`
 
 For example, if `00_variable_dictionary.csv` contains:
 
@@ -1080,11 +1135,7 @@ and `analysis_spec$model$fixed_effects` is:
 fixed_effects = "auto"
 ```
 
-the model uses:
-
-```text
-Solar.R_z + Wind_z + Temp_z + Month
-```
+the model uses `Solar.R_z + Wind_z + Temp_z + Month`.
 
 ### Optional overrides
 
@@ -1111,18 +1162,16 @@ The file `00_variable_dictionary.csv` is the main machine-readable description o
 
 Expected columns are:
 
-```text
-var
-label
-role
-type
-timing
-scale
-reference
-impute_target
-use_in_model
-use_as_auxiliary
-```
+- `var`
+- `label`
+- `role`
+- `type`
+- `timing`
+- `scale`
+- `reference`
+- `impute_target`
+- `use_in_model`
+- `use_as_auxiliary`
 
 Some fields are straightforward:
 
@@ -1155,15 +1204,13 @@ Recommended values:
 
 For most standard regression analyses, the most common roles are:
 
-```text
-outcome
-binary_outcome
-exposure
-covariate
-id
-time
-auxiliary
-```
+- `outcome`
+- `binary_outcome`
+- `exposure`
+- `covariate`
+- `id`
+- `time`
+- `auxiliary`
 
 Example:
 
@@ -1247,11 +1294,7 @@ Recommended values:
 | `log` | Log-transform | creates log version if supported |
 | `custom` | User-defined transform outside dictionary | handled in config/functions |
 
-Currently, the most important supported value is:
-
-```text
-z
-```
+Currently, the most important supported value is `z`.
 
 Example:
 
@@ -1259,24 +1302,16 @@ Example:
 age,Maternal age,covariate,continuous,single,z,,TRUE,TRUE,FALSE
 ```
 
-This creates:
-
-```text
-age_z
-```
-
-and the model should use `age_z`, not `age`.
+This creates `age_z`, and the model should use `age_z`, not `age`.
 
 Use `z` for continuous predictors when coefficients should represent the effect per 1 SD increase. This is usually helpful for Bayesian models because weakly informative priors like `normal(0, 1)` or `normal(0, 1.5)` are easier to interpret on standardised predictors.
 
 Do not use `z` for:
 
-```text
-outcomes
-ID variables
-binary/categorical variables
-already standardised variables
-```
+- outcomes
+- ID variables
+- binary/categorical variables
+- already standardised variables
 
 ### `reference`
 
@@ -1386,19 +1421,12 @@ row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 
 ### Example: Spline + monotonic demo
 
-The `birthwt_spline_monotonic` example is used to test custom `brms` formula terms:
-
-```text
-s(age_z, k = 5)
-mo(lwt_q)
-```
+The `birthwt_spline_monotonic` example is used to test custom `brms` formula terms: `s(age_z, k = 5)` and `mo(lwt_q)`.
 
 The corresponding dictionary demonstrates two important ideas:
 
-```text
-scale = z      creates age_z, ptl_z and ftv_z
-type = ordinal creates an ordered factor suitable for mo()
-```
+- `scale = z` creates `age_z`, `ptl_z` and `ftv_z`
+- `type = ordinal` creates an ordered factor suitable for `mo()`
 
 Example:
 
@@ -1418,7 +1446,7 @@ row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
 
 In `00_config.R`, this dictionary is paired with a custom formula:
 
-```text
+```r
 custom_formula = brms::bf(
   low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z
 )
@@ -1480,6 +1508,8 @@ parallel = list(
 ```
 
 For large `brmsfit` objects, start conservatively with `summary_workers = 2` and `prediction_workers = 2`. Increase only if memory is comfortable.
+
+If you use the automatic m-increment loop (`analysis_spec$mi_stability$auto_increment = TRUE`, see [Choosing the number of imputations adaptively](#choosing-the-number-of-imputations-adaptively)), `fit_workers` also determines the default batch size: each batch defaults to `fit_workers` imputations, so every batch fully occupies the parallel workers with none left idle. With `fit_workers = 4`, the default batches are `m = 4, 8, 12, ...`; with `fit_workers = 6`, they are `m = 6, 12, 18, ...`. A custom `increment_size` that is not already a multiple of `fit_workers` is rounded up automatically.
 
 `num_impute_threads` is a backward-compatible fallback for older scripts. If all scripts in the repository use `impute_workers` and `num_impute_threads_per_worker`, it can eventually be removed.
 
@@ -1551,17 +1581,7 @@ parallel = list(
 )
 ```
 
-The approximate CPU demand during imputation is:
-
-```text
-impute_workers * num_impute_threads_per_worker
-```
-
-For example:
-
-```text
-4 workers * 4 threads per worker = about 16 active threads
-```
+The approximate CPU demand during imputation is `impute_workers * num_impute_threads_per_worker`. For example, 4 workers * 4 threads per worker = about 16 active threads.
 
 Start conservatively, especially on laptops or when the imputation data are large, because parallel `miceRanger` can copy data to worker processes and increase memory use.
 
@@ -1634,12 +1654,10 @@ parallel = list(
 
 This runs:
 
-```text
-100 imputations
-4 chains per model
-4 imputed datasets fitted in parallel
-16 active chains total
-```
+- 100 imputations
+- 4 chains per model
+- 4 imputed datasets fitted in parallel
+- 16 active chains total
 
 For a new analysis, keep the following setting in `00_config.R`:
 
@@ -1652,6 +1670,8 @@ model = list(
 ```
 
 The smoke fit runs one sequential model first, before launching parallel workers. This catches formula, prior, data or CmdStan problems early.
+
+If you use the automatic m-increment loop (`analysis_spec$mi_stability$auto_increment = TRUE`), you do not need to manually toggle this setting between batches: the loop runs the smoke fit only once, for the first batch, and disables it automatically for every later batch in the same `run_all.R` invocation. See [Automatic m-increment loop](#automatic-m-increment-loop-recommended).
 
 After a configuration has been tested successfully, you may set the following in `00_config.R`:
 
@@ -1669,44 +1689,7 @@ to save a little time.
 
 ## 7. Logging, monitoring, restarting, troubleshooting and debugging
 
----
-
-### Common commands
-
-Validate config. Run in Terminal:
-
-```bash
-# Bash command block
-Rscript 01_validate_config.R
-```
-
-Run all steps. Run in Terminal:
-
-```bash
-# Bash command block
-Rscript run_all.R 2>&1 | tee run_all_stdout.log
-```
-
-Fit one imputed dataset only. Run in Terminal:
-
-```bash
-# Bash command block
-Rscript fit_single_imputation.R 1
-```
-
-For example, to fit the model only for imputed dataset 51, run in Terminal:
-
-```bash
-# Bash command block
-Rscript fit_single_imputation.R 51
-```
-
-Render the generated Quarto report after installing Quarto. Run in Terminal:
-
-```bash
-# Bash command block
-quarto render results/publication/report/bayesian_mi_report_template.qmd
-```
+This section covers what to do once a run is already underway or has already produced some output: restarting after an interruption, monitoring progress, recovering from CmdStan cache problems, and debugging a specific imputed dataset. For the commands used to start a run in the first place, see [Quick start](#3-quick-start).
 
 ---
 
@@ -1792,14 +1775,12 @@ or run the Bash command `bash 99_cleanall.sh`.
 
 The pipeline writes logs and status files:
 
-```text
-pipeline_progress.log
-pipeline_stdout.log
-pipeline_heartbeat.txt
-pipeline_success.flag
-pipeline_error.flag
-results/worker_logs/
-```
+- `pipeline_progress.log`
+- `pipeline_stdout.log`
+- `pipeline_heartbeat.txt`
+- `pipeline_success.flag`
+- `pipeline_error.flag`
+- `results/worker_logs/`
 
 Monitor progress by running the following in Terminal:
 
@@ -1816,17 +1797,7 @@ ls -lh results/worker_logs
 cat results/worker_logs/fit_worker_imp_001.log
 ```
 
-If the pipeline completes successfully, this file is created:
-
-```text
-pipeline_success.flag
-```
-
-If an R-level error is caught, this file is created:
-
-```text
-pipeline_error.flag
-```
+If the pipeline completes successfully, the file `pipeline_success.flag` is created. If an R-level error is caught instead, `pipeline_error.flag` is created.
 
 If the machine crashes or restarts unexpectedly, there may be no error flag. In that case, check the heartbeat and logs, then re-run. The checkpoint system should skip completed valid fits.
 
@@ -1905,10 +1876,8 @@ model = list(
 
 Interpretation:
 
-```text
-skip_imputations = do not fit brms models for these imputed datasets
-only_imputations = fit brms models only for these imputed datasets
-```
+- `skip_imputations`: do not fit `brms` models for these imputed datasets
+- `only_imputations`: fit `brms` models only for these imputed datasets
 
 These settings are useful when one imputed dataset is unusually slow or problematic. Completed valid fit files are still preserved and skipped on re-run.
 
@@ -1916,32 +1885,36 @@ These settings are useful when one imputed dataset is unusually slow or problema
 
 # 8. Publication outputs and inference guidance
 
-After successful completion, publication outputs are written to:
-
-```text
-results/publication/
-```
+After successful completion, publication outputs are written to `results/publication/`.
 
 Typical outputs include:
 
-```text
-results/publication/tables/main_effect_table_display.csv
-results/publication/tables/main_effect_table_full.csv
-results/publication/tables/diagnostics_summary.csv
-results/publication/tables/analysis_metadata.csv
-results/publication/tables/analysis_metadata.rds
-results/publication/figures/forest_plot_odds_ratios.png
-results/publication/report/bayesian_mi_report_template.qmd
-```
+- `results/publication/tables/main_effect_table_display.csv`
+- `results/publication/tables/main_effect_table_full.csv`
+- `results/publication/tables/diagnostics_summary.csv`
+- `results/publication/tables/analysis_metadata.csv`
+- `results/publication/tables/analysis_metadata.rds`
+- `results/publication/figures/forest_plot_odds_ratios.png`
+- `results/publication/report/bayesian_mi_report_template.qmd`
 
-The generated Quarto report includes posterior results, diagnostics, figures and a methods/settings table based on `analysis_metadata.csv`. This table records key analysis settings such as the imputation strategy, target number of imputations, fitted imputations used in posterior summaries, model formula, family/link, priors, MCMC settings, parallel settings, posterior-summary settings and predictive-draw settings.
+The generated Quarto report includes posterior results, diagnostics, figures, an imputation-count stability chapter (see below), and a methods/settings table based on `analysis_metadata.csv`. This table records key analysis settings such as the imputation strategy, target number of imputations, fitted imputations used in posterior summaries, model formula, family/link, priors, MCMC settings, parallel settings, posterior-summary settings and predictive-draw settings.
 
-Render the report with:
+`08_publication_results.R` renders this report itself, to both HTML and DOCX, as the last thing it does. Running `run_all.R` therefore always produces a finished, rendered report with no separate manual step. If you need to re-render it by hand (for example after manually editing the `.qmd`), run:
 
 ```bash
 # Bash command block
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
+
+Self-rendering can be turned off with `analysis_spec$publication$render_quarto <- FALSE` in `00_config.R`, if you only want the `.qmd` written and prefer to render it yourself.
+
+---
+
+### How Step 8's report embeds Step 11's results
+
+The main report's "Imputation-count stability" chapter is not a separate report -- it is built from the same tables and figures that `11_check_imputation_stability.R` writes to `results/publication/mi_stability/`, referenced from the main report's `.qmd` by relative path. There is one report, one `.qmd`, and one rendered HTML/DOCX pair; `results/publication/mi_stability/` still exists alongside it as the underlying data (and as a `.qmd` of its own, for anyone who wants the full, unabridged stepwise detail across every evaluated batch), but it is not rendered separately.
+
+This is why `run_all.R` runs Step 11 before Step 8 (see [Pipeline scripts](#pipeline-scripts)): the embedded chunks are evaluated when the report is rendered, so Step 11's files need to already be on disk at that point. `11_check_imputation_stability.R`'s own `render_quarto` option now defaults to `FALSE` for this reason -- its standalone report would just duplicate what is already in the main report's chapter. Set `analysis_spec$mi_stability$render_quarto <- TRUE` if you specifically want that standalone, more detailed report rendered as well.
 
 ---
 
@@ -1949,49 +1922,57 @@ quarto render results/publication/report/bayesian_mi_report_template.qmd
 
 For models that use `brms::mo()`, the standard posterior parameter table is not always the most interpretable summary. Monotonic effects are parameterised using an overall monotonic coefficient and simplex parameters, so category-specific odds ratios should be derived from posterior draws.
 
-Two optional scripts are provided for this purpose:
+Two scripts are provided for this purpose:
 
-```text
-09_check_mo_parameter_columns.R
-10_publication_mo_results.R
-```
+- `09_check_mo_parameter_columns.R`
+- `10_publication_mo_results.R`
 
-Run these after the main pipeline has completed and `results/parameter_draws.rds` has been created.
+`run_all.R` runs both of these automatically, but only when the fitted model's formula actually contains `mo()` terms (detected directly from `model_spec$formula`, not from any hardcoded variable list). For ordinary Gaussian, logistic, spline-only or factor-coded models, they are skipped automatically. You can also run them manually after the main pipeline has completed and `results/parameter_draws.rds` has been created:
 
-First, check that the required monotonic-effect parameters were extracted:
-
-```text
+```bash
+# Bash command block
 Rscript 09_check_mo_parameter_columns.R
-```
-
-Then create publication-ready monotonic-effect summaries:
-
-```text
 Rscript 10_publication_mo_results.R
 ```
 
+`09_check_mo_parameter_columns.R` discovers every `mo()` variable from the model formula, reports the matching `bsp_`/`simo_` columns and the implied number of ordered categories, and prints a ready-to-paste `analysis_spec$mo_effects` config block.
+
+By default, `10_publication_mo_results.R` runs with **zero configuration**: it discovers the same `mo()` variables from the formula and labels categories generically as `"Level 1"`, `"Level 2"`, and so on. For publication-ready labels and category names, paste the block 09 printed into `00_config.R` and edit it, for example:
+
+```r
+analysis_spec$mo_effects <- list(
+  vars = list(
+    lwt_q = list(
+      label = "Maternal weight quintile",
+      levels = c("Q1", "Q2", "Q3", "Q4", "Q5")
+    )
+  ),
+
+  # Only needed if your formula contains a time * mo(variable) interaction.
+  time_var = NULL,
+  time_values = NULL
+)
+```
+
+Any `mo()` variable not listed in `analysis_spec$mo_effects$vars` still gets generic "Level N" labels automatically, so this config is optional and additive -- you only need to add entries for the variables where you want nicer labels.
+
 Optional Quarto rendering:
 
-```text
+```bash
+# Bash command block
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 ```
 
-The main output table is:
-
-```text
-results/publication/mo_effects/tables/mo_cumulative_or_table.csv
-```
+The main output table is `results/publication/mo_effects/tables/mo_cumulative_or_table.csv`.
 
 Additional outputs include:
 
-```text
-results/publication/mo_effects/tables/mo_adjacent_or_table.csv
-results/publication/mo_effects/tables/mo_average_or_table.csv
-results/publication/mo_effects/tables/mo_simplex_table.csv
-results/publication/mo_effects/figures/mo_cumulative_or_plot.png
-results/publication/mo_effects/figures/mo_adjacent_or_plot.png
-results/publication/mo_effects/report/mo_effects_report.qmd
-```
+- `results/publication/mo_effects/tables/mo_adjacent_or_table.csv`
+- `results/publication/mo_effects/tables/mo_average_or_table.csv`
+- `results/publication/mo_effects/tables/mo_simplex_table.csv`
+- `results/publication/mo_effects/figures/mo_cumulative_or_plot.png`
+- `results/publication/mo_effects/figures/mo_adjacent_or_plot.png`
+- `results/publication/mo_effects/report/mo_effects_report.qmd`
 
 For models using `mo()`, make sure `00_config.R` includes `bsp_` and `simo_` in the posterior draw extraction regex:
 
@@ -2003,45 +1984,155 @@ model = list(
 )
 ```
 
-The `10_publication_mo_results.R` script can handle monotonic effects with interactions such as:
+The `10_publication_mo_results.R` script can handle monotonic effects with interactions such as `time * mo(ordinal_variable)`.
 
-```text
-time * mo(ordinal_variable)
-```
+In that case, set `analysis_spec$mo_effects$time_var`/`time_values`, and it calculates category-specific monotonic-effect odds ratios at the configured time values.
 
-In that case, it calculates category-specific monotonic-effect odds ratios at the configured time values.
-
-These scripts are not required for ordinary Gaussian, logistic, spline-only or factor-coded models. They are only needed when derived monotonic-effect odds ratios are desired.
+These scripts are not required for ordinary Gaussian, logistic, spline-only or factor-coded models, and `run_all.R` skips them automatically in that case. They only run when derived monotonic-effect odds ratios are needed.
 
 
 ### Optional imputation-count stability outputs
 
-If `11_check_imputation_stability.R` is run, publication-ready imputation-count stability outputs are written to:
-
-```text
-results/publication/mi_stability/
-```
+If `11_check_imputation_stability.R` is run, publication-ready imputation-count stability outputs are written to `results/publication/mi_stability/`.
 
 These outputs summarise how selected posterior summaries change as the number of completed imputations increases. They are intended to support transparent reporting when an adaptive number of imputations is used, especially for expensive Bayesian models where blindly running `m = 100` or more may be impractical.
 
 Main outputs include:
 
-```text
-results/publication/mi_stability/tables/imputation_stability_all_batches.csv
-results/publication/mi_stability/tables/imputation_stability_final_comparison_display.csv
-results/publication/mi_stability/tables/imputation_stability_settings.csv
-results/publication/mi_stability/tables/imputation_stability_stepwise_summary.csv
-results/publication/mi_stability/tables/imputation_stability_stepwise_comparison_full.csv
-results/publication/mi_stability/figures/imputation_stability_trajectories.png
-results/publication/mi_stability/figures/imputation_stability_stepwise_change.png
-results/publication/mi_stability/report/imputation_stability_report.qmd
-```
+- `results/publication/mi_stability/tables/imputation_stability_all_batches.csv`
+- `results/publication/mi_stability/tables/imputation_stability_final_comparison_display.csv`
+- `results/publication/mi_stability/tables/imputation_stability_settings.csv`
+- `results/publication/mi_stability/tables/imputation_stability_stepwise_summary.csv`
+- `results/publication/mi_stability/tables/imputation_stability_stepwise_comparison_full.csv`
+- `results/publication/mi_stability/figures/imputation_stability_trajectories.png`
+- `results/publication/mi_stability/figures/imputation_stability_stepwise_change.png`
+- `results/publication/mi_stability/report/imputation_stability_report.qmd`
 
 The stability check should focus on prespecified primary estimands rather than every nuisance parameter.
 
 ---
 
-# 9. Examples and tests
+# 9. Manuscript writing guide
+
+The publication outputs in [Section 8](#8-publication-outputs-and-inference-guidance) are designed to be quoted directly rather than re-derived by hand. This section maps each manuscript paragraph to the file that supplies its numbers, and gives fill-in-the-blank templates for Methods and Results text.
+
+These templates are starting points, not finished prose. They still need scientific interpretation, comparison to prior literature, and journal-specific formatting, all of which require human judgement that this pipeline does not provide.
+
+### Where each paragraph's numbers come from
+
+| Manuscript paragraph | Source file | What it gives you |
+|---|---|---|
+| Missing data and imputation | `results/publication/tables/analysis_metadata.csv` | Imputation strategy, target/used `m`, imputation iterations, mean-matching candidates |
+| Model specification | `results/publication/tables/analysis_metadata.csv` | Model formula, family/link, priors |
+| MCMC settings | `results/publication/tables/analysis_metadata.csv` | Chains, iterations, warm-up, seed, `adapt_delta`, `max_treedepth` |
+| Convergence/diagnostics | `results/publication/tables/diagnostics_summary.csv` | Divergences, treedepth hits, Rhat/ESS-type checks per fit |
+| Adaptive imputation-count justification | `results/publication/mi_stability/tables/imputation_stability_stepwise_summary_display.csv` | Whether/when posterior summaries stopped changing as `m` increased |
+| Main fixed-effect results | `results/publication/tables/main_effect_table_display.csv` | Estimate, 95% CrI, `pd`, ROPE %, and the transformed effect (e.g. odds ratio) per variable |
+| Smooth/monotonic supplementary results | `results/publication/tables/special_parameter_table.csv` | Auxiliary `s()`/`mo()` parameters not shown in the main table |
+| Monotonic-effect (`mo()`) results | `results/publication/mo_effects/tables/mo_cumulative_or_table.csv` | Category-specific odds ratios for monotonic ordinal predictors |
+| Posterior prediction for missing outcomes | `results/missing_y_summary.csv` | Summaries of predicted values for rows with missing outcome data |
+
+Open `analysis_metadata.csv` directly to read off exact values for the templates below, for example:
+
+```r
+metadata <- readr::read_csv("results/publication/tables/analysis_metadata.csv")
+print(metadata, n = Inf)
+```
+
+### Methods text templates
+
+**Missing data and imputation.** Adapt to the actual `Imputation strategy` and `m` values from `analysis_metadata.csv`:
+
+> Missing covariate data were handled using multiple imputation by chained
+equations implemented with random forests (miceRanger). Variables with
+missing values were imputed under a missing-at-random assumption,
+conditional on the variables included in the imputation model. We
+generated m = XX imputed datasets, fitted a separate Bayesian model to
+each, and combined posterior draws across imputations.
+
+If you used the subject-wide repeated-outcome strategy, adapt instead:
+
+> For the repeated outcome, subject-level covariates were imputed once per
+subject using a subject-wide imputation dataset, then merged back onto
+the long-format repeated-measures data before model fitting.
+
+**Adaptive number of imputations.** If you used the automatic m-increment loop or the manual staged workflow described in [Section 4](#4-adapting-the-pipeline-to-private-study-data):
+
+> We used an adaptive multiple-imputation strategy because each imputed-data
+Bayesian model was computationally expensive. We first fitted an initial
+set of imputed datasets and assessed the stability of prespecified
+primary posterior summaries. We increased the number of imputations until
+the pooled posterior medians, credible intervals, posterior direction
+probabilities and substantive conclusions changed negligibly with
+additional imputations. The final analysis used m = XX imputations.
+
+If the stepwise stability table (`imputation_stability_stepwise_summary_display.csv`) shows early flattening, a more specific statement can be used instead:
+
+> The stability assessment showed that posterior summaries changed
+negligibly after m = XX. The largest subsequent changes in posterior
+medians, credible-interval endpoints and odds-ratio summaries were below
+prespecified practical thresholds. The final analysis therefore used
+m = XX imputations.
+
+**Model specification.** Read `Model formula`, `Model family/link` and `Priors` from `analysis_metadata.csv`:
+
+> We fitted a Bayesian [family] regression model with a [link] link function
+using brms (formula: [paste Model formula here]) and the cmdstanr backend
+for Stan. Priors were [paste Priors here]. One model was fitted separately
+to each imputed dataset rather than using brm_multiple(), so that fitted
+models could be checkpointed and restarted independently.
+
+**MCMC settings.** Read `MCMC chains`, `Total/Warm-up/Post-warm-up iterations`, `Seed`, `adapt_delta` and `max_treedepth` from `analysis_metadata.csv`:
+
+>Each model was fitted using XX chains of XX total iterations, including
+XX warm-up iterations, yielding XX post-warm-up draws per chain per
+imputed dataset (XX total post-warm-up draws pooled across XX imputations).
+
+**Posterior pooling across imputations.** Worth including given the corrected pooling method (see [Section 4](#4-adapting-the-pipeline-to-private-study-data), "How Step 6 pools draws across imputations"):
+
+> Posterior draws were pooled across imputed datasets with equal weight per
+imputation, and an additional finite-imputation variance correction
+(following Rubin's combining rules) was applied where the pooled
+posterior distribution was sufficiently unimodal for this correction to
+be appropriate.
+
+**Software and reproducibility.** Fill in package versions from your R session (`sessionInfo()`) and the `Seed` value from `analysis_metadata.csv`:
+
+> Analyses were conducted in R version XX using brms version XX with the
+cmdstanr backend (CmdStan version XX), and miceRanger version XX for
+multiple imputation. A fixed random seed (XX) was used for model fitting;
+imputation batches were seeded deterministically for reproducibility.
+
+### Results text templates
+
+**Reporting a main effect**, using a row from `main_effect_table_display.csv`:
+
+> [Variable label] was associated with [outcome]: estimate = XX (95% credible interval [CrI]: XX to XX; posterior probability of direction = XX). [If a transformed effect column is present, e.g. odds ratio:] On the odds-ratio scale, this corresponds to an odds ratio of XX (95% CrI: XX to XX).
+
+
+If a ROPE was defined and is reported in the `ROPE %` column:
+
+> The posterior probability that this effect fell within the prespecified region of practical equivalence (ROPE: XX to XX) was XX%, [supporting / not supporting] practical equivalence to no effect.
+
+
+**Reporting a monotonic (`mo()`) effect**, using a row from `mo_cumulative_or_table.csv` (see [Section 8](#8-publication-outputs-and-inference-guidance) for how these are derived):
+
+> [Variable label] showed a monotonic ordinal association with [outcome]. Compared with the lowest category, the odds ratio for [highest category] was XX (95% CrI: XX to XX; Pr(OR > 1) = XX), with intermediate categories shown in [Table/Figure XX].
+
+
+### What this guide does not write for you
+
+- Scientific interpretation of effect sizes
+- Clinical or substantive significance
+- Comparison with prior literature
+- Study limitations
+- Sample size or power justification
+- Ethics, consent and data-availability statements
+- Citations for software and methods (cite R, brms, Stan, miceRanger and the relevant statistical methods papers directly)
+
+---
+
+# 10. Examples and tests
 
 The repository includes three public example analyses. These are intended to help users test the full pipeline before applying it to private study data.
 
@@ -2066,18 +2157,11 @@ examples
 
 Each example contains:
 
-```text
-a config file
-a variable dictionary
-a data-creation script
-```
+- a config file
+- a variable dictionary
+- a data-creation script
 
-To use an example, copy its config file and variable dictionary to the project root as:
-
-```text
-00_config.R
-00_variable_dictionary.csv
-```
+To use an example, copy its config file and variable dictionary to the project root as `00_config.R` and `00_variable_dictionary.csv`.
 
 Then run the example data-creation script.
 
@@ -2087,22 +2171,18 @@ This is the default Gaussian example.
 
 It tests:
 
-```text
-continuous outcome
-gaussian(identity) model
-row-level imputation
-ordinary fixed-effect reporting
-posterior prediction for rows with missing outcome values
-```
+- continuous outcome
+- `gaussian(identity)` model
+- row-level imputation
+- ordinary fixed-effect reporting
+- posterior prediction for rows with missing outcome values
 
 Model outline:
 
-```text
-Dataset: datasets::airquality
-Outcome: Ozone
-Model family: gaussian(identity)
-Model: Ozone ~ Solar.R_z + Wind_z + Temp_z + Month
-```
+- **Dataset:** `datasets::airquality`
+- **Outcome:** `Ozone`
+- **Model family:** `gaussian(identity)`
+- **Model:** `Ozone ~ Solar.R_z + Wind_z + Temp_z + Month`
 
 Run in Terminal from the project root:
 
@@ -2116,12 +2196,7 @@ Rscript 01_validate_config.R
 Rscript run_all.R 2>&1 | tee run_all_airquality_stdout.log
 ```
 
-Render the report:
-
-```bash
-# Bash command block
-quarto render results/publication/report/bayesian_mi_report_template.qmd
-```
+`run_all.R` already rendered `results/publication/report/bayesian_mi_report_template.html`/`.docx`; no separate render step is needed.
 
 ### Example 2: Logistic model using `MASS::birthwt`
 
@@ -2129,22 +2204,18 @@ This example tests the Bernoulli/logit workflow with a binary outcome.
 
 It tests:
 
-```text
-binary outcome
-bernoulli(logit) model
-row-level imputation
-odds-ratio reporting
-ordinary fixed-effect reporting
-```
+- binary outcome
+- `bernoulli(logit)` model
+- row-level imputation
+- odds-ratio reporting
+- ordinary fixed-effect reporting
 
 Model outline:
 
-```text
-Dataset: MASS::birthwt
-Outcome: low
-Model family: bernoulli(logit)
-Model: low ~ age_z + lwt_z + race + smoke + ptl_z + ht + ui + ftv_z
-```
+- **Dataset:** `MASS::birthwt`
+- **Outcome:** `low`
+- **Model family:** `bernoulli(logit)`
+- **Model:** `low ~ age_z + lwt_z + race + smoke + ptl_z + ht + ui + ftv_z`
 
 Run in Terminal from the project root:
 
@@ -2158,12 +2229,7 @@ Rscript 01_validate_config.R
 Rscript run_all.R 2>&1 | tee run_all_birthwt_logistic_stdout.log
 ```
 
-Render the report:
-
-```bash
-# Bash command block
-quarto render results/publication/report/bayesian_mi_report_template.qmd
-```
+`run_all.R` already rendered `results/publication/report/bayesian_mi_report_template.html`/`.docx`; no separate render step is needed.
 
 ### Example 3: Spline and monotonic effects using `MASS::birthwt`
 
@@ -2171,24 +2237,20 @@ This example tests custom `brms` formulae with `s()` and `mo()` terms.
 
 It tests:
 
-```text
-custom_formula
-s() smooth terms
-mo() monotonic effects
-ordered categorical predictors
-special brms parameter summaries
-conditional-effect plots
-odds-ratio reporting for ordinary fixed effects
-```
+- `custom_formula`
+- `s()` smooth terms
+- `mo()` monotonic effects
+- ordered categorical predictors
+- special `brms` parameter summaries
+- conditional-effect plots
+- odds-ratio reporting for ordinary fixed effects
 
 Model outline:
 
-```text
-Dataset: MASS::birthwt
-Outcome: low
-Model family: bernoulli(logit)
-Model: low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z
-```
+- **Dataset:** `MASS::birthwt`
+- **Outcome:** `low`
+- **Model family:** `bernoulli(logit)`
+- **Model:** `low ~ s(age_z, k = 5) + mo(lwt_q) + race + smoke + ptl_z + ht + ui + ftv_z`
 
 Here, `lwt_q` is an ordered quintile version of maternal weight, created by the example data script.
 
@@ -2204,12 +2266,7 @@ Rscript 01_validate_config.R
 Rscript run_all.R 2>&1 | tee run_all_birthwt_spline_monotonic_stdout.log
 ```
 
-Render the main report:
-
-```bash
-# Bash command block
-quarto render results/publication/report/bayesian_mi_report_template.qmd
-```
+`run_all.R` already rendered `results/publication/report/bayesian_mi_report_template.html`/`.docx`; no separate render step is needed.
 
 For this example, the model includes mo(lwt_q). To create derived monotonic-effect odds-ratio summaries, also run:
 
@@ -2220,26 +2277,16 @@ Rscript 10_publication_mo_results.R
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 ```
 
-The main monotonic-effect table is:
-
-```text
-results/publication/mo_effects/tables/mo_cumulative_or_table.csv
-```
+The main monotonic-effect table is `results/publication/mo_effects/tables/mo_cumulative_or_table.csv`.
 
 Supplementary monotonic-effect outputs include:
 
-```text
-results/publication/mo_effects/tables/mo_adjacent_or_table.csv
-results/publication/mo_effects/tables/mo_simplex_table.csv
-results/publication/mo_effects/report/mo_effects_report.html
-results/publication/mo_effects/report/mo_effects_report.docx
-```
+- `results/publication/mo_effects/tables/mo_adjacent_or_table.csv`
+- `results/publication/mo_effects/tables/mo_simplex_table.csv`
+- `results/publication/mo_effects/report/mo_effects_report.html`
+- `results/publication/mo_effects/report/mo_effects_report.docx`
 
-See also:
-
-```text
-examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md
-```
+See also `examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md`.
 
 ### Cleaning outputs before switching examples
 
@@ -2269,16 +2316,14 @@ The repository may include optional bash scripts to test the examples automatica
 
 Quick tests use small settings such as:
 
-```text
-m = 5
-chains = 1
-iter = 500
-warmup = 250
-fit_workers = 1
-cores_per_fit = 1
-summary_workers = 1
-prediction_workers = 1
-```
+- `m = 5`
+- `chains = 1`
+- `iter = 500`
+- `warmup = 250`
+- `fit_workers = 1`
+- `cores_per_fit = 1`
+- `summary_workers = 1`
+- `prediction_workers = 1`
 
 Run in Terminal:
 
@@ -2289,16 +2334,14 @@ bash test/test_all_examples_quick.sh
 
 Parallel tests use modest parallel settings such as:
 
-```text
-m = 10
-chains = 4
-iter = 500
-warmup = 250
-fit_workers = 2
-cores_per_fit = 4
-summary_workers = 2
-prediction_workers = 2
-```
+- `m = 10`
+- `chains = 4`
+- `iter = 500`
+- `warmup = 250`
+- `fit_workers = 2`
+- `cores_per_fit = 4`
+- `summary_workers = 2`
+- `prediction_workers = 2`
 
 Run in Terminal:
 
@@ -2309,25 +2352,19 @@ bash test/test_all_examples_parallel.sh
 
 A successful example test should create:
 
-```text
-results/diagnostics.rds
-results/parameter_summary.rds
-results/publication/tables/main_effect_table_display.csv
-results/publication/tables/analysis_metadata.csv
-results/publication/report/bayesian_mi_report_template.qmd
-results/publication/report/bayesian_mi_report_template.html
-results/publication/report/bayesian_mi_report_template.docx
-```
+- `results/diagnostics.rds`
+- `results/parameter_summary.rds`
+- `results/publication/tables/main_effect_table_display.csv`
+- `results/publication/tables/analysis_metadata.csv`
+- `results/publication/report/bayesian_mi_report_template.qmd`
+- `results/publication/report/bayesian_mi_report_template.html`
+- `results/publication/report/bayesian_mi_report_template.docx`
 
 ---
 
 ### Test outputs
 
-The bash test scripts write isolated preserved runs under:
-
-```text
-test/runs/
-```
+The bash test scripts write isolated preserved runs under `test/runs/`.
 
 This means example tests do not delete or overwrite root-level `objects/`, `fits/` or `results/`.
 
@@ -2359,25 +2396,19 @@ To clean all preserved test runs manually:
 rm -rf test/runs
 ```
 
-Add this to `.gitignore` if it is not already present:
-
-```text
-test/runs/
-```
+Add `test/runs/` to `.gitignore` if it is not already present.
 
 The all-example test scripts cover:
 
-```text
-airquality_gaussian
-birthwt_logistic
-birthwt_spline_monotonic
-```
+- `airquality_gaussian`
+- `birthwt_logistic`
+- `birthwt_spline_monotonic`
 
 The `birthwt_spline_monotonic` example exercises custom `brms` formula support for `s()` and `mo()` terms.
 
 ---
 
-## 10. Computing environment setup
+## 11. Computing environment setup
 
 Before running the pipeline, prepare the R environment and CmdStan toolchain.
 
@@ -2385,7 +2416,7 @@ The exact setup depends on the operating system and computing environment. The s
 
 ---
 
-### 10.1 macOS setup
+### 11.1 macOS setup
 
 Before running the pipeline, prepare the R environment and CmdStan toolchain. These instructions are for macOS. If running Windows, set up the Windows toolchain and R environment appropriately.
 
@@ -2537,11 +2568,7 @@ If this succeeds, the local Bayesian modelling environment is ready for the pipe
 
 ### 6. Install Quarto for report rendering
 
-The pipeline can generate a Quarto report template in:
-
-```text
-results/publication/report/bayesian_mi_report_template.qmd
-```
+The pipeline can generate a Quarto report template in `results/publication/report/bayesian_mi_report_template.qmd`.
 
 To render this report to HTML or DOCX, install Quarto.
 
@@ -2594,22 +2621,20 @@ renv::snapshot()
 
 This creates a project-specific package lockfile so the same package versions can be restored later. Run in R or RStudio:
 
-```text
+```r
 renv::restore()
 ```
 
 ---
 
-### 10.2 Windows setup
+### 11.2 Windows setup
 
 Install:
 
-```text
-R
-RStudio
-Rtools
-Quarto
-```
+- R
+- RStudio
+- Rtools
+- Quarto
 
 Use the version of Rtools that matches your R version. After installing Rtools, open R or RStudio and run:
 
@@ -2633,33 +2658,34 @@ If toolchain problems persist, restart RStudio after installing Rtools. Then run
 
 To verify Quarto from Command Prompt or PowerShell:
 
-```text
+```bash
+# Command Prompt / PowerShell
 quarto --version
 ```
 
 ---
 
-### 10.3 Linux setup
+### 11.3 Linux setup
 
 Linux distributions differ, but the required system tools are generally:
 
-```text
-make
-g++
-tar
-gzip
-```
+- `make`
+- `g++`
+- `tar`
+- `gzip`
 
 For Ubuntu/Debian:
 
-```text
+```bash
+# Bash command block
 sudo apt update
 sudo apt install -y build-essential gfortran make
 ```
 
 For Fedora:
 
-```text
+```bash
+# Bash command block
 sudo dnf groupinstall -y "Development Tools"
 sudo dnf install -y gcc-c++ gcc-gfortran make
 ```
@@ -2668,7 +2694,8 @@ For Red Hat Enterprise Linux or compatible systems, the exact commands may depen
 
 On a shared server or cluster, system tools may be provided through environment modules, for example:
 
-```text
+```bash
+# Bash command block
 module avail gcc
 module load gcc
 ```
@@ -2688,13 +2715,15 @@ Verify `brms` + `cmdstanr` using the same test shown in the macOS section.
 
 Install Quarto using the installer appropriate for your distribution. On Ubuntu/Debian, for example:
 
-```text
+```bash
+# Bash command block
 sudo dpkg -i quarto-*-linux-amd64.deb
 ```
 
 Then check:
 
-```text
+```bash
+# Bash command block
 quarto --version
 ```
 

@@ -32,8 +32,9 @@ El ejemplo predeterminado usa el conjunto de datos público integrado `datasets:
 6. [Paralelización y ajuste de rendimiento](#6-paralelización-y-ajuste-de-rendimiento)
 7. [Registros, monitoreo, reinicio y solución de problemas](#7-registros-monitoreo-reinicio-y-solución-de-problemas)
 8. [Salidas de publicación y guía de inferencia](#8-salidas-de-publicación-y-guía-de-inferencia)
-9. [Ejemplos y pruebas](#9-ejemplos-y-pruebas)
-10. [Configuración del entorno de cómputo](#10-configuración-del-entorno-de-cómputo)
+9. [Guía para redactar el manuscrito](#9-guía-para-redactar-el-manuscrito)
+10. [Ejemplos y pruebas](#10-ejemplos-y-pruebas)
+11. [Configuración del entorno de cómputo](#11-configuración-del-entorno-de-cómputo)
 
 ---
 
@@ -135,15 +136,17 @@ Los demás scripts normalmente deben tratarse como código del pipeline.
 08_publication_results.R
 ```
 
-Scripts opcionales:
+`run_all.R` ejecuta además automáticamente dos scripts adicionales:
 
 ```text
-09_check_mo_parameter_columns.R      opcional; comprueba columnas de parámetros mo()
-10_publication_mo_results.R         opcional; crea resúmenes de odds ratios derivados para mo()
-11_check_imputation_stability.R      opcional; verifica estabilidad de resúmenes posteriores al aumentar m
+09_check_mo_parameter_columns.R      se ejecuta automáticamente solo si la fórmula del modelo contiene términos mo()
+10_publication_mo_results.R          se ejecuta automáticamente solo si la fórmula del modelo contiene términos mo()
+11_check_imputation_stability.R      siempre se ejecuta, y produce el informe final de estabilidad del número de imputaciones
 ```
 
-`09` y `10` solo se necesitan para efectos ordinales monotónicos con `brms::mo()`. `11` es útil cuando el ajuste es costoso y se quiere justificar el número de imputaciones.
+`run_all.R` detecta los términos `mo()` directamente en la fórmula del modelo ajustado; no es necesario mantener una lista de variables. Por eso `09`/`10` se omiten automáticamente para modelos gaussianos, logísticos, con splines o con factores ordinarios.
+
+Si `analysis_spec$mi_stability$auto_increment <- TRUE`, `run_all.R` también aumenta `m` automáticamente por lotes y detiene el ajuste en cuanto los resúmenes posteriores son estables; vea la sección 4.
 
 ---
 
@@ -254,11 +257,26 @@ colSums(is.na(d))
 
 ### Elegir el número de imputaciones
 
-No existe un valor universal de `m`. Para análisis costosos, use una estrategia por etapas:
+No existe un valor universal de `m`. Con conjuntos de datos grandes, los resultados suelen estabilizarse con un `m` menor que con conjuntos pequeños, mientras que cada ajuste tarda más; fijar un `m` grande desde el inicio puede desperdiciar mucho cómputo.
+
+**Bucle automático (recomendado).** Defina `analysis_spec$imputation$m` como tope, y luego:
+
+```r
+analysis_spec$mi_stability <- list(
+  auto_increment = TRUE,
+  increment_size = NULL  # por defecto, igual a fit_workers
+)
+```
+
+`run_all.R` ajusta entonces `m` por lotes (tamaño por defecto = `fit_workers`, para ocupar plenamente los workers paralelos), comprueba la estabilidad después de cada lote y deja de aumentar `m` en cuanto se cumplen los umbrales configurados, o al alcanzar el `m` configurado. Cada lote se siembra de forma determinista (`analysis_spec$imputation$seed`, por defecto basado en `analysis_spec$model$seed`).
+
+**Estrategia manual por etapas.** Para controlar usted mismo los lotes, fije `analysis_spec$imputation$allow_extend <- TRUE` y aumente `m` progresivamente:
 
 ```text
 20 -> 40 -> 60 -> 80 -> 100
 ```
+
+Con `allow_extend = TRUE`, volver a ejecutar el pipeline con un `m` mayor solo agrega las imputaciones nuevas; las imputaciones existentes nunca se modifican.
 
 Después del paso 6, ejecute:
 
@@ -408,7 +426,9 @@ Renderice el informe:
 quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
-Para modelos con `brms::mo()`:
+En el paso 6, los draws posteriores no se concatenan simplemente entre imputaciones: cada imputación contribuye con peso igual (1/m), y se aplica una corrección de varianza para `m` finito (regla de Rubin) cuando la forma de la distribución posterior combinada lo permite. Vea las columnas `m_imputations`, `variance_corrected`, etc. en `results/parameter_summary.csv`.
+
+Para modelos con `brms::mo()`, `run_all.R` ejecuta automáticamente:
 
 ```bash
 Rscript 09_check_mo_parameter_columns.R
@@ -416,9 +436,45 @@ Rscript 10_publication_mo_results.R
 quarto render results/publication/mo_effects/report/mo_effects_report.qmd
 ```
 
+Estos scripts detectan las variables `mo()` directamente en la fórmula del modelo; no se necesita ninguna lista de variables editada manualmente. Para etiquetas y nombres de categorías personalizados, agregue un bloque opcional `analysis_spec$mo_effects` en `00_config.R` (plantilla sugerida impresa por `09_check_mo_parameter_columns.R`).
+
 ---
 
-## 9. Ejemplos y pruebas
+## 9. Guía para redactar el manuscrito
+
+Las salidas de publicación están diseñadas para citarse directamente en un manuscrito, en lugar de recalcularse a mano.
+
+| Párrafo del manuscrito | Archivo fuente |
+|---|---|
+| Datos faltantes / imputación | `results/publication/tables/analysis_metadata.csv` |
+| Especificación del modelo, ajustes MCMC | `results/publication/tables/analysis_metadata.csv` |
+| Justificación del número adaptativo de imputaciones | `results/publication/mi_stability/tables/imputation_stability_stepwise_summary_display.csv` |
+| Resultados de efectos principales | `results/publication/tables/main_effect_table_display.csv` |
+| Resultados de efectos monotónicos (`mo()`) | `results/publication/mo_effects/tables/mo_cumulative_or_table.csv` |
+
+Ejemplo de texto de "Métodos" (ajuste los valores desde `analysis_metadata.csv`):
+
+```text
+Los datos faltantes de covariables se trataron mediante imputación
+múltiple por ecuaciones encadenadas con bosques aleatorios (miceRanger),
+generando m = XX conjuntos de datos imputados. Se ajustó un modelo
+bayesiano independiente a cada conjunto imputado usando brms con el
+motor cmdstanr, y los draws posteriores se combinaron entre imputaciones
+con peso igual por imputación.
+```
+
+Ejemplo de texto de "Resultados" para un efecto principal (desde `main_effect_table_display.csv`):
+
+```text
+[Variable] se asoció con [resultado]: estimación = XX (IC del 95 %: XX a
+XX; probabilidad posterior de dirección = XX).
+```
+
+Esta guía no redacta por usted la interpretación científica, la relevancia clínica, las limitaciones del estudio ni las citas bibliográficas; eso sigue requiriendo criterio humano.
+
+---
+
+## 10. Ejemplos y pruebas
 
 Ejemplos incluidos:
 
@@ -450,7 +506,7 @@ rm -f pipeline_progress.log pipeline_heartbeat.txt pipeline_stdout.log run_all_s
 
 ---
 
-## 10. Configuración del entorno de cómputo
+## 11. Configuración del entorno de cómputo
 
 Instale R, las herramientas del sistema, los paquetes R, CmdStan/CmdStanR y Quarto.
 
