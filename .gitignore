@@ -43,3 +43,6 @@ data/*.csv
 
 # Preserved isolated test runs
 test/runs/
+
+# Claude files
+.claude
