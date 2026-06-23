@@ -471,18 +471,18 @@ analysis_spec <- list(
   ),
 
   # ------------------------------------------------------------
-  # Optional: automatic imputation-count stability loop
+  # Automatic imputation-count stability loop
   # ------------------------------------------------------------
-  # Placeholder, inactive by default (auto_increment = FALSE). With this
-  # left FALSE, run_all.R fits a single fixed m, exactly as if this block
-  # were absent. Set auto_increment <- TRUE to let run_all.R fit imputations
-  # in batches and stop increasing m automatically once posterior summaries
-  # are stable, instead of fitting analysis_spec$imputation$m up front.
-  # analysis_spec$imputation$m is then used as the ceiling, not the
-  # starting point. See README.md, "Choosing the number of imputations
-  # adaptively".
+  # Recommended default: auto_increment = TRUE. run_all.R then fits
+  # imputations in batches and stops increasing m automatically once
+  # posterior summaries are stable, instead of fitting
+  # analysis_spec$imputation$m up front. analysis_spec$imputation$m is
+  # used as the ceiling on this loop, not the starting point. See
+  # README.md, "Choosing the number of imputations adaptively".
+  # Set auto_increment <- FALSE to turn this off and fit a single fixed m
+  # instead, exactly as if this block were absent.
   mi_stability = list(
-    auto_increment = FALSE,
+    auto_increment = TRUE,
 
     # NULL defaults to analysis_spec$parallel$fit_workers, rounded up to a
     # multiple of fit_workers if you override it here.

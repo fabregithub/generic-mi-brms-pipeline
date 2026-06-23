@@ -40,6 +40,8 @@ This pipeline is intended for applied Bayesian regression analyses where the dat
 
 The design prioritises reproducibility and restartability over keeping all fitted models in memory. This is why the pipeline fits one `brms` model per imputed dataset, saves each fit immediately and reuses valid checkpoint files on rerun.
 
+By default (`analysis_spec$mi_stability$auto_increment = TRUE` in `00_config.R`), the pipeline also avoids fitting more imputations than necessary: `run_all.R` fits imputations in batches, checks whether posterior summaries have stabilised, and stops increasing `m` automatically once they have, rather than always fitting `analysis_spec$imputation$m` up front. This is especially useful for large-N or otherwise expensive models, where blindly fitting `m = 100` imputations can cost far more compute than the analysis needs. See [Choosing the number of imputations adaptively](#choosing-the-number-of-imputations-adaptively) for details. If you prefer a single fixed `m` with no automatic stopping, set `auto_increment <- FALSE`.
+
 ### Brief cautions and limitations
 
 This repository is a workflow scaffold, not a substitute for statistical judgement. Before using it for a scientific analysis, check that the imputation strategy, model formula, priors, diagnostics and posterior summaries are appropriate for your study question.
@@ -667,7 +669,7 @@ There are two ways to use this adaptive idea: an **automatic loop** that `run_al
 
 #### Automatic m-increment loop (recommended)
 
-Set `analysis_spec$mi_stability$auto_increment <- TRUE` in `00_config.R`:
+`analysis_spec$mi_stability$auto_increment` is `TRUE` by default in `00_config.R`, so a typical setup looks like:
 
 ```r
 analysis_spec$imputation$m <- 100  # acts as the ceiling, not the starting point
@@ -714,7 +716,7 @@ The loop only ever adds new imputations and fits; it never reduces or overwrites
 
 #### Manual staged workflow
 
-If you prefer to inspect the stability check yourself between batches rather than letting `run_all.R` decide automatically, use the manual workflow instead. The safest rule is:
+If you prefer to inspect the stability check yourself between batches rather than letting `run_all.R` decide automatically, set `analysis_spec$mi_stability$auto_increment <- FALSE` in `00_config.R` and use the manual workflow instead. The safest rule is:
 
 > Start with a modest `m` and increase `m` only if needed. Do not reduce `m` within the same saved run.
 
