@@ -68,6 +68,10 @@ if (!file.exists(parameter_draws_file)) {
 
 model_spec <- readRDS(model_spec_file)
 mo_effects_cfg <- analysis_spec$mo_effects %||% list()
+# Treat any non-list value (e.g. a TRUE placeholder left in the config) as
+# "not configured" so the generic-label fallback below applies instead of
+# $-on-atomic errors.
+if (!is.list(mo_effects_cfg)) mo_effects_cfg <- list()
 
 detected_vars <- extract_special_term_vars(model_spec$formula, fun = "mo")
 

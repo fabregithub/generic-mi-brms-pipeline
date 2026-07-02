@@ -92,6 +92,11 @@ for (var in mo_vars) {
   )
 }
 
+# Drop the trailing comma after the last vars entry so the printed
+# snippet is valid R when pasted verbatim.
+n_lines <- length(mo_config_lines)
+mo_config_lines[n_lines] <- sub(",$", "", mo_config_lines[n_lines])
+
 mo_config_lines <- c(
   mo_config_lines,
   "  ),",

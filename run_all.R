@@ -77,6 +77,35 @@ if (mi_loop_enabled) {
 
   m_current <- min(increment_size, max_m)
 
+  # Resume support: a previous run may already have grown m past the first
+  # batch (and then stopped, or failed in a later step). Step 3's overwrite
+  # guard rightly refuses to shrink m below the existing imputation count,
+  # so start the loop from that count instead of the first batch size.
+  imputation_manifest_file <- file.path(paths$objects, "imputation_manifest.rds")
+  n_existing_imputations <- 0L
+
+  if (file.exists(imputation_manifest_file)) {
+    existing_manifest <- readRDS(imputation_manifest_file)
+
+    if (is.data.frame(existing_manifest) && "imputed_file" %in% names(existing_manifest)) {
+      existing_files <- as.character(existing_manifest$imputed_file)
+      n_existing_imputations <- sum(
+        !is.na(existing_files) & nzchar(existing_files) & file.exists(existing_files)
+      )
+    }
+  }
+
+  resumed_past_first_batch <- n_existing_imputations > m_current
+
+  if (resumed_past_first_batch) {
+    m_current <- min(n_existing_imputations, max_m)
+
+    cat(
+      "\nFound", n_existing_imputations,
+      "existing imputation(s); resuming the stability loop at m =", m_current, "\n"
+    )
+  }
+
   # The smoke fit's job is to catch formula/prior/data/CmdStan problems
   # early, once. Re-running it before every batch's parallel fitting would
   # just re-fit imputation 1's model again and again for no benefit, so it
@@ -90,7 +119,27 @@ if (mi_loop_enabled) {
   run_step("04_fit_models.R")
   run_step("06_posterior_summary.R")
 
-  while (m_current < max_m) {
+  # On resume, the previous run may have stopped exactly here because
+  # stability was already reached; that decision is not persisted anywhere,
+  # so re-evaluate the last batch transition before fitting new batches.
+  stability_reached <- FALSE
+
+  if (resumed_past_first_batch && m_current > increment_size && m_current < max_m) {
+    m_previous_check <- m_current - increment_size
+    stability <- evaluate_mi_stability_batches(paths, analysis_spec, m_previous_check, m_current)
+
+    cat(
+      "\nResume stability check m =", m_previous_check, "-> m =", m_current, ": ",
+      stability$n_stable, "/", stability$n_parameters, "parameter(s) stable.\n"
+    )
+
+    if (stability$all_stable) {
+      stability_reached <- TRUE
+      cat("Stability already reached at m =", m_current, ". No further batches needed.\n")
+    }
+  }
+
+  while (!stability_reached && m_current < max_m) {
     m_previous <- m_current
     m_current <- min(m_current + increment_size, max_m)
 
