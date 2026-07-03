@@ -136,6 +136,7 @@ safe_step("STEP 8: Publication-ready outputs", {
   
   clean_parameter_name <- function(x) {
     x %>%
+      str_replace("^bsp_mo([A-Za-z0-9._]+?)(idEQ[A-Za-z0-9._]+)?$", "\\1 (monotonic)") %>%
       str_replace("^b_", "") %>%
       str_replace("^sd_", "SD: ") %>%
       str_replace_all(":", " x ") %>%
@@ -546,6 +547,73 @@ safe_step("STEP 8: Publication-ready outputs", {
     title = "Posterior Summary of Fixed Effects"
   )
   
+  # ------------------------------------------------------------
+  # Publication-ready template sentences (one per fixed effect)
+  # ------------------------------------------------------------
+
+  pd_label <- function(pd) {
+    if (is.na(pd)) return(NA_character_)
+    dplyr::case_when(
+      pd > 99.9 ~ "certainly",
+      pd > 99   ~ "probably",
+      pd > 97   ~ "likely",
+      pd > 95   ~ "possibly",
+      TRUE      ~ "uncertainly"
+    )
+  }
+
+  rope_clause <- function(rope_pct) {
+    if (is.na(rope_pct)) return("")
+    label <- dplyr::case_when(
+      rope_pct > 99   ~ "negligible",
+      rope_pct > 97.5 ~ "probably negligible",
+      rope_pct < 1    ~ "significant",
+      rope_pct < 2.5  ~ "probably significant",
+      TRUE            ~ "inconclusive relative to the ROPE"
+    )
+    glue("; {round(rope_pct, 1)}% of the posterior fell within the ROPE, suggesting the effect is {label}")
+  }
+
+  template_sentences <- main_effect_table %>%
+    filter(
+      Parameter_Class == "fixed" |
+        (Parameter_Class == "special_brms" & grepl("^bsp_mo", Parameter_raw))
+    ) %>%
+    filter(!is_intercept(Parameter_raw)) %>%
+    mutate(
+      ci_pct       = paste0(round(dplyr::coalesce(as.numeric(CI), 0.95) * 100), "%"),
+      direction    = ifelse(Estimate_num >= 0, "positive", "negative"),
+      pd_word      = purrr::map_chr(pd_num, pd_label),
+      rope_text    = purrr::map_chr(ROPE_Percentage_num, rope_clause),
+      or_clause    = as.character(ifelse(
+        !is.na(Transformed_num),
+        glue(
+          "; {transformed_label} = {round(Transformed_num, 2)}, ",
+          "{ci_pct} CrI [{round(Transformed_low_num, 2)}, {round(Transformed_high_num, 2)}]"
+        ),
+        ""
+      )),
+      sentence = as.character(ifelse(
+        !is.na(pd_num),
+        glue(
+          "The effect of {Parameter_clean} was {direction} (β = {round(Estimate_num, 2)}, ",
+          "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause}), ",
+          "with a {pd_word} probability of being {direction} (pd = {round(pd_num, 1)}%){rope_text}."
+        ),
+        glue(
+          "The effect of {Parameter_clean} was {direction} (β = {round(Estimate_num, 2)}, ",
+          "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause}){rope_text}."
+        )
+      ))
+    ) %>%
+    select(Parameter = Parameter_clean, Parameter_raw, sentence)
+
+  readr::write_csv(
+    template_sentences,
+    file.path(table_dir, "parameter_template_sentences.csv")
+  )
+  log_msg("Saved parameter_template_sentences.csv with", nrow(template_sentences), "rows.")
+
   # ------------------------------------------------------------
   # Forest plot
   # ------------------------------------------------------------
@@ -1248,6 +1316,15 @@ safe_step("STEP 8: Publication-ready outputs", {
     "",
     special_parameter_report_lines,
     "",
+    "# Results — template sentences",
+    "",
+    "The sentences below are auto-generated from the pooled posterior. Each reports the direction, credible interval, probability of direction (pd), and — when a ROPE was specified — the percentage of the posterior within the ROPE. Copy-paste as a starting point and adjust wording to suit your manuscript.",
+    "",
+    "```{r template-sentences, eval=file.exists(file.path(table_dir, 'parameter_template_sentences.csv'))}",
+    "tmpl <- readr::read_csv(file.path(table_dir, 'parameter_template_sentences.csv'), show_col_types = FALSE)",
+    "for (s in tmpl$sentence) cat('-', s, '\n\n')",
+    "```",
+    "",
     "# Forest plot",
     "",
     "```{r forest-plot, fig.width=8, fig.height=8, eval=file.exists(file.path(figure_dir, 'forest_plot_fixed_effects.png'))}",
@@ -1285,6 +1362,7 @@ safe_step("STEP 8: Publication-ready outputs", {
     "- `tables/main_effect_table_full.csv`",
     "- `tables/main_effect_table.html`",
     "- `tables/main_effect_table.docx`",
+    "- `tables/parameter_template_sentences.csv` — auto-generated publication sentences (one per fixed effect)",
     "- `tables/special_parameter_table.csv`, if smooth or monotonic terms are present",
     "- `tables/conditional_effects_manifest.csv`, if conditional-effect plots are created",
     "- `tables/diagnostics_summary.csv`, if diagnostics are available",
