@@ -551,6 +551,25 @@ safe_step("STEP 8: Publication-ready outputs", {
   # Publication-ready template sentences (one per fixed effect)
   # ------------------------------------------------------------
 
+  sentences_scope <- analysis_spec$publication$template_sentences_scope %||% "all"
+
+  exposure_vars <- character(0)
+  if (identical(sentences_scope, "exposure_only")) {
+    dict_file <- paths$variable_dictionary %||% "00_variable_dictionary.csv"
+    if (file.exists(dict_file)) {
+      dict <- readr::read_csv(dict_file, show_col_types = FALSE)
+      if ("role" %in% names(dict) && "var" %in% names(dict)) {
+        exposure_vars <- dict$var[tolower(dict$role) == "exposure"]
+      }
+    }
+    if (length(exposure_vars) == 0) {
+      log_msg("template_sentences_scope = 'exposure_only' but no exposure variables found in dictionary; falling back to 'all'.")
+      sentences_scope <- "all"
+    } else {
+      log_msg("template_sentences_scope = 'exposure_only'; exposure variables:", paste(exposure_vars, collapse = ", "))
+    }
+  }
+
   rope_clause <- function(rope_pct) {
     if (is.na(rope_pct)) return("")
     label <- dplyr::case_when(
@@ -563,12 +582,28 @@ safe_step("STEP 8: Publication-ready outputs", {
     glue(" and can be considered as {label} ({round(rope_pct, 1)}% in ROPE)")
   }
 
+  is_exposure_param <- function(raw, exposure_vars) {
+    # Strip b_ prefix, then check if the base variable (before any : interaction
+    # separator) matches an exposure variable — handles dummies like
+    # C1hypreventsmo1 from C1hypreventsmo, and interaction terms like
+    # b_time:C1hypreventsmo1.
+    bare <- sub("^b_", "", raw)
+    parts <- strsplit(bare, ":", fixed = TRUE)[[1]]
+    any(purrr::map_lgl(exposure_vars, function(ev) {
+      any(startsWith(parts, ev))
+    }))
+  }
+
   template_sentences <- main_effect_table %>%
     filter(
       Parameter_Class == "fixed" |
         (Parameter_Class == "special_brms" & grepl("^bsp_mo", Parameter_raw))
     ) %>%
     filter(!is_intercept(Parameter_raw)) %>%
+    filter(
+      sentences_scope == "all" |
+        purrr::map_lgl(Parameter_raw, is_exposure_param, exposure_vars = exposure_vars)
+    ) %>%
     mutate(
       ci_pct    = paste0(round(dplyr::coalesce(as.numeric(CI), 0.95) * 100), "%"),
       direction = ifelse(Estimate_num >= 0, "positive", "negative"),

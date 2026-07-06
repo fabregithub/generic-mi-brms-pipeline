@@ -509,7 +509,7 @@ analysis_spec <- list(
   # "Level 2", ... category labels. Run 09_check_mo_parameter_columns.R for
   # a ready-to-paste vars = list(...) block with the right number of levels
   # for each detected mo() variable, then add real labels/levels below.
-  mo_effects = NULL
+  mo_effects = NULL,
 
   # Example, once you have run 09_check_mo_parameter_columns.R:
   # mo_effects = list(
@@ -521,7 +521,20 @@ analysis_spec <- list(
   #   ),
   #   time_var = NULL,    # set only if your formula has time * mo(variable)
   #   time_values = NULL  # e.g. 1:6
-  # )
+  # ),
+
+  # ------------------------------------------------------------
+  # Publication settings
+  # ------------------------------------------------------------
+  # template_sentences_scope controls which parameters receive
+  # auto-generated result sentences in the report:
+  #   "all"           — every fixed effect (default; good for exploratory)
+  #   "exposure_only" — only variables with role == "exposure" in
+  #                     00_variable_dictionary.csv, plus any interaction
+  #                     terms that involve an exposure variable
+  publication = list(
+    template_sentences_scope = "all"   # or "exposure_only" for causal inference
+  )
 )
 
 # ============================================================
