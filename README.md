@@ -1896,6 +1896,7 @@ Typical outputs include:
 - `results/publication/tables/diagnostics_summary.csv`
 - `results/publication/tables/analysis_metadata.csv`
 - `results/publication/tables/analysis_metadata.rds`
+- `results/publication/tables/parameter_template_sentences.csv`
 - `results/publication/figures/forest_plot_odds_ratios.png`
 - `results/publication/report/bayesian_mi_report_template.qmd`
 
@@ -1909,6 +1910,26 @@ quarto render results/publication/report/bayesian_mi_report_template.qmd
 ```
 
 Self-rendering can be turned off with `analysis_spec$publication$render_quarto <- FALSE` in `00_config.R`, if you only want the `.qmd` written and prefer to render it yourself.
+
+---
+
+### Publication-ready template sentences
+
+`08_publication_results.R` auto-generates one result sentence per fixed-effect parameter (and mo() main coefficients), following the [bayestestR reporting guidelines](https://easystats.github.io/bayestestR/articles/guidelines.html). Sentences are written to `results/publication/tables/parameter_template_sentences.csv` and embedded as a chapter in the main report. They follow the neutral format:
+
+> *The effect of X has a probability of pd% of being negative (Median = median, 95% CrI [low, high]; OR = or, 95% CrI [or_low, or_high]) and can be considered as significant (0% in ROPE).*
+
+The OR/RR clause appears only for families with a log or logit link. The ROPE clause appears only when a ROPE was specified in `analysis_spec$summary`. Copy-paste the sentences as a starting point and adjust wording for your manuscript.
+
+**Scope control** — by default all fixed effects receive a sentence (`"all"`). For causal inference, where only the exposure effect is of primary interest, set:
+
+```r
+publication = list(
+  template_sentences_scope = "exposure_only"
+)
+```
+
+in `00_config.R`. When set to `"exposure_only"`, the pipeline reads variables with `role == "exposure"` from `00_variable_dictionary.csv` and generates sentences only for those parameters and any interaction terms that involve an exposure variable (e.g. `time × exposure`). All other fixed effects are still estimated and reported in the posterior table and forest plot — only the template sentences are filtered.
 
 ---
 
