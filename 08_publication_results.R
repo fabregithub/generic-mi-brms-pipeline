@@ -551,18 +551,6 @@ safe_step("STEP 8: Publication-ready outputs", {
   # Publication-ready template sentences (one per fixed effect)
   # ------------------------------------------------------------
 
-  pd_label <- function(pd) {
-    if (is.na(pd)) return(NA_character_)
-    pct <- pd * 100
-    dplyr::case_when(
-      pct > 99.9 ~ "certainly",
-      pct > 99   ~ "probably",
-      pct > 97   ~ "likely",
-      pct > 95   ~ "possibly",
-      TRUE       ~ "uncertainly"
-    )
-  }
-
   rope_clause <- function(rope_pct) {
     if (is.na(rope_pct)) return("")
     label <- dplyr::case_when(
@@ -570,9 +558,9 @@ safe_step("STEP 8: Publication-ready outputs", {
       rope_pct > 97.5 ~ "probably negligible",
       rope_pct < 1    ~ "significant",
       rope_pct < 2.5  ~ "probably significant",
-      TRUE            ~ "inconclusive relative to the ROPE"
+      TRUE            ~ "inconclusive"
     )
-    glue("; {round(rope_pct, 1)}% of the posterior fell within the ROPE, suggesting the effect is {label}")
+    glue(" and can be considered as {label} ({round(rope_pct, 1)}% in ROPE)")
   }
 
   template_sentences <- main_effect_table %>%
@@ -582,11 +570,10 @@ safe_step("STEP 8: Publication-ready outputs", {
     ) %>%
     filter(!is_intercept(Parameter_raw)) %>%
     mutate(
-      ci_pct       = paste0(round(dplyr::coalesce(as.numeric(CI), 0.95) * 100), "%"),
-      direction    = ifelse(Estimate_num >= 0, "positive", "negative"),
-      pd_word      = purrr::map_chr(pd_num, pd_label),
-      rope_text    = purrr::map_chr(ROPE_Percentage_num, rope_clause),
-      or_clause    = as.character(ifelse(
+      ci_pct    = paste0(round(dplyr::coalesce(as.numeric(CI), 0.95) * 100), "%"),
+      direction = ifelse(Estimate_num >= 0, "positive", "negative"),
+      rope_text = purrr::map_chr(ROPE_Percentage_num, rope_clause),
+      or_clause = as.character(ifelse(
         !is.na(Transformed_num),
         glue(
           "; {transformed_label} = {round(Transformed_num, 2)}, ",
@@ -597,13 +584,15 @@ safe_step("STEP 8: Publication-ready outputs", {
       sentence = as.character(ifelse(
         !is.na(pd_num),
         glue(
-          "The effect of {Parameter_clean} was {direction} (β = {round(Estimate_num, 2)}, ",
-          "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause}), ",
-          "with a {pd_word} probability of being {direction} (pd = {round(pd_num * 100, 1)}%){rope_text}."
+          "The effect of {Parameter_clean} has a probability of {round(pd_num * 100, 1)}% ",
+          "of being {direction} (Median = {round(Estimate_num, 2)}, ",
+          "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause})",
+          "{rope_text}."
         ),
         glue(
-          "The effect of {Parameter_clean} was {direction} (β = {round(Estimate_num, 2)}, ",
-          "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause}){rope_text}."
+          "The effect of {Parameter_clean} was {direction} (Median = {round(Estimate_num, 2)}, ",
+          "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause})",
+          "{rope_text}."
         )
       ))
     ) %>%
