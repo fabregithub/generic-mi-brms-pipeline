@@ -553,12 +553,13 @@ safe_step("STEP 8: Publication-ready outputs", {
 
   pd_label <- function(pd) {
     if (is.na(pd)) return(NA_character_)
+    pct <- pd * 100
     dplyr::case_when(
-      pd > 99.9 ~ "certainly",
-      pd > 99   ~ "probably",
-      pd > 97   ~ "likely",
-      pd > 95   ~ "possibly",
-      TRUE      ~ "uncertainly"
+      pct > 99.9 ~ "certainly",
+      pct > 99   ~ "probably",
+      pct > 97   ~ "likely",
+      pct > 95   ~ "possibly",
+      TRUE       ~ "uncertainly"
     )
   }
 
@@ -598,7 +599,7 @@ safe_step("STEP 8: Publication-ready outputs", {
         glue(
           "The effect of {Parameter_clean} was {direction} (β = {round(Estimate_num, 2)}, ",
           "{ci_pct} CrI [{round(CI_low_num, 2)}, {round(CI_high_num, 2)}]{or_clause}), ",
-          "with a {pd_word} probability of being {direction} (pd = {round(pd_num, 1)}%){rope_text}."
+          "with a {pd_word} probability of being {direction} (pd = {round(pd_num * 100, 1)}%){rope_text}."
         ),
         glue(
           "The effect of {Parameter_clean} was {direction} (β = {round(Estimate_num, 2)}, ",
