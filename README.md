@@ -1962,6 +1962,8 @@ The `scope` field controls which parameters are exported. `"exposure_only"` keep
 
 Ship `cohort_draws.rds` and `cohort_metadata.json` to the coordinating site; each cohort may have a different `m`.
 
+> **Variable name harmonisation:** parameter names in the export are derived directly from the `var` column in `00_variable_dictionary.csv`. If all cohorts use the same variable dictionary template (distributed by the coordinating site), exported parameter names will be identical across cohorts and no post-hoc renaming is needed. See [EXPORT_FORMAT.md](EXPORT_FORMAT.md) for the full export specification and a pre-transfer checklist.
+
 ---
 
 ### How Step 8's report embeds Step 11's results
