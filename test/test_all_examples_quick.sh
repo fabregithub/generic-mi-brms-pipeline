@@ -13,6 +13,7 @@ require_command quarto
 test_airquality quick
 test_birthwt_logistic quick
 test_birthwt_spline_monotonic quick
+test_lung_cox quick
 
 list_test_runs
 log "All quick example tests completed successfully"

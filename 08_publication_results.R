@@ -265,16 +265,21 @@ safe_step("STEP 8: Publication-ready outputs", {
     if (fam == "gaussian" && link == "log") {
       return("multiplicative_ratio")
     }
-    
+
+    if (fam == "cox") {
+      return("hazard_ratio")
+    }
+
     "none"
   }
-  
+
   transform_label <- function(transform_type) {
     switch(
       transform_type,
       odds_ratio = "Odds ratio",
       rate_ratio = "Rate ratio",
       multiplicative_ratio = "Ratio",
+      hazard_ratio = "Hazard ratio",
       "Transformed estimate"
     )
   }
@@ -944,6 +949,7 @@ safe_step("STEP 8: Publication-ready outputs", {
     family_name == "gaussian" && link_name == "identity" ~ "Gaussian regression model with an identity link",
     family_name == "poisson" && link_name == "log" ~ "Poisson regression model with a log link",
     family_name == "negbinomial" && link_name == "log" ~ "negative-binomial regression model with a log link",
+    family_name == "cox" ~ "Cox proportional hazards model",
     TRUE ~ paste0(family_name, " regression model with a ", link_name, " link")
   )
 

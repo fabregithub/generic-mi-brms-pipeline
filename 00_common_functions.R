@@ -363,6 +363,7 @@ make_brms_family <- function(outcome_spec) {
     beta = brms::brmsfamily("Beta", link = link %||% "logit"),
     ordinal = brms::brmsfamily("cumulative", link = link %||% "logit"),
     categorical = brms::brmsfamily("categorical", link = link %||% "logit"),
+    cox = brms::brmsfamily("cox", link = link %||% "log"),
     stop("Unsupported brms family: ", family)
   )
 }
@@ -379,6 +380,7 @@ make_default_priors <- function(analysis_spec, formula = NULL) {
     poisson = c(brms::prior(normal(0, 1), class = "b"), brms::prior(student_t(3, 0, 2.5), class = "Intercept")),
     negbinomial = c(brms::prior(normal(0, 1), class = "b"), brms::prior(student_t(3, 0, 2.5), class = "Intercept")),
     beta = c(brms::prior(normal(0, 1), class = "b"), brms::prior(student_t(3, 0, 2.5), class = "Intercept")),
+    cox = c(brms::prior(normal(0, 1), class = "b")),
     stop("No default priors defined for family: ", family)
   )
   if (!is.null(formula) && grepl("\\|", paste(deparse(formula), collapse = " "))) {

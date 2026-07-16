@@ -528,6 +528,20 @@ prepare_birthwt_spline_monotonic_example() {
   Rscript examples/birthwt_spline_monotonic/00_create_birthwt_spline_monotonic_example_data.R
 }
 
+prepare_lung_cox_example() {
+  log "Preparing lung Cox proportional hazards example"
+
+  require_file "examples/lung_cox/00_config_lung_cox.R"
+  require_file "examples/lung_cox/00_variable_dictionary_lung_cox.csv"
+  require_file "examples/lung_cox/00_create_lung_cox_example_data.R"
+
+  cp examples/lung_cox/00_config_lung_cox.R 00_config.R
+  cp examples/lung_cox/00_variable_dictionary_lung_cox.csv 00_variable_dictionary.csv
+
+  log "Creating lung Cox example data"
+  Rscript examples/lung_cox/00_create_lung_cox_example_data.R
+}
+
 run_example_in_isolated_project() {
   local example="$1"
   local mode="$2"
@@ -552,6 +566,8 @@ run_example_in_isolated_project() {
     prepare_birthwt_logistic_example
   elif [[ "$example" == "birthwt_spline_monotonic" ]]; then
     prepare_birthwt_spline_monotonic_example
+  elif [[ "$example" == "lung_cox" ]]; then
+    prepare_lung_cox_example
   else
     die "Unknown example: $example"
   fi
@@ -591,6 +607,11 @@ test_birthwt_logistic() {
 test_birthwt_spline_monotonic() {
   local mode="${1:-quick}"
   run_example_in_isolated_project "birthwt_spline_monotonic" "$mode"
+}
+
+test_lung_cox() {
+  local mode="${1:-quick}"
+  run_example_in_isolated_project "lung_cox" "$mode"
 }
 
 list_test_runs() {

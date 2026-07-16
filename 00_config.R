@@ -77,7 +77,7 @@ analysis_spec <- list(
 
     # Options supported by the template:
     # "gaussian", "bernoulli", "poisson", "negbinomial",
-    # "beta", "ordinal", "categorical"
+    # "beta", "ordinal", "categorical", "cox"
     family = "gaussian",
 
     # Link function passed to brms family construction.

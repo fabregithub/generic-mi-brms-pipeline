@@ -110,6 +110,7 @@ Supported model families include:
 - `beta`
 - `ordinal`
 - `categorical`
+- `cox` (Cox proportional hazards)
 
 Model families and links are set in `00_config.R`.
 
@@ -389,6 +390,7 @@ Common link examples:
 | `beta` | `logit`, `probit`, `cloglog`, `log` |
 | `ordinal` | often `logit` or `probit`, depending on the ordinal family |
 | `categorical` | often `logit` |
+| `cox` | `log` (log hazard ratio scale) |
 
 Choose a link that is valid for the selected family and appropriate for the scientific question.
 
@@ -2157,7 +2159,7 @@ If a ROPE was defined and is reported in the `ROPE %` column:
 
 # 10. Examples and tests
 
-The repository includes three public example analyses. These are intended to help users test the full pipeline before applying it to private study data.
+The repository includes four public example analyses. These are intended to help users test the full pipeline before applying it to private study data.
 
 The example folders are:
 
@@ -2171,11 +2173,15 @@ examples
 │   ├── 00_config_birthwt_logistic.R
 │   ├── 00_create_birthwt_logistic_example_data.R
 │   └── 00_variable_dictionary_birthwt_logistic.csv
-└── birthwt_spline_monotonic
-    ├── 00_config_birthwt_spline_monotonic.R
-    ├── 00_create_birthwt_spline_monotonic_example_data.R
-    ├── 00_variable_dictionary_birthwt_spline_monotonic.csv
-    └── README_birthwt_spline_monotonic.md
+├── birthwt_spline_monotonic
+│   ├── 00_config_birthwt_spline_monotonic.R
+│   ├── 00_create_birthwt_spline_monotonic_example_data.R
+│   ├── 00_variable_dictionary_birthwt_spline_monotonic.csv
+│   └── README_birthwt_spline_monotonic.md
+└── lung_cox
+    ├── 00_config_lung_cox.R
+    ├── 00_create_lung_cox_example_data.R
+    └── 00_variable_dictionary_lung_cox.csv
 ```
 
 Each example contains:
@@ -2310,6 +2316,40 @@ Supplementary monotonic-effect outputs include:
 - `results/publication/mo_effects/report/mo_effects_report.docx`
 
 See also `examples/birthwt_spline_monotonic/README_birthwt_spline_monotonic.md`.
+
+### Example 4: Cox proportional hazards model using `survival::lung`
+
+This example tests the Cox PH workflow for time-to-event data with right censoring and missing predictor values.
+
+It tests:
+
+- survival outcome (time to death, right-censored)
+- `cox(log)` family with `time | cens(censored)` response
+- `custom_formula` to specify the brms survival response
+- hazard-ratio reporting
+- multiple imputation of missing predictor values
+
+Model outline:
+
+- **Dataset:** `survival::lung` (Loprinzi et al., 1994)
+- **Outcome:** days to death, right-censored (`time | cens(censored)`)
+- **Model family:** `cox(log)`
+- **Model:** `time | cens(censored) ~ age_z + sex + ph_ecog + ph_karno_z + wt_loss_z + meal_cal_z`
+
+The censoring indicator is recoded so that `0` = event (death) and `1` = right-censored, which is the convention brms expects for `cens()`.
+
+Run in Terminal from the project root:
+
+```bash
+cp examples/lung_cox/00_config_lung_cox.R 00_config.R
+cp examples/lung_cox/00_variable_dictionary_lung_cox.csv 00_variable_dictionary.csv
+
+Rscript examples/lung_cox/00_create_lung_cox_example_data.R
+Rscript 01_validate_config.R
+Rscript run_all.R 2>&1 | tee run_all_lung_cox_stdout.log
+```
+
+`run_all.R` already rendered `results/publication/report/bayesian_mi_report_template.html`/`.docx`; no separate render step is needed.
 
 ### Cleaning outputs before switching examples
 
