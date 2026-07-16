@@ -219,4 +219,8 @@ if (length(mo_vars_detected) > 0) {
 
 run_step("08_publication_results.R")
 
+# Step 12: export per-imputation draws for federated meta-analysis.
+# Skipped automatically when analysis_spec$export$cohort_id is NULL.
+run_step("12_export_draws.R")
+
 cat("\nPipeline completed successfully.\n")

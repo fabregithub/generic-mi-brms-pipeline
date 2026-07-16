@@ -534,6 +534,21 @@ analysis_spec <- list(
   #                     terms that involve an exposure variable
   publication = list(
     template_sentences_scope = "all"   # or "exposure_only" for causal inference
+  ),
+
+  # ------------------------------------------------------------
+  # Federated meta-analysis draw export (Step 12)
+  # ------------------------------------------------------------
+  # Set cohort_id to a short unique string identifying this dataset.
+  # Step 12 is skipped entirely when cohort_id is NULL.
+  #
+  # scope controls which parameters are exported:
+  #   "exposure_only" — only exposure variables and their interaction terms
+  #                     (default; recommended for causal inference analyses)
+  #   "all"           — every parameter matched by parameter_draw_regex
+  export = list(
+    cohort_id = NULL,            # e.g. "cohort_japan_2024"
+    scope     = "exposure_only"  # or "all"
   )
 )
 

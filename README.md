@@ -1935,6 +1935,35 @@ in `00_config.R`. When set to `"exposure_only"`, the pipeline reads variables wi
 
 ---
 
+### Federated meta-analysis draw export (Step 12)
+
+When multiple cohorts run this pipeline with a common DAG, their per-imputation posterior draws can be combined in a hierarchical Bayesian meta-analysis. Step 12 packages the draws into a portable long-format file that the companion repo [`generic-mi-brms-meta`](https://github.com/fabregithub/generic-mi-brms-meta) consumes.
+
+To enable, set in `00_config.R`:
+
+```r
+export = list(
+  cohort_id = "cohort_japan_2024",   # short unique ID for this dataset
+  scope     = "exposure_only"        # "exposure_only" (default) or "all"
+)
+```
+
+Step 12 is skipped automatically when `cohort_id` is `NULL`.
+
+**Output files** (written to `results/export/`):
+
+| File | Description |
+|---|---|
+| `cohort_draws.rds` | Long-format draws: `cohort_id`, `parameter`, `imputation`, `draw_index`, `value` |
+| `cohort_draws.csv` | Same content as CSV for interoperability |
+| `cohort_metadata.json` | Sidecar: cohort ID, parameter list, m, family, timestamp |
+
+The `scope` field controls which parameters are exported. `"exposure_only"` keeps only parameters whose name corresponds to a variable with `role == "exposure"` in `00_variable_dictionary.csv` (plus interaction terms involving an exposure), keeping the export file small for causal inference analyses. `"all"` exports every parameter matched by `parameter_draw_regex`.
+
+Ship `cohort_draws.rds` and `cohort_metadata.json` to the coordinating site; each cohort may have a different `m`.
+
+---
+
 ### How Step 8's report embeds Step 11's results
 
 The main report's "Imputation-count stability" chapter is not a separate report -- it is built from the same tables and figures that `11_check_imputation_stability.R` writes to `results/publication/mi_stability/`, referenced from the main report's `.qmd` by relative path. There is one report, one `.qmd`, and one rendered HTML/DOCX pair; `results/publication/mi_stability/` still exists alongside it as the underlying data (and as a `.qmd` of its own, for anyone who wants the full, unabridged stepwise detail across every evaluated batch), but it is not rendered separately.
