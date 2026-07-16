@@ -383,20 +383,35 @@ make_default_priors <- function(analysis_spec, formula = NULL) {
     cox = c(brms::prior(normal(0, 1), class = "b")),
     stop("No default priors defined for family: ", family)
   )
-  if (!is.null(formula) && grepl("\\|", paste(deparse(formula), collapse = " "))) {
+  # Add sd prior for random-effects models. The check for "|" in the formula
+  # must exclude "| cens(...)" and "| trunc(...)" — brms survival/censoring
+  # notation that contains "|" but implies no random effects.
+  formula_str <- paste(deparse(formula), collapse = " ")
+  has_random_effects <- grepl("\\|", formula_str) &&
+    !grepl("^[^~]*\\|\\s*(cens|trunc|mi|rate|se|subset|dec|weights)\\s*\\(", formula_str)
+  if (!is.null(formula) && has_random_effects) {
     priors <- c(priors, brms::prior(exponential(1), class = "sd"))
   }
   priors
 }
 
 filter_priors_to_model <- function(priors, formula, data, family) {
-  valid <- brms::get_prior(formula = formula, data = data, family = family)
+  valid <- tryCatch(
+    brms::get_prior(formula = formula, data = data, family = family),
+    error = function(e) {
+      message("get_prior() failed (", conditionMessage(e), "); passing priors unfiltered.")
+      NULL
+    }
+  )
+  if (is.null(valid)) return(priors)
   valid_classes <- unique(valid$class)
   priors_df <- as.data.frame(priors)
   keep <- priors_df$class %in% valid_classes
   dropped <- unique(priors_df$class[!keep])
   if (length(dropped) > 0) message("Dropping priors not used by this model: ", paste(dropped, collapse = ", "))
-  priors[keep]
+  kept <- priors[keep]
+  # Return NULL rather than an empty brmsprior, which causes brm() to crash.
+  if (length(kept) == 0) NULL else kept
 }
 
 

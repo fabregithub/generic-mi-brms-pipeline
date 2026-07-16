@@ -1,6 +1,6 @@
 var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
 time,Survival time (days),survival_time,continuous,single,no,,FALSE,FALSE,FALSE
-censored,Censoring indicator (0=event 1=censored),censoring,binary,single,no,,FALSE,FALSE,FALSE
+censored,Censoring indicator (0=event 1=censored),censoring,integer,single,no,,FALSE,FALSE,FALSE
 age,Age (years),covariate,continuous,single,z,,TRUE,TRUE,FALSE
 sex,Sex,covariate,categorical,single,no,Male,TRUE,TRUE,FALSE
 ph_ecog,ECOG performance score,covariate,categorical,single,no,0,TRUE,TRUE,FALSE
