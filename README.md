@@ -227,7 +227,16 @@ Outputs are written to:
 - `results/`
 - `results/publication/`
 
-### Common commands
+### Running the pipeline
+
+#### RStudio (no terminal needed — recommended for Windows users)
+
+Open the project folder in RStudio, open `launch.R`, and click **Source**
+(or press `Ctrl+Shift+S` / `Cmd+Shift+S`). A text menu appears in the R
+console letting you run the full pipeline or individual steps, and clean
+outputs — no terminal required.
+
+#### Command line
 
 Once a project is set up (its own `00_config.R` and `00_variable_dictionary.csv` in place), these are the commands you will use most often, whether for the quick-start example above or your own study data.
 
