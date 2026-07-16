@@ -2338,6 +2338,8 @@ Model outline:
 
 The censoring indicator is recoded so that `0` = event (death) and `1` = right-censored, which is the convention brms expects for `cens()`.
 
+> **Package requirement:** Cox PH models in brms require the `survival` package at model-fitting time. `survival` ships with R as a recommended package and is normally already available; if not, install it with `install.packages("survival")`.
+
 Run in Terminal from the project root:
 
 ```bash
@@ -2529,6 +2531,12 @@ install.packages(c(
   "purrr",
   "rlang"
 ))
+```
+
+If you plan to use the Cox proportional hazards family (`family = "cox"`), the `survival` package is also required at model-fitting time. It ships with R as a recommended package and is normally already available, but you can install it explicitly if needed:
+
+```r
+install.packages("survival")
 ```
 
 Run in R or RStudio to install `cmdstanr` from the Stan R-universe repository:
