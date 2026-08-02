@@ -128,3 +128,5 @@
       reduce file size when `m` and `iter` are large
 - [ ] **Differential privacy**: optional noise injection on exported draws before transfer
 - [ ] **Encrypted export**: wrap `cohort_draws.rds` in an encrypted container for secure transfer
+
+
