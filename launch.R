@@ -59,12 +59,13 @@ repeat {
   3. Prepare data               (02_prepare_data.R)
   4. Impute missing data        (03_impute.R)
   5. Fit models                 (04_fit_models.R)
-  6. Posterior summary          (06_posterior_summary.R)
-  7. Diagnostics                (05_diagnostics.R)
-  8. Posterior prediction       (07_posterior_prediction.R)
-  9. Publication results        (08_publication_results.R)
- 10. Clean ALL outputs          (objects/, fits/, results/)
- 11. Clean fits/posteriors only (keeps imputed data)
+  6. Fit ONE imputed dataset    (fit_single_imputation.R)
+  7. Posterior summary          (06_posterior_summary.R)
+  8. Diagnostics                (05_diagnostics.R)
+  9. Posterior prediction       (07_posterior_prediction.R)
+ 10. Publication results        (08_publication_results.R)
+ 11. Clean ALL outputs          (objects/, fits/, results/)
+ 12. Clean fits/posteriors only (keeps imputed data)
   q. Quit
 ========================================================
 ")
@@ -81,16 +82,27 @@ repeat {
   else if (choice == "3")  { cat("Preparing data...\n");               .run_clean("02_prepare_data.R") }
   else if (choice == "4")  { cat("Imputing...\n");                     .run_clean("03_impute.R") }
   else if (choice == "5")  { cat("Fitting models...\n");               .run_clean("04_fit_models.R") }
-  else if (choice == "6")  { cat("Posterior summary...\n");            .run_clean("06_posterior_summary.R") }
-  else if (choice == "7")  { cat("Running diagnostics...\n");          .run_clean("05_diagnostics.R") }
-  else if (choice == "8")  { cat("Posterior prediction...\n");         .run_clean("07_posterior_prediction.R") }
-  else if (choice == "9")  { cat("Publication results...\n");          .run_clean("08_publication_results.R") }
-  else if (choice == "10") {
+  else if (choice == "6")  {
+    imp <- trimws(readline("Imputation number to fit (e.g. 51): "))
+    if (nzchar(imp) && !is.na(suppressWarnings(as.integer(imp)))) {
+      cat("Fitting imputation", imp, "...\n")
+      e <- new.env(parent = globalenv())
+      e$imp_index <- as.integer(imp)
+      source("fit_single_imputation.R", local = e)
+    } else {
+      cat("Invalid number. Cancelled.\n")
+    }
+  }
+  else if (choice == "7")  { cat("Posterior summary...\n");            .run_clean("06_posterior_summary.R") }
+  else if (choice == "8")  { cat("Running diagnostics...\n");          .run_clean("05_diagnostics.R") }
+  else if (choice == "9")  { cat("Posterior prediction...\n");         .run_clean("07_posterior_prediction.R") }
+  else if (choice == "10") { cat("Publication results...\n");          .run_clean("08_publication_results.R") }
+  else if (choice == "11") {
     confirm <- trimws(readline("This will delete objects/, fits/, results/. Type YES to confirm: "))
     if (confirm == "YES") { cat("Cleaning all outputs...\n"); .clean_outputs("all") }
     else cat("Cancelled.\n")
   }
-  else if (choice == "11") {
+  else if (choice == "12") {
     confirm <- trimws(readline("This will delete fits and posteriors (keeps imputed data). Type YES to confirm: "))
     if (confirm == "YES") { cat("Cleaning fits...\n"); .clean_outputs("fits") }
     else cat("Cancelled.\n")

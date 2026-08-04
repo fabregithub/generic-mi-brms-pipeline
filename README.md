@@ -229,44 +229,50 @@ Outputs are written to:
 
 ### Running the pipeline
 
-#### RStudio (no terminal needed — recommended for Windows users)
+The launchers (`launch.R` and `launch.sh`) are the intended entry points for most users.
+`run_all.R` is the internal orchestrator called by the launchers — you do not need to
+run it directly.
+
+#### RStudio — Windows, Mac, Linux (no terminal needed)
 
 Open the project folder in RStudio, open `launch.R`, and click **Source**
-(or press `Ctrl+Shift+S` / `Cmd+Shift+S`). A text menu appears in the R
-console letting you run the full pipeline or individual steps, and clean
-outputs — no terminal required.
+(`Ctrl+Shift+S` / `Cmd+Shift+S`). A numbered menu appears in the R console:
 
-#### Command line
-
-Once a project is set up (its own `00_config.R` and `00_variable_dictionary.csv` in place), these are the commands you will use most often, whether for the quick-start example above or your own study data.
-
-Validate config. Run in Terminal:
-
-```bash
-# Bash command block
-Rscript 01_validate_config.R
+```
+1.  Run full pipeline
+2.  Validate config only
+3.  Prepare data
+...
+10. Clean ALL outputs
+11. Clean fits/posteriors only
+ q. Quit
 ```
 
-Run all steps. Run in Terminal:
+Type a number and press Enter. No terminal required.
+
+#### Mac / Linux terminal
 
 ```bash
-# Bash command block
-Rscript run_all.R 2>&1 | tee run_all_stdout.log
+bash launch.sh
 ```
 
-Fit one imputed dataset only. Run in Terminal:
+The same numbered menu appears in the terminal. Alternatively, make it executable
+once and run it directly:
 
 ```bash
-# Bash command block
-Rscript fit_single_imputation.R 1
+chmod +x launch.sh
+./launch.sh
 ```
 
-For example, to fit the model only for imputed dataset 51, run in Terminal:
+#### Advanced: run a single imputed dataset
+
+Use this when debugging a specific imputation (e.g. imputation 51 failed):
 
 ```bash
-# Bash command block
 Rscript fit_single_imputation.R 51
 ```
+
+This is available as a menu option in both `launch.sh` and `launch.R`.
 
 `run_all.R` (via `08_publication_results.R`) renders the main Quarto report automatically, so this step is not normally needed. If you want to re-render it manually, for example after editing the generated `.qmd` by hand, run in Terminal:
 

@@ -64,17 +64,18 @@ while true; do
   echo "========================================================"
   echo "  generic-mi-brms-pipeline — interactive launcher"
   echo "========================================================"
-  echo "  1.  Run full pipeline          (run_all.R)"
+  echo "  1.  Run full pipeline          (launch.sh runs run_all.R internally)"
   echo "  2.  Validate config only       (01_validate_config.R)"
   echo "  3.  Prepare data               (02_prepare_data.R)"
   echo "  4.  Impute missing data        (03_impute.R)"
   echo "  5.  Fit models                 (04_fit_models.R)"
-  echo "  6.  Posterior summary          (06_posterior_summary.R)"
-  echo "  7.  Diagnostics                (05_diagnostics.R)"
-  echo "  8.  Posterior prediction       (07_posterior_prediction.R)"
-  echo "  9.  Publication results        (08_publication_results.R)"
-  echo " 10.  Clean ALL outputs          (objects/, fits/, results/)"
-  echo " 11.  Clean fits/posteriors only (keeps imputed data)"
+  echo "  6.  Fit ONE imputed dataset    (fit_single_imputation.R)"
+  echo "  7.  Posterior summary          (06_posterior_summary.R)"
+  echo "  8.  Diagnostics                (05_diagnostics.R)"
+  echo "  9.  Posterior prediction       (07_posterior_prediction.R)"
+  echo " 10.  Publication results        (08_publication_results.R)"
+  echo " 11.  Clean ALL outputs          (objects/, fits/, results/)"
+  echo " 12.  Clean fits/posteriors only (keeps imputed data)"
   echo "  q.  Quit"
   echo "========================================================"
   read -rp "Enter choice: " choice
@@ -85,12 +86,23 @@ while true; do
     3)  run_step "02_prepare_data.R" ;;
     4)  run_step "03_impute.R" ;;
     5)  run_step "04_fit_models.R" ;;
-    6)  run_step "06_posterior_summary.R" ;;
-    7)  run_step "05_diagnostics.R" ;;
-    8)  run_step "07_posterior_prediction.R" ;;
-    9)  run_step "08_publication_results.R" ;;
-    10) clean_all ;;
-    11) clean_fits ;;
+    6)
+      read -rp "Imputation number to fit (e.g. 51): " imp
+      if [[ "$imp" =~ ^[0-9]+$ ]]; then
+        require_rscript
+        echo ""
+        echo "======== Fitting imputation $imp ========"
+        Rscript fit_single_imputation.R "$imp"
+      else
+        echo "Invalid number. Cancelled."
+      fi
+      ;;
+    7)  run_step "06_posterior_summary.R" ;;
+    8)  run_step "05_diagnostics.R" ;;
+    9)  run_step "07_posterior_prediction.R" ;;
+    10) run_step "08_publication_results.R" ;;
+    11) clean_all ;;
+    12) clean_fits ;;
     q|Q) echo "Goodbye."; exit 0 ;;
     *) echo "Unrecognised choice. Please enter a number from the menu or q to quit." ;;
   esac
