@@ -239,12 +239,12 @@ Open the project folder in RStudio, open `launch.R`, and click **Source**
 (`Ctrl+Shift+S` / `Cmd+Shift+S`). A numbered menu appears in the R console:
 
 ```
-1.  Run full pipeline
-2.  Validate config only
+1.  Validate config only
+2.  Run full pipeline
 3.  Prepare data
 ...
-10. Clean ALL outputs
-11. Clean fits/posteriors only
+11. Clean ALL outputs
+12. Clean fits/posteriors only
  q. Quit
 ```
 

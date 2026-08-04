@@ -54,8 +54,8 @@ repeat {
 ========================================================
   generic-mi-brms-pipeline — interactive launcher
 ========================================================
-  1. Run full pipeline          (run_all.R)
-  2. Validate config only       (01_validate_config.R)
+  1. Validate config only       (01_validate_config.R)
+  2. Run full pipeline          (run_all.R)
   3. Prepare data               (02_prepare_data.R)
   4. Impute missing data        (03_impute.R)
   5. Fit models                 (04_fit_models.R)
@@ -77,8 +77,8 @@ repeat {
     break
   }
 
-  if (choice == "1")  { cat("Running full pipeline...\n");       .run_clean("run_all.R") }
-  else if (choice == "2")  { cat("Validating config...\n");            .run_clean("01_validate_config.R") }
+  if (choice == "1")  { cat("Validating config...\n");            .run_clean("01_validate_config.R") }
+  else if (choice == "2")  { cat("Running full pipeline...\n");       .run_clean("run_all.R") }
   else if (choice == "3")  { cat("Preparing data...\n");               .run_clean("02_prepare_data.R") }
   else if (choice == "4")  { cat("Imputing...\n");                     .run_clean("03_impute.R") }
   else if (choice == "5")  { cat("Fitting models...\n");               .run_clean("04_fit_models.R") }

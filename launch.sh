@@ -64,8 +64,8 @@ while true; do
   echo "========================================================"
   echo "  generic-mi-brms-pipeline — interactive launcher"
   echo "========================================================"
-  echo "  1.  Run full pipeline          (launch.sh runs run_all.R internally)"
-  echo "  2.  Validate config only       (01_validate_config.R)"
+  echo "  1.  Validate config only       (01_validate_config.R)"
+  echo "  2.  Run full pipeline          (launch.sh runs run_all.R internally)"
   echo "  3.  Prepare data               (02_prepare_data.R)"
   echo "  4.  Impute missing data        (03_impute.R)"
   echo "  5.  Fit models                 (04_fit_models.R)"
@@ -81,8 +81,8 @@ while true; do
   read -rp "Enter choice: " choice
 
   case "$choice" in
-    1)  run_step "run_all.R" ;;
-    2)  run_step "01_validate_config.R" ;;
+    1)  run_step "01_validate_config.R" ;;
+    2)  run_step "run_all.R" ;;
     3)  run_step "02_prepare_data.R" ;;
     4)  run_step "03_impute.R" ;;
     5)  run_step "04_fit_models.R" ;;
