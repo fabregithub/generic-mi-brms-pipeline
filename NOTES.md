@@ -105,6 +105,18 @@
   Designed for Windows users. Menu covers full pipeline, individual steps, clean all, clean fits.
 - **`launch.sh`**: Bash equivalent for Mac/Linux (`bash launch.sh` or double-click after `chmod +x`)
 
+### New features (v1.2.0)
+
+- **`fit_single_imputation.R` added to both launchers** (menu option 6): prompts for an
+  imputation number and calls `fit_single_imputation.R <n>`; useful for debugging a specific
+  failed imputation without the terminal
+- **README clarified**: launchers (`launch.R`, `launch.sh`) are the primary entry points;
+  `run_all.R` described as the internal orchestrator that users should not call directly;
+  `launch.sh` documented with `chmod +x` instructions alongside `launch.R`
+- **Note on `launch.R` testing**: `readline()` blocks in non-interactive R sessions (e.g. piped
+  input); `launch.R` must be sourced interactively in RStudio — only `launch.sh` is
+  non-interactively testable
+
 ---
 
 ## Ideas for future development
