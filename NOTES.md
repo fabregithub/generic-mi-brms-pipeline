@@ -117,6 +117,14 @@
   input); `launch.R` must be sourced interactively in RStudio — only `launch.sh` is
   non-interactively testable
 
+### New features (v1.3.0)
+
+- **Launcher menu reordered**: validate config (option 1) now appears before run full pipeline
+  (option 2) in both `launch.R` and `launch.sh`; encourages users to validate before committing
+  to a full run
+- **README updated**: `launch.sh` command-line section now shows `bash launch.sh` as the primary
+  entry point (previously showed bare `Rscript` commands)
+
 ---
 
 ## Ideas for future development
