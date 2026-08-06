@@ -161,17 +161,86 @@ FMI is **estimand-specific** and ~**n-invariant** (empirically confirmed in the
 
 ---
 
-## 7. Validation before relying on it (bespoke construction → must check)
+## 7. Validation — simulation study (quantify the bias)
 
-1. **Convergence** of the outer block-FCS (trace exposure summaries across sweeps;
-   confirm stabilisation within a few sweeps).
-2. **Proper-MI / coverage**: simulate with known `β`, a censored exposure, and MAR
-   `Z`; confirm `β̂` is unbiased and its interval calibrated. Contrast against:
-   `leftcens`-pre-step-without-`Y` (should be biased) and complete-case (unbiased,
-   less efficient). Mirror the `leftcens` `validation/` style.
-3. **Gold-standard check** on a subset: the `brms` **joint model**
-   `bf(Y ~ mi(X) + Z) + bf(X | mi() + cens(lod) ~ Z)` is congenial by construction;
-   use it to validate the block-FCS on a tractable subsample.
+A Monte Carlo study with a **known ERF** that measures the exposure-response bias
+each imputation strategy incurs. Because everything is simulated, the truth is
+known and bias is exact. Test **two ERF structures**: an **additive / per-analyte**
+model and a **mixture-surface** model (BKMR-style) — the latter stresses the
+low-dose region and interactions, which is exactly where censored exposures live.
+
+### 7.1 Data-generating process (complete data, no missingness)
+- **`ZZ`** (n × q covariates): mixed types (continuous + categorical/binary),
+  possible correlation.
+- **`XX`** (n × p exposures): correlated, **right-skewed** (log-normal mixture — the
+  realistic case where the censored-imputation *shape* matters), optionally
+  confounded by `ZZ`.
+- **`Y`** from a fixed, known ERF, in two forms:
+  - **(A) Additive:** `Y = α + Σ_j β_j g_j(X_j) + γᵀ ZZ + ε`. Estimand: the
+    per-exposure effects `β_j` (or exposure-response curves `g_j`).
+  - **(B) Mixture surface:** `Y = α + h(XX) + γᵀ ZZ + ε`, `h` non-linear with
+    **interactions** (the BKMR target). Estimands: the overall mixture effect (all
+    exposures q25→q75), single-exposure effects (others held fixed), pairwise
+    interactions, and `h` at representative exposure profiles.
+- Fix true `β`/`h`/`γ` so the ERF is known exactly.
+
+### 7.2 Induce missingness
+- **Left-censor each `X_j`** below a per-analyte LOD; vary the ND fraction
+  (e.g. {20%, 40%}). MNAR-by-censoring.
+- **MCAR (or MAR-on-`ZZ`) a fraction of `ZZ`**.
+
+### 7.3 Procedures compared (fit the matched ERF model to each completed dataset)
+1. **Oracle** — complete data, no missingness. Best-case reference.
+2. **Complete-case** — drop rows with any censored `X` / missing `Z`. Unbiased for
+   the additive slope (selection on a predictor) but **discards the low-exposure
+   region** (loses the low-dose ERF); inefficient.
+3. **Independent `leftcens` pre-step** — `leftcens` imputes `XX` *without* `Y`,
+   `miceRanger` imputes `ZZ`, then fit the ERF. The current "MNAR-before-pipeline"
+   architecture. **Hypothesised biased.**
+4. **Pipeline as-is** — current practice (e.g. substitution / MICE without proper
+   censoring handling). Status-quo reference.
+5. **Combined block-FCS (proposed)** — censored, `Y`-aware conditional draw for
+   `XX` inside the FCS; `miceRanger` for `ZZ`; alternate, condition on `Y`.
+   **Hypothesised low bias.**
+6. **Joint `brms` (gold standard, subset)** — `bf(Y ~ h(mi(XX)) + ZZ) +
+   bf(XX | mi() + cens(lod) ~ ZZ)`; congenial by construction. Reference on a
+   tractable subsample.
+
+### 7.4 Metrics (vs the known ERF)
+- **Bias, RMSE, and CI coverage** of the ERF estimand:
+  - Additive: per-`β_j` (and curve bias).
+  - Mixture: overall mixture effect, single-exposure effects, **interaction terms**,
+    and `h` at representative exposure percentiles.
+- Report per procedure × ERF form × ND fraction. Enough reps for small MC error.
+
+### 7.5 Design factors
+- ERF form (additive vs mixture surface); ND fraction of `XX`; MCAR fraction of
+  `ZZ`; exposure skewness; exposure correlation. Sample size `n`: use moderate `n`
+  for speed and confirm at one large `n` — the imputation FMI is ~n-invariant
+  (`leftcens` E8), so `n` is a robustness axis, not a driver of required `m`.
+
+### 7.6 Hypotheses the study settles
+- **H1** — the independent `leftcens` pre-step (no `Y`) biases the ERF; the combined
+  block-FCS removes most of it.
+- **H2** — the bias is **larger for the mixture surface than the additive model**,
+  because interactions and the low-dose surface depend most on the censored region.
+- **H3** — complete-case is unbiased for additive slopes but loses the low-dose ERF;
+  the combined method recovers it (using the censored subjects' `Y`).
+
+### 7.7 Open challenge to flag (and quantify)
+**Congeniality with a *non-linear* surface.** The block-FCS censored draw conditions
+`X` on the predictors *linearly* (as does `leftcens`'s copula: `X` on other analytes
+linearly). That may be **uncongenial with a non-linear `h(XX)`** (interactions,
+curvature), leaving residual bias in the **mixture** case even for the "combined"
+method. The principled fix is the joint model with the surface *in the imputation*
+(substantive-model-compatible). A key output of this study is **whether the simpler
+block-FCS is "good enough" for BKMR, or whether the non-linear-congeniality gap is
+material** — a genuine research question, not a settled one.
+
+### 7.8 Also verify
+- **Convergence** of the outer block-FCS (trace exposure summaries across sweeps).
+- Reproduce the pattern with the `leftcens` `validation/` machinery style so it is
+  auditable.
 
 ---
 
@@ -196,10 +265,14 @@ reference regardless.
 
 ## 10. Concrete next steps (on restart)
 
-1. Implement the §4 component (ideally as `leftcens::mice.impute.leftcens()` +
+1. **Build the §7 simulation harness first** — known-ERF generator (additive +
+   mixture surface), censoring/MCAR injection, the six procedures, and the
+   bias/coverage metrics. This quantifies the problem *and* becomes the acceptance
+   test for the fix (and settles §7.7 for the BKMR case).
+2. Implement the §4 component (ideally as `leftcens::mice.impute.leftcens()` +
    standalone wrapper).
-2. Add per-variable method routing in the pipeline config; confirm
+3. Add per-variable method routing in the pipeline config; confirm
    `use_in_model = TRUE` places `Y` in the predictor set (and MID handling).
-3. Build the §5 block-FCS orchestration around `miceRanger`.
-4. Run the §7 validation (convergence, coverage sim, joint-model subset check).
-5. Pilot `m` per §6; document the FMI and the chosen `m`.
+4. Build the §5 block-FCS orchestration around `miceRanger`.
+5. Run the §7 study across procedures × ERF forms × censoring; tabulate bias.
+6. Pilot `m` per §6; document the FMI and the chosen `m`.
