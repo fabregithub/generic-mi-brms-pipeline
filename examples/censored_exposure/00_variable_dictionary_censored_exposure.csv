@@ -1,0 +1,7 @@
+var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
+y,Outcome,outcome,continuous,single,none,,false,true,false
+z1,Covariate (continuous),covariate,continuous,single,z,,true,true,false
+z2,Covariate (binary),covariate,binary,single,none,0,true,true,false
+expo1,Censored exposure 1 (left-censored),exposure,continuous,single,none,,false,true,false
+expo2,Censored exposure 2 (three-tier),exposure,continuous,single,none,,false,true,false
+row_id,Row ID,id,integer,single,none,,false,false,false

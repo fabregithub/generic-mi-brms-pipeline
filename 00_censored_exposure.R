@@ -168,6 +168,20 @@ run_censored_exposure_block_fcs <- function(data, analysis_spec, var_dict, m, se
     # MID: the imputed-Y rows carry no information for beta; drop them before the
     # brms fit so pooling is over information-bearing rows only (von Hippel 2007).
     if (mid && any(y_missing)) work <- work[!y_missing, , drop = FALSE]
+
+    # Invariants (asserted, not just commented): every censored exposure is fully
+    # imputed, and MID has removed all imputed-Y rows (no Y missing remains).
+    for (x in ce$exposure_vars) {
+      if (anyNA(work[[x]])) {
+        stop("Censored exposure '", x, "' still has NA after imputation ",
+             "(dataset ", d, ").", call. = FALSE)
+      }
+    }
+    if (mid && any(y_missing) && !is.null(work[[y_var]]) && anyNA(work[[y_var]])) {
+      stop("MID invariant violated: imputed-Y rows were not removed ",
+           "(dataset ", d, ").", call. = FALSE)
+    }
+
     imputed_list[[d]] <- tibble::as_tibble(work)
     log_msg("  completed dataset", d, "of", m,
             if (mid && any(y_missing)) paste0("(MID dropped ", sum(y_missing), " imputed-Y rows)") else "")

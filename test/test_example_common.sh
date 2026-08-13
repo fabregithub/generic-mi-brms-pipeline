@@ -95,6 +95,7 @@ prepare_runtime_project() {
   # Root R scripts
   local root_files=(
     "00_common_functions.R"
+    "00_censored_exposure.R"
     "00_config.R"
     "00_create_airquality_example_data.R"
     "00_variable_dictionary.csv"
@@ -528,6 +529,25 @@ prepare_birthwt_spline_monotonic_example() {
   Rscript examples/birthwt_spline_monotonic/00_create_birthwt_spline_monotonic_example_data.R
 }
 
+prepare_censored_exposure_example() {
+  log "Preparing censored-exposure block-FCS example"
+
+  require_file "examples/censored_exposure/00_config_censored_exposure.R"
+  require_file "examples/censored_exposure/00_variable_dictionary_censored_exposure.csv"
+  require_file "examples/censored_exposure/00_create_censored_exposure_example_data.R"
+
+  cp examples/censored_exposure/00_config_censored_exposure.R 00_config.R
+  cp examples/censored_exposure/00_variable_dictionary_censored_exposure.csv 00_variable_dictionary.csv
+
+  log "Creating censored-exposure example data"
+  Rscript examples/censored_exposure/00_create_censored_exposure_example_data.R
+}
+
+test_censored_exposure() {
+  local mode="${1:-quick}"
+  run_example_in_isolated_project "censored_exposure" "$mode"
+}
+
 prepare_lung_cox_example() {
   log "Preparing lung Cox proportional hazards example"
 
@@ -568,6 +588,8 @@ run_example_in_isolated_project() {
     prepare_birthwt_spline_monotonic_example
   elif [[ "$example" == "lung_cox" ]]; then
     prepare_lung_cox_example
+  elif [[ "$example" == "censored_exposure" ]]; then
+    prepare_censored_exposure_example
   else
     die "Unknown example: $example"
   fi

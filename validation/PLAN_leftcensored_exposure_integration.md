@@ -480,10 +480,27 @@ columns and ran **Steps 1→4** in an isolated dir with `strategy =
   is now a `censored_exposure$log_scale` config flag, decoupled from the dictionary
   `scale` to avoid double-transform with a `log()` in the model formula.
 
-**Remaining Phase-4 work:**
-- Add procedures 5–6 of §7 to the harness (the pipeline block-FCS itself) and re-run.
-- Multiple censored exposures / interval (DNQ) cases beyond the single-exposure path.
-- Assert the **MID invariant** in a test, not just in code.
+**Hardening — DONE (2026-08-13):**
+- **Multiple censored exposures + interval (DNQ) censoring** verified: a two-exposure
+  example (`expo1` single left-censored; `expo2` three-tier ND + DNQ interval) runs
+  end-to-end (Steps 1→4) and recovers **both** exposure-response coefficients
+  (`log(expo1)` CrI covers 0.6, `log(expo2)` 0.399 vs true 0.4).
+- **MID invariant asserted at runtime** in `run_censored_exposure_block_fcs()`
+  (`stop()` if any exposure still NA, or if imputed-Y rows remain) — not just a comment.
+- **First-class shipped example** `examples/censored_exposure/` (config + data
+  generator + dictionary), registered in the shell test harness
+  (`test/test_censored_exposure_quick.sh`, `prepare_censored_exposure_example`,
+  `00_censored_exposure.R` added to the copied root files). The end-to-end example test
+  validates the *actual* pipeline code path (03→00_censored_exposure→04), which
+  supersedes a synthetic procedure-5 in the §7 MC harness.
+
+**Remaining (optional):**
+- Run the full 11-step shell harness test (Steps 5–11 + Quarto reports) for the
+  censored example — the downstream reporting steps are generic but not yet exercised
+  on this path.
+- A procedure-5 entry in the §7 MC harness for a like-for-like bias comparison of the
+  pipeline block-FCS against oracle/pre-step (redundant with the end-to-end example,
+  but tidy for the manuscript).
 
 **Phase 5 — Pilot `m`** per §6 on the chosen path; document the FMI and the final `m`.
 
