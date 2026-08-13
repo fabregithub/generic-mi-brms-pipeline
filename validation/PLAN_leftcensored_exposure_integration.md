@@ -1,7 +1,9 @@
 # Plan: congenial integration of left-censored exposure imputation into the MI + brms pipeline
 
 Design/plan document for `generic-mi-brms-pipeline`. Captures the decision and the
-rationale so the project can restart cold. Status: **agreed direction, not yet
+rationale so the project can restart cold. Status: **Phase 1 validation complete
+(2026-08-13) — H1 confirmed, §7.7 gap shown material for mixtures; see §10 and
+[`validation/phase1/FINDINGS.md`](phase1/FINDINGS.md). Phases 3–5 not yet
 implemented.**
 
 ---
@@ -70,6 +72,15 @@ Bartlett (2015, substantive-model-compatible FCS).
 
 ## 3. Architecture decision: two-engine **block-FCS**
 
+> **Emphasis note (see §9–§10).** The block-FCS below is the *production-scale*
+> engine, but it is bespoke and — per §7.7 — is not guaranteed congenial with a
+> non-linear mixture surface. The `brms` **joint model** (§9) *is* congenial by
+> construction and needs no new package code. The recommended path therefore
+> **validates the problem and the joint-model fix first (Phase 1, §10)** and only
+> builds this block-FCS if the joint model cannot meet the scale actually required.
+> Read §3–§5 as the design for that engine, not as an instruction to build it before
+> the Phase-1 gate.
+
 `mice` (per-variable model refits) is too slow at ~80k × ~300; **`miceRanger`
 (ranger backend) is required for speed** and is kept. But a single RF cannot
 impute a censored `X` (it ignores the LOD bound), and `Y` must inform `X`. So run
@@ -122,6 +133,14 @@ skew is negligible.
 
 **Home:** best exported from `leftcens` as `mice.impute.leftcens()` (reusable), with
 a thin standalone wrapper for the block loop. *(Package-side TODO in `leftcens`.)*
+
+> **Prototyped & validated (2026-08-13).** This exact recipe is implemented in the
+> Phase-1 harness as `cens_mi_y_shash` (uses `leftcens:::fit_shash_margin`,
+> `draw_margin`, `x_to_z`/`z_to_x`) and tracks the oracle on the additive DGP at both
+> skew levels (bias ≤3%, coverage ~0.95), where the Gaussian version fails under
+> skew. So §4 is de-risked: the draw works; the remaining package work is exporting
+> it as clean API (`mice.impute.leftcens()`) and generalising it (interval bounds,
+> multiple censored analytes, the block loop). See [`validation/phase1/`](phase1/).
 
 ---
 
@@ -237,6 +256,22 @@ method. The principled fix is the joint model with the surface *in the imputatio
 block-FCS is "good enough" for BKMR, or whether the non-linear-congeniality gap is
 material** — a genuine research question, not a settled one.
 
+> **Phase-1 result (2026-08-13) — the gap is MATERIAL for mixtures.** A congenial,
+> `Y`-aware *linear* censored imputation (`cens_mi_y`, the §4-preview reference)
+> tracks the oracle almost exactly on the **additive** DGP (bias ≤0.4%, coverage
+> ~0.96 at 20% and 40% non-detects) — linear congenial imputation is sufficient
+> there. On the **mixture surface** the *same* linear method is itself badly biased
+> (**+7.7%** at 20% ND → **+19.6%** at 40% ND; coverage collapsing to **0.62**),
+> because it is uncongenial with the non-linear analysis model (interactions +
+> curvature). Conclusion: **the simple linear block-FCS draw is not good enough for
+> BKMR-style mixtures** — the mixture case needs substantive-model-compatible
+> imputation (the surface in the imputation model) or the joint-model-with-surface.
+> Full table and reading: [`validation/phase1/FINDINGS.md`](phase1/FINDINGS.md).
+> *Caveat:* the Phase-1 mixture estimand is a single local main-effect coefficient,
+> a scaffold simplification; the definitive BKMR estimands (overall mixture effect,
+> interactions, `h` at profiles) still need the estimand extension before this is
+> manuscript-final — but the mechanism is demonstrated.
+
 ### 7.8 Also verify
 - **Convergence** of the outer block-FCS (trace exposure summaries across sweeps).
 - Reproduce the pattern with the `leftcens` `validation/` machinery style so it is
@@ -254,25 +289,134 @@ material** — a genuine research question, not a settled one.
   copula-column problem only arose in the (rejected) "add `Y` as an analyte" hack.
 - MID bookkeeping: ensure imputed-`Y` rows are deleted before the `brms` fit.
 
-## 9. Fallback
+## 9. The joint model is the reference, not merely a fallback
 
-If the block-FCS proves fragile, the `brms` **joint model** (§7.3) is the
-principled alternative for the exposure case — congenial by construction — at the
-cost of scaling worse than `miceRanger` on 80k × 300. Keep it as the validation
-reference regardless.
+The `brms` **joint model** (§7.3.6) — `bf(Y ~ h(mi(XX)) + ZZ) + bf(XX | mi() +
+cens(lod) ~ ZZ)` — is **congenial by construction** and requires **no new package
+code**. Two consequences the plan now leans on:
+
+1. **It is the gold-standard reference for validation regardless of the production
+   choice** — the yardstick every other procedure in §7 is measured against.
+2. **It may be sufficient on its own.** The *only* reason to prefer the bespoke
+   block-FCS (§3–§5) is scaling on 80k × 300. That justification is irrelevant at
+   the moderate `n` used for validation, and §7.7 warns the block-FCS may stay
+   *uncongenial* with a non-linear surface where the joint model would not. So the
+   joint model is a genuine candidate for the **primary** exposure path, not a
+   consolation prize.
+
+**Decision gate (Phase 2, §10):** build the block-FCS only if Phase 1 shows the
+joint model both (a) fixes the ERF bias and (b) cannot meet the scale actually
+required in production. If it meets the scale, the block-FCS need not be built at
+all; if it does not, Phase 1 has produced the validated reference the block-FCS
+must match.
+
+> **Phase-1 implementation note (2026-08-13).** The *naive* brms encoding
+> `bf(X | mi() + cens(lod) ~ Z)` does **not** work as-is in the installed brms:
+> when censored rows carry the LOD value (not `NA`), brms creates no latent
+> per-observation parameters, so `mi(X)` in the outcome model silently uses the
+> LOD-substituted values — it collapses to **LOD-substitution** and is biased
+> (verified: it equals `lm` on LOD-filled `X`, ~+12% at 20% ND). The working
+> congenial reference used in Phase 1 is instead a single-variable, `Y`-aware
+> censored MI. **Two variants, and the skew sweep settled which is valid:**
+> - `cens_mi_y` — a Gaussian (tobit) `survreg` of `X` on `(Y, Z, other X)`. Tracks
+>   the oracle on Gaussian log-exposures but **breaks under right-skew** (bias to
+>   −14%, coverage to **0.47** at 40% ND) — the tobit-under-skew failure that
+>   motivated the `leftcens` copula default, now seen on the ERF coefficient.
+> - **`cens_mi_y_shash`** (the default reference) — fits `X`'s margin by interval-
+>   censored **sinh-arcsinh** MLE (`leftcens::fit_shash_margin`), maps `X` and the
+>   LOD to a latent normal scale, runs the `Y`-aware censored regression *there*,
+>   draws truncated below the latent LOD, back-transforms; proper-MI draws of both
+>   margin and regression parameters. **Tracks the oracle at both skew levels**
+>   (bias ≤3%, coverage ~0.95) and degrades gracefully to Gaussian. This *is* the
+>   §4 component prototyped (single variable, general predictors, `Y`-aware,
+>   skew-aware). A correct brms joint model remains possible but needs a careful
+>   latent-variable encoding, not the naive form above.
 
 ---
 
-## 10. Concrete next steps (on restart)
+## 10. Concrete next steps (on restart) — cheap-first, gated phasing
 
-1. **Build the §7 simulation harness first** — known-ERF generator (additive +
-   mixture surface), censoring/MCAR injection, the six procedures, and the
-   bias/coverage metrics. This quantifies the problem *and* becomes the acceptance
-   test for the fix (and settles §7.7 for the BKMR case).
-2. Implement the §4 component (ideally as `leftcens::mice.impute.leftcens()` +
-   standalone wrapper).
-3. Add per-variable method routing in the pipeline config; confirm
-   `use_in_model = TRUE` places `Y` in the predictor set (and MID handling).
-4. Build the §5 block-FCS orchestration around `miceRanger`.
-5. Run the §7 study across procedures × ERF forms × censoring; tabulate bias.
-6. Pilot `m` per §6; document the FMI and the chosen `m`.
+The ordering principle: **confirm the problem and the principled (joint-model) fix
+before investing in the bespoke engine.** The most novel, highest-risk work — the §4
+component and the §5 block-FCS — comes *after* a decision gate, not before. Each
+phase is gated by the phase before it.
+
+**Phase 1 — Confirm the problem and the congenial fix (no new package code). ✅ DONE
+(2026-08-13).** Built the §7 harness in [`validation/phase1/`](phase1/) (known-ERF
+generator: additive + mixture; censoring injection; bias/coverage metrics) with the
+procedures that need no new code: (1) oracle, (2) complete-case, (3) independent
+`leftcens` pre-step via `gsimp_mi`, (4) congenial `Y`-aware censored MI reference
+(`cens_mi_y` — see §9 note; the naive brms joint encoding did not work and was
+replaced). **Results (300 reps/cell):**
+- **H1 confirmed (additive):** the no-`Y` pre-step attenuates the focal coefficient,
+  −5.6% at 20% ND → **−14.4%** at 40% ND, coverage 0.92 → 0.82; `cens_mi_y` removes
+  it (bias ≤0.4%, coverage ~0.96) and is more efficient than complete-case.
+- **H3 confirmed:** complete-case is ~unbiased for the slope but inefficient (rmse up
+  to ~4.5× oracle at 40% ND on the mixture surface).
+- **§7.7 settled — gap material for mixtures:** the linear congenial method is itself
+  biased on the mixture surface (+7.7% → **+19.6%**, coverage → 0.62).
+- **§7.5 skew settled — the reference must be skew-aware:** a Gaussian/tobit `Y`-aware
+  reference tracks the oracle on Gaussian log-exposures but **breaks under right-skew**
+  (bias to −14%, coverage to **0.47**); a **sinh-arcsinh (shash) margin** version
+  (`cens_mi_y_shash`, the §4 recipe) restores it (bias ≤3%, coverage ~0.95) at both skew
+  levels. Independent confirmation of the `leftcens` copula switch on the ERF coefficient.
+  The §4 component must therefore be **both** skew-aware and `Y`-aware — neither existing
+  tool is both.
+- Full table + reading: [`validation/phase1/FINDINGS.md`](phase1/FINDINGS.md).
+
+**Phase 2 — Decision gate (read-out from Phase 1).**
+- **Additive / per-analyte ERFs:** a `Y`-aware *linear* congenial imputation is
+  sufficient (it tracks the oracle). Building the §4 linear component is justified and
+  will work; no surface-in-imputation needed here.
+- **Mixture / BKMR ERFs:** linear congenial imputation is **not** sufficient (§7.7 gap
+  is material). The mixture path needs substantive-model-compatible imputation (the
+  surface in the imputation model) or the joint-model-with-surface — the simple linear
+  block-FCS draw should not be assumed adequate.
+- **Scale question still open:** Phase 1 ran at moderate `n`. Whether a congenial
+  approach meets 80k × 300 in production (vs. needing the block-FCS for speed) was not
+  tested here and remains the other half of the gate.
+- **Reference caveat:** the definitive mixture verdict needs the richer BKMR estimands
+  (overall mixture effect, interactions) — a Phase-1 estimand extension — before it is
+  manuscript-final; the mechanism, however, is demonstrated.
+
+**Phase 2b — Estimand extension (recommended before the mixture verdict is final).**
+Add the true BKMR estimands to the harness (overall mixture effect q25→q75, pairwise
+interactions, `h` at profiles) and a mixture-appropriate reference, so the §7.7
+conclusion rests on the estimands that actually matter, not the scaffold's single
+local coefficient. Cheap relative to Phases 3–4.
+
+**Phase 3 — Build the §4 component in `leftcens`** *(gate says build for the additive/
+per-analyte case)*. Implement `leftcens::mice.impute.leftcens()` + standalone wrapper
+(interval-censored, skew-aware, general-predictor draw). The Phase-1 `cens_mi_y_shash`
+reference is exactly this component in miniature (shash margin + latent-scale `Y`-aware
+`survreg` + truncated draw), so it doubles as the reference implementation and the
+pass/fail oracle on the same simulated data. **For mixtures, additionally scope a
+substantive-model-compatible variant** (surface in the imputation model) — Phase 1 shows
+the plain linear draw is insufficient there.
+
+> **Package-side task in `leftcens` — export the margin API.** `cens_mi_y_shash`
+> currently reaches into four `leftcens` internals via `:::`:
+> `fit_shash_margin()` (interval-censored sinh-arcsinh MLE), `draw_margin()`
+> (proper-MI parameter draw), and the `x_to_z()` / `z_to_x()` latent-scale
+> transforms. These are the exact reusable pieces the §4 component needs, so Phase 3
+> should **promote them to exported, documented API** (stable signatures + `@examples`
+> + tests), rather than leaving downstream code depending on unexported symbols.
+> Until then, any consumer (this harness included) is pinned to `leftcens` internals
+> that can change without notice. Suggested surface: a small exported margin object
+> with `fit` / `draw` / `to_latent` / `from_latent` methods, or plain exported
+> functions mirroring the four above. *(Filed here as the leftcens-side deliverable
+> for Phase 3.)*
+
+**Phase 4 — Wire block-FCS into the pipeline** *(only if the gate says build)*.
+Add per-variable **method routing** in the config; confirm `use_in_model = TRUE`
+places `Y` in the predictor set; build the §5 outer block loop around `miceRanger`;
+implement and **test the MID invariant** (imputed-`Y` rows deleted before the `brms`
+fit — assert it, don't just comment it). Add procedures 5–6 of §7 to the harness and
+re-run.
+
+**Phase 5 — Pilot `m`** per §6 on the chosen path; document the FMI and the final `m`.
+
+*Note vs. earlier draft:* the previous §10 built the §4 component and block-FCS
+(steps 2 & 4) before knowing whether the simpler joint model already suffices. The
+phasing above turns that into an explicit gate so the bespoke, higher-risk engine is
+built only when Phase 1 proves it is needed.
