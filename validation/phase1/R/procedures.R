@@ -195,56 +195,37 @@ proc_censored_mi_y <- function(bundle, m = 20L, seed = NULL) {
 #' regression params. Degrades gracefully to Gaussian when eps≈0, so it is a valid
 #' gold standard at any skew. This is the §4 component prototyped.
 #'
-#' Uses three `leftcens` internals (`:::`) — acceptable in this validation harness;
-#' they become exported API when §4 lands.
+#' Now calls the exported `leftcens::impute_censored_conditional()` (>= 0.9.0) —
+#' the §4 component shipped as public API — rather than reaching into internals.
 proc_censored_mi_y_shash <- function(bundle, m = 20L, seed = NULL) {
-  need <- all(vapply(c("fit_shash_margin", "draw_margin", "x_to_z", "z_to_x"),
-                     function(fn) exists(fn, where = asNamespace("leftcens"), inherits = FALSE),
-                     logical(1)))
-  if (!requireNamespace("survival", quietly = TRUE) || !need) {
-    return(one_row("cens_mi_y_shash", NA, NA, NA, NA, "leftcens shash internals unavailable"))
+  if (!requireNamespace("leftcens", quietly = TRUE) ||
+      !"impute_censored_conditional" %in% getNamespaceExports("leftcens")) {
+    return(one_row("cens_mi_y_shash", NA, NA, NA, NA, "needs leftcens >= 0.9.0"))
   }
-  fsm <- get("fit_shash_margin", asNamespace("leftcens"))
-  dm  <- get("draw_margin",      asNamespace("leftcens"))
-  x2z <- get("x_to_z",           asNamespace("leftcens"))
-  z2x <- get("z_to_x",           asNamespace("leftcens"))
-
   if (!is.null(seed)) set.seed(seed)
   d <- bundle$censored; truth <- bundle$truth
   p <- length(truth$b); q <- length(truth$gamma)
   preds <- c("Y", if (p >= 2L) paste0("logX", 2:p) else character(0), c("Z1", "Z2")[seq_len(q)])
-  rhs <- paste(preds, collapse = " + ")
-  cidx <- which(d$logX1_cens == "left"); oidx <- which(d$logX1_cens == "none")
-  lod <- d$logX1_lod
 
-  # 1. marginal sinh-arcsinh fit of X1 (observed exact + censored intervals).
-  mfit <- fsm(d$logX1[oidx], lo_c = rep(-Inf, length(cidx)), hi_c = lod[cidx])
-  mm <- stats::model.matrix(stats::as.formula(paste("~", rhs)), data = d)
+  is_cens <- d$logX1_cens == "left"
+  imp <- tryCatch(
+    leftcens::impute_censored_conditional(
+      y     = d$logX1,                                   # NA at censored cells
+      x     = d[, preds, drop = FALSE],                  # Y + other X + Z
+      lower = ifelse(is_cens, -Inf, NA_real_),
+      upper = ifelse(is_cens, d$logX1_lod, NA_real_),
+      m = m, margin = "shash"),
+    error = function(e) NULL)
+  if (is.null(imp)) return(one_row("cens_mi_y_shash", NA, NA, NA, NA, "impute failed"))
 
-  ests <- vars <- numeric(m)
-  for (i in seq_len(m)) {
-    mp <- dm(mfit)                                       # proper-MI margin draw
-    z_obs <- x2z(d$logX1, mp$mu, mp$sigma, mp$eps)       # latent normal scores
-    z_lod <- x2z(lod,     mp$mu, mp$sigma, mp$eps)
-    dd <- d; dd$zresp <- ifelse(d$logX1_cens == "none", z_obs, z_lod)
-    dd$event <- as.integer(d$logX1_cens == "none")
-    sr <- tryCatch(survival::survreg(
-      stats::as.formula(sprintf('survival::Surv(zresp, event, type = "left") ~ %s', rhs)),
-      data = dd, dist = "gaussian"), error = function(e) NULL)
-    if (is.null(sr)) { ests[i] <- NA; vars[i] <- NA; next }
-    k <- length(stats::coef(sr))
-    dr <- MASS::mvrnorm(1, c(stats::coef(sr), log(sr$scale)), stats::vcov(sr))
-    mu_i <- as.vector(mm %*% dr[seq_len(k)]); s_reg <- exp(dr[k + 1L])
-    z1 <- z_obs
-    z1[cidx] <- leftcens::rnorm_trunc(length(cidx), mu_i[cidx], s_reg,
-                                      lower = -Inf, upper = z_lod[cidx])
-    x1 <- d$logX1; x1[cidx] <- z2x(z1[cidx], mp$mu, mp$sigma, mp$eps)
-    dfit <- d; dfit$logX1 <- x1
+  ests <- vars <- numeric(ncol(imp))
+  for (i in seq_len(ncol(imp))) {
+    dfit <- d; dfit$logX1 <- imp[, i]
     e <- fit_lm_estimand(dfit, truth); ests[i] <- e["est"]; vars[i] <- e["se"]^2
   }
   pooled <- rubin_pool(ests, vars)
-  one_row("cens_mi_y_shash", pooled["est"], pooled["se"], pooled["ci_lo"], pooled["ci_hi"],
-          sprintf("m=%d; shash eps=%.2f", m, mfit$eps))
+  note <- if (truth$erf_form == "mixture") sprintf("m=%d; linear-approx (§7.7)", m) else sprintf("m=%d", m)
+  one_row("cens_mi_y_shash", pooled["est"], pooled["se"], pooled["ci_lo"], pooled["ci_hi"], note)
 }
 
 # ---- procedure 4b: brms joint model (DEPRECATED in scaffold) -----------------

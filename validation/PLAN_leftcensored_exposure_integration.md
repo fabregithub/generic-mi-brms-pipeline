@@ -134,13 +134,16 @@ skew is negligible.
 **Home:** best exported from `leftcens` as `mice.impute.leftcens()` (reusable), with
 a thin standalone wrapper for the block loop. *(Package-side TODO in `leftcens`.)*
 
-> **Prototyped & validated (2026-08-13).** This exact recipe is implemented in the
-> Phase-1 harness as `cens_mi_y_shash` (uses `leftcens:::fit_shash_margin`,
-> `draw_margin`, `x_to_z`/`z_to_x`) and tracks the oracle on the additive DGP at both
-> skew levels (bias ≤3%, coverage ~0.95), where the Gaussian version fails under
-> skew. So §4 is de-risked: the draw works; the remaining package work is exporting
-> it as clean API (`mice.impute.leftcens()`) and generalising it (interval bounds,
-> multiple censored analytes, the block loop). See [`validation/phase1/`](phase1/).
+> **Shipped & validated (2026-08-13).** This exact recipe is now exported from
+> `leftcens` (>= 0.9.0) as **`impute_censored_conditional()`** — a single-variable,
+> general-predictor, interval-censored, skew-aware, proper-MI draw — plus the
+> supporting margin API (`fit_shash_margin`, `draw_margin`, `x_to_z`/`z_to_x`). The
+> Phase-1 harness's `cens_mi_y_shash` now *calls* that public function (no longer
+> `:::` internals) and tracks the oracle on the additive DGP at both skew levels
+> (bias ≤3%, coverage ~0.95), where the Gaussian version fails under skew. So §4's
+> core is **done and de-risked**; the remaining package work is the thin
+> `mice.impute.leftcens()` wrapper (deferred) and generalising to multiple censored
+> analytes / the block loop (Phase 4). See [`validation/phase1/`](phase1/).
 
 ---
 
@@ -159,6 +162,24 @@ Method routing in the pipeline config: mark the exposure to use the censored
 method (a per-variable **method** field), keep `Y` as `use_in_model = TRUE`
 (predictor), `impute_target = FALSE`. No new *role* flag needed — the gap was
 routing `X` through a `Y`-aware method, not a missing role.
+
+> **Do NOT route 80k × 300 through the `mice` engine.** The slowness seen with
+> plain `mice` is the **FCS engine refitting a model for all ~300 variables every
+> iteration**, not the censored-imputation *method*. The block loop above sidesteps
+> this: `miceRanger` (fast RF) handles the ~300-variable Z block, and the X block is
+> a **single** call to the standalone `leftcens::impute_censored_conditional()` per
+> sweep (one `survreg` fit, cheap even at n = 80k). The pipeline calls that function
+> **directly** in this loop — it never enters the `mice` engine. `leftcens`'s
+> `mice.impute.leftcens()` wrapper (same algorithm, mice `(y, ry, x, …)` interface,
+> bounds via `blots`) is a **moderate-scale ecosystem convenience only**; using it
+> *through* `mice()` on the full data reintroduces the 300-variable engine cost that
+> `miceRanger` exists to avoid.
+>
+> Scale caveat for the X block: conditioning the censored `X` on all ~300 `Z` in one
+> parametric Tobit is a single fit but can be slow/unstable at that width — condition
+> on a **reduced predictor set** (confounders + `Y` + correlated analytes, or the
+> ranger-imputed `Z`), not the full 300. A Phase-4 design choice, not a property of
+> the algorithm.
 
 ---
 
@@ -386,26 +407,25 @@ conclusion rests on the estimands that actually matter, not the scaffold's singl
 local coefficient. Cheap relative to Phases 3–4.
 
 **Phase 3 — Build the §4 component in `leftcens`** *(gate says build for the additive/
-per-analyte case)*. Implement `leftcens::mice.impute.leftcens()` + standalone wrapper
-(interval-censored, skew-aware, general-predictor draw). The Phase-1 `cens_mi_y_shash`
-reference is exactly this component in miniature (shash margin + latent-scale `Y`-aware
-`survreg` + truncated draw), so it doubles as the reference implementation and the
-pass/fail oracle on the same simulated data. **For mixtures, additionally scope a
-substantive-model-compatible variant** (surface in the imputation model) — Phase 1 shows
-the plain linear draw is insufficient there.
+per-analyte case)*. **Core DONE (leftcens 0.9.0, 2026-08-13):** shipped the
+single-variable, general-predictor, interval-censored, skew-aware, proper-MI draw as
+**`leftcens::impute_censored_conditional()`**, plus the exported margin API
+(`fit_shash_margin`, `draw_margin`, `x_to_z`/`z_to_x`); tests, docs, `R CMD check`
+clean; the Phase-1 harness's `cens_mi_y_shash` now consumes it and still tracks the
+oracle at both skew levels. **Remaining Phase-3 work:**
+- The thin `leftcens::mice.impute.leftcens()` wrapper (moderate-scale ecosystem
+  convenience; bounds via mice `blots`). *Deferred by scope choice.*
+- Generalise the core to **multiple censored analytes** and the block-loop calling
+  convention (for §5).
+- **For mixtures, scope a substantive-model-compatible variant** (surface in the
+  imputation model) — Phase 1 shows the plain linear draw is insufficient there.
 
-> **Package-side task in `leftcens` — export the margin API.** `cens_mi_y_shash`
-> currently reaches into four `leftcens` internals via `:::`:
-> `fit_shash_margin()` (interval-censored sinh-arcsinh MLE), `draw_margin()`
-> (proper-MI parameter draw), and the `x_to_z()` / `z_to_x()` latent-scale
-> transforms. These are the exact reusable pieces the §4 component needs, so Phase 3
-> should **promote them to exported, documented API** (stable signatures + `@examples`
-> + tests), rather than leaving downstream code depending on unexported symbols.
-> Until then, any consumer (this harness included) is pinned to `leftcens` internals
-> that can change without notice. Suggested surface: a small exported margin object
-> with `fit` / `draw` / `to_latent` / `from_latent` methods, or plain exported
-> functions mirroring the four above. *(Filed here as the leftcens-side deliverable
-> for Phase 3.)*
+> **Margin-API export task — DONE (leftcens 0.9.0).** The four pieces the component
+> needs — `fit_shash_margin()` (interval-censored sinh-arcsinh MLE), `draw_margin()`
+> (proper-MI parameter draw), and the `x_to_z()` / `z_to_x()` latent-scale transforms
+> — were promoted from `:::` internals to **exported, documented, tested API** (plain
+> functions, per the design decision). Downstream code (this harness included) no
+> longer depends on unexported symbols.
 
 **Phase 4 — Wire block-FCS into the pipeline** *(only if the gate says build)*.
 Add per-variable **method routing** in the config; confirm `use_in_model = TRUE`
