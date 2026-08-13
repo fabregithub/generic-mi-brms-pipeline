@@ -174,6 +174,7 @@ analysis_spec <- list(
     # "subject_level"
     # "subject_wide_with_repeated_y_auxiliary"
     # "long_row_level"
+    # "censored_exposure_block_fcs"  # left-/interval-censored focal EXPOSURE (see below)
     strategy = "row_level",
 
     # Public demo uses small m for speed.
@@ -191,6 +192,39 @@ analysis_spec <- list(
     impute_y = FALSE,
 
     extra_exclude_targets = character(0),
+
+    # ----------------------------------------------------------
+    # Optional: censored-exposure block-FCS (strategy above must be
+    # "censored_exposure_block_fcs"). Congenial imputation for the special case
+    # where a focal EXPOSURE is left-/interval-censored below a reporting limit;
+    # imputing it without the outcome biases the exposure-response coefficient.
+    # Requires leftcens >= 0.9.0. Input: each exposure `X` carries per-row bounds
+    # `X_lo` / `X_hi` (X_lo == X_hi where observed; X_lo <= 0 with X_hi = LOD for a
+    # left-censored non-detect). In 00_variable_dictionary.csv mark each exposure
+    # role = "exposure", impute_target = FALSE, use_in_model = TRUE, and
+    # scale = "log" to impute on the log scale. See 00_censored_exposure.R.
+    # ----------------------------------------------------------
+    # Engine note: this path calls leftcens::impute_censored_conditional(), NOT
+    # leftcens's gsimp_impute()/gsimp_mi() (whose default is imp_model = "copula").
+    # The copula engine conditions an analyte on OTHER ANALYTES only, so it cannot
+    # include the outcome Y — but conditioning on Y is exactly what the exposure
+    # case requires (congeniality). impute_censored_conditional() instead conditions
+    # on a GENERAL predictor set (Y, Z, other analytes) while reusing the SAME
+    # skew-robust sinh-arcsinh margin the copula is built on (margin = "shash").
+    # So: same skew handling as copula, different (Y-aware) conditioning; the copula
+    # engine itself is not used on this path.
+    # censored_exposure = list(
+    #   exposure_vars = c("X"),          # censored focal exposure(s)
+    #   predictors    = NULL,            # reduced X-block predictor set; NULL = auto
+    #                                    #   (outcome + use_in_model covariates + other exposures)
+    #   outer_sweeps  = 5L,              # block-FCS outer sweeps (3-5 is usually enough)
+    #   margin        = "shash",         # "shash" (skew-aware, shares copula's margin) or
+    #                                    #   "gaussian" (plain tobit; use only if skew negligible)
+    #   log_scale     = TRUE,            # impute on the log scale (decoupled from dict `scale`)
+    #   lo_suffix     = "_lo",           # bound-column suffixes (leftcens interval form)
+    #   hi_suffix     = "_hi",
+    #   mid_delete_imputed_y = TRUE      # MID: drop imputed-Y rows before the brms fit
+    # ),
 
     # ----------------------------------------------------------
     # Optional: reproducibility and safe extension

@@ -145,6 +145,19 @@ a thin standalone wrapper for the block loop. *(Package-side TODO in `leftcens`.
 > `mice.impute.leftcens()` wrapper (deferred) and generalising to multiple censored
 > analytes / the block loop (Phase 4). See [`validation/phase1/`](phase1/).
 
+> **Engine clarification — `impute_censored_conditional()` vs the copula engine.**
+> `leftcens`'s `gsimp_impute()` / `gsimp_mi()` / `preflight_*()` default to
+> `imp_model = "copula"`, which conditions an analyte on the **other analytes only**
+> — so it *cannot* include the outcome `Y`. The exposure case *requires* `Y`
+> (congeniality, §2), so the pipeline and the reference use
+> **`impute_censored_conditional()` with `margin = "shash"`** instead: it conditions
+> on a **general** predictor set (`Y`, `Z`, analytes) while reusing the **same
+> skew-robust sinh-arcsinh margin the copula engine is built on**. Net: *same skew
+> handling as copula, different (`Y`-aware) conditioning; the copula engine itself is
+> not on the production path.* `copula` (via `gsimp_mi`) appears in this project only
+> in the **validation** harness's `leftcens_prestep` arm — the deliberately-biased
+> "impute X without Y" comparison, not production.
+
 ---
 
 ## 5. Orchestration (block-FCS skeleton)
@@ -176,10 +189,12 @@ routing `X` through a `Y`-aware method, not a missing role.
 > `miceRanger` exists to avoid.
 >
 > Scale caveat for the X block: conditioning the censored `X` on all ~300 `Z` in one
-> parametric Tobit is a single fit but can be slow/unstable at that width — condition
-> on a **reduced predictor set** (confounders + `Y` + correlated analytes, or the
-> ranger-imputed `Z`), not the full 300. A Phase-4 design choice, not a property of
-> the algorithm.
+> parametric Tobit is a single fit but its cost is ~`k²` in predictor width `k`.
+> **Measured at `n` = 80k** (`run_scale_test.R`): ~1.4s/sweep at `k`=50 → **~2 min**
+> for a 20×5-sweep X-block, vs 23s/sweep → **~39 min** at `k`=300. So condition on a
+> **reduced predictor set** (confounders + `Y` + correlated analytes, or the
+> ranger-imputed `Z`), not the full 300 — a Phase-4 design choice that keeps the
+> X-block negligible next to `brms`. (`survreg` stayed numerically stable to `k`=300.)
 
 ---
 
@@ -393,9 +408,15 @@ replaced). **Results (300 reps/cell):**
   is material). The mixture path needs substantive-model-compatible imputation (the
   surface in the imputation model) or the joint-model-with-surface — the simple linear
   block-FCS draw should not be assumed adequate.
-- **Scale question still open:** Phase 1 ran at moderate `n`. Whether a congenial
-  approach meets 80k × 300 in production (vs. needing the block-FCS for speed) was not
-  tested here and remains the other half of the gate.
+- **Scale question — RESOLVED (2026-08-13):** at `n` = 80k the X-block draw
+  (`impute_censored_conditional`) is cheap and super-linear in predictor width `k`
+  (~`k²`), not in `n`: ~0.9s/sweep at `k`=25, 1.4s at `k`=50, 3.2s at `k`=100,
+  rising to 23s at `k`=300. Extrapolated to 20 datasets × 5 outer sweeps the whole
+  X-block is **~1.6–2.4 min at `k` ≤ 50** (a rounding error next to `miceRanger` and
+  `brms`), vs ~39 min if conditioning on all ~300 `Z`. `survreg` converged cleanly at
+  every width. So a congenial approach **meets production scale** with a **reduced
+  predictor set** — no speed reason to abandon it; the block-FCS architecture is
+  viable. Timings: [`validation/phase1/run_scale_test.R`](phase1/run_scale_test.R).
 - **Reference caveat:** the definitive mixture verdict needs the richer BKMR estimands
   (overall mixture effect, interactions) — a Phase-1 estimand extension — before it is
   manuscript-final; the mechanism, however, is demonstrated.
@@ -427,12 +448,42 @@ oracle at both skew levels. **Remaining Phase-3 work:**
 > functions, per the design decision). Downstream code (this harness included) no
 > longer depends on unexported symbols.
 
-**Phase 4 — Wire block-FCS into the pipeline** *(only if the gate says build)*.
-Add per-variable **method routing** in the config; confirm `use_in_model = TRUE`
-places `Y` in the predictor set; build the §5 outer block loop around `miceRanger`;
-implement and **test the MID invariant** (imputed-`Y` rows deleted before the `brms`
-fit — assert it, don't just comment it). Add procedures 5–6 of §7 to the harness and
-re-run.
+**Phase 4 — Wire block-FCS into the pipeline.** **Core BUILT (2026-08-13):**
+- New **`00_censored_exposure.R`** — `run_censored_exposure_block_fcs()`: the §5
+  outer loop (miceRanger Z-block via the *reused* `run_row_level_imputation()`
+  helper + `leftcens::impute_censored_conditional()` X-block, Y-aware), log-scale
+  handling from the dictionary `scale`, and **MID** (Y imputed so it is complete for
+  the X-block predictor step, then imputed-Y rows deleted). Returns the standard
+  `imputed_list`, so `03_impute.R`'s existing file/manifest logic is reused untouched.
+- **Method routing:** new opt-in `strategy = "censored_exposure_block_fcs"` +
+  `imputation$censored_exposure` config block; input convention = `leftcens` interval
+  columns `X_lo`/`X_hi`; exposures flagged `impute_target = FALSE, use_in_model = TRUE`.
+- **Dispatch:** one `else if` branch in `03_impute.R` (main stream otherwise intact).
+- **Validated (synthetic):** runs end-to-end, produces clean completed datasets,
+  drops imputed-Y rows, and **recovers the exposure-response coefficient** (bias
+  −1.7%, coverage 0.92 vs oracle +0.8%, true slope 0.80).
+
+**End-to-end acceptance test — PASSED (2026-08-13).** Built a censored demo (n=500,
+35% non-detects, MAR covariate, missing outcomes) with `expo`/`expo_lo`/`expo_hi`
+columns and ran **Steps 1→4** in an isolated dir with `strategy =
+"censored_exposure_block_fcs"`, `m=6`, `custom_formula = y ~ log(expo) + z1 + z2`:
+- Step 1 validation accepted `log(expo)`; Steps 1–2 carried the `_lo`/`_hi` columns
+  through (`prepare_raw_data` keeps all columns).
+- Step 3 produced 6 clean completed datasets (470 rows after MID dropped the 30
+  imputed-Y rows; `expo` complete/positive; `_lo`/`_hi` dropped).
+- Step 4 (`brms`, cmdstanr) consumed them and fit all 6 with **zero errors**; the
+  pooled `log(expo)` coefficient (0.66, 95% CrI [0.54, 0.77]) covers the
+  dataset's oracle (0.71). Rigorous unbiasedness is from the 25-rep MC (−1.7%,
+  coverage 0.92), not this single realization.
+- Two bugs fixed while wiring: (a) the per-sweep NA-reset must **exclude the
+  exposures** (else it blanks what the X-block imputes); (b) imputation log-scale
+  is now a `censored_exposure$log_scale` config flag, decoupled from the dictionary
+  `scale` to avoid double-transform with a `log()` in the model formula.
+
+**Remaining Phase-4 work:**
+- Add procedures 5–6 of §7 to the harness (the pipeline block-FCS itself) and re-run.
+- Multiple censored exposures / interval (DNQ) cases beyond the single-exposure path.
+- Assert the **MID invariant** in a test, not just in code.
 
 **Phase 5 — Pilot `m`** per §6 on the chosen path; document the FMI and the final `m`.
 

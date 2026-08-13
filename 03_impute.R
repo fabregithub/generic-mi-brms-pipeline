@@ -1,5 +1,6 @@
 source("00_config.R")
 source("00_common_functions.R")
+source("00_censored_exposure.R")   # opt-in strategy = "censored_exposure_block_fcs"
 
 init_logging("pipeline")
 setup_project_dirs(paths)
@@ -206,10 +207,19 @@ safe_step("STEP 3: Imputation", {
 
     rm(wide_data, imputed_wide_list)
     gc()
+  } else if (identical(analysis_spec$imputation$strategy, "censored_exposure_block_fcs")) {
+    # Special case: a focal EXPOSURE is left-/interval-censored. Two-engine
+    # block-FCS (miceRanger Z-block + leftcens X-block, Y-aware) in 00_censored_exposure.R.
+    # Returns the standard imputed_list, so the file/manifest logic below is reused.
+    imputed_list <- run_censored_exposure_block_fcs(
+      data = dat, analysis_spec = analysis_spec, var_dict = var_dict,
+      m = n_new, seed = batch_seed
+    )
   } else {
     stop(
       "This template currently implements strategy = 'row_level', ",
-      "'subject_wide_with_repeated_y_auxiliary', and 'none'. Requested: ",
+      "'subject_wide_with_repeated_y_auxiliary', 'censored_exposure_block_fcs', ",
+      "and 'none'. Requested: ",
       analysis_spec$imputation$strategy
     )
   }
