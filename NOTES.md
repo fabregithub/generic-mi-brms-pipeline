@@ -127,6 +127,61 @@
 
 ---
 
+## Session: 2026-08-14 — Censored-exposure imputation (block-FCS)
+
+### New feature: congenial imputation of censored exposures
+
+- **`00_censored_exposure.R`** — new opt-in Step-3 strategy
+  `strategy = "censored_exposure_block_fcs"` for the case where a focal *exposure*
+  is left-/interval-censored below a reporting limit. Imputing such an exposure
+  without the outcome biases the exposure–response coefficient (congeniality); this
+  path imputes it **outcome-aware, skew-robust, and interval-respecting** via a
+  two-engine block-FCS: `miceRanger` for MAR covariates (the reused
+  `run_row_level_imputation()` helper) + `leftcens::impute_censored_conditional()`
+  for the censored exposures. Handles multiple exposures and the three-tier
+  (ND / DNQ / quantified) interval structure.
+- **Dependency**: `leftcens` (>= 0.9.0), which was extended (in that package) to
+  export `impute_censored_conditional()` plus the sinh-arcsinh margin API
+  (`fit_shash_margin`, `draw_margin`, `x_to_z`/`z_to_x`).
+- **Input convention**: each exposure `X` carries `X_lo`/`X_hi` interval columns
+  (leftcens form). Dictionary: `role = exposure`, `impute_target = FALSE`,
+  `use_in_model = TRUE`.
+- **MID**: missing outcomes are imputed for the FCS predictor step, then the
+  imputed-Y rows are deleted before the fit (von Hippel 2007). Asserted at runtime.
+- **Dispatch**: one `else if` branch in `03_impute.R`; returns the standard
+  `imputed_list`, so the file/manifest logic and Steps 4–12 are unchanged. Config
+  documented in `00_config.R`.
+- **Parallelism**: the `m` completed datasets are imputed in parallel
+  (`censored_exposure$n_cores`, fork/`mclapply`); the miceRanger Z-block runs
+  serially within each dataset to avoid nested PSOCK-in-fork failures.
+- **Example**: `examples/censored_exposure/` (two exposures — one left-censored,
+  one three-tier interval; logistic-agnostic Gaussian demo), registered in the
+  shell test harness (`test/test_censored_exposure_quick.sh`). Verified end-to-end
+  (Steps 1→4) and via a synthetic MC (recovers the exposure–response coefficient;
+  coverage ~0.95).
+
+### Validation study (`validation/`)
+
+- `validation/PLAN_leftcensored_exposure_integration.md` — the design/decision
+  document (congeniality theory, the two-engine block-FCS, the estimand/scale
+  gates, the joint-model reference).
+- `validation/phase1/` — a Monte-Carlo harness quantifying: (i) the no-Y pre-step
+  bias (**H1** confirmed — attenuation growing with censoring), (ii) the
+  §7.7 non-linear-congeniality gap for mixtures, and (iii) §7.5 skew robustness
+  (a Gaussian/tobit reference breaks under right-skew; the shash margin fixes it).
+  Also a scale test (X-block cost is ~`k^2`, cheap at n=80k with a reduced
+  predictor set).
+
+### Note
+
+- The JECS PFAS→Kawasaki-disease **manuscript demonstration** (a synthetic cohort
+  grounded in Lai 2025 / Iwata 2024 / Atagi 2024, the 4-method comparison, BKMR,
+  and the manuscript skeleton) has been **moved out of this repo** to keep the
+  pipeline general. It lives in the manuscript working directory. The generic
+  censored-exposure feature and `examples/censored_exposure/` remain here.
+
+---
+
 ## Ideas for future development
 
 ### Pipeline

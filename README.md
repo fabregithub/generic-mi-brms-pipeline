@@ -100,6 +100,7 @@ The template is designed to support:
 - `row-level multiple imputation`
 - `subject-level multiple imputation`
 - `subject-wide imputation using repeated Y as auxiliary variables`
+- `left-/interval-censored exposures below a detection limit (congenial, outcome-aware imputation)`
 
 Supported model families include:
 
@@ -113,6 +114,37 @@ Supported model families include:
 - `cox` (Cox proportional hazards)
 
 Model families and links are set in `00_config.R`.
+
+### Censored (below-detection-limit) exposures
+
+When a focal **exposure** is left- or interval-censored below an analytical
+reporting limit (LOD / MDL / LCMRL), imputing it *without the outcome* biases the
+exposure–response estimate (an uncongenial imputation). The pipeline provides an
+opt-in strategy that imputes such exposures **congenially** — outcome-aware,
+skew-robust, and respecting the censoring interval — via a two-engine block-FCS:
+`miceRanger` for the MAR covariates and `leftcens::impute_censored_conditional()`
+for the censored exposures. It handles multiple exposures and the three-tier
+(non-detect / detected-not-quantified / quantified) interval structure.
+
+- **Enable it** with `analysis_spec$imputation$strategy <- "censored_exposure_block_fcs"`
+  plus an `analysis_spec$imputation$censored_exposure` block. See
+  [`00_censored_exposure.R`](00_censored_exposure.R) and
+  [`examples/censored_exposure/`](examples/censored_exposure/).
+- **Input convention** (leftcens interval columns): each censored exposure `X`
+  carries per-row bounds `X_lo` / `X_hi` — `X_lo == X_hi` where quantified;
+  `X_lo <= 0`, `X_hi = LOD` for a left-censored non-detect; both finite for a
+  detected-not-quantified interval. In the dictionary mark each exposure
+  `role = exposure`, `impute_target = FALSE`, `use_in_model = TRUE`.
+- **Requires** `leftcens` (>= 0.9.0), which exports `impute_censored_conditional()`.
+- **Config knobs** (`censored_exposure`): `exposure_vars`; a reduced `predictors`
+  set (condition on the *other* analytes + outcome + key determinants, not the
+  full covariate set — the X-block cost is ~`k^2`); `outer_sweeps`; `margin`
+  (`"shash"` skew-aware / `"gaussian"` tobit); `log_scale`; `mid_delete_imputed_y`
+  (multiple-imputation-then-deletion for missing outcomes); and `n_cores`
+  (parallelises the `m` completed datasets).
+- Produces the standard `imputed_###.rds` + manifest, so **Steps 4–12 are
+  unchanged**. Method background, the validation study, and the design rationale are
+  in [`validation/`](validation/).
 
 ---
 
