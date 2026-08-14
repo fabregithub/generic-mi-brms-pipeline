@@ -1,0 +1,20 @@
+var,label,role,type,timing,scale,reference,impute_target,use_in_model,use_as_auxiliary
+kd,Kawasaki disease,binary_outcome,binary,single,no,0,FALSE,TRUE,FALSE
+PFOA,Perfluorooctanoic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+PFOS,Perfluorooctanesulfonic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+PFNA,Perfluorononanoic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+PFDA,Perfluorodecanoic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+PFUnDA,Perfluoroundecanoic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+PFHxS,Perfluorohexane sulfonic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+PFTrDA,Perfluorotridecanoic acid,exposure,continuous,single,no,,FALSE,TRUE,FALSE
+region,Regional centre,covariate,categorical,single,no,,FALSE,TRUE,FALSE
+mat_age,Maternal age,covariate,continuous,single,no,,FALSE,TRUE,FALSE
+parity,Parity,covariate,continuous,single,no,,FALSE,TRUE,FALSE
+bmi,Pre-pregnancy BMI,covariate,continuous,single,no,,TRUE,TRUE,FALSE
+smoking,Maternal smoking,covariate,categorical,single,no,,FALSE,TRUE,FALSE
+income,Household income,covariate,categorical,single,no,,TRUE,TRUE,FALSE
+folate,Folic acid,covariate,continuous,single,no,,TRUE,TRUE,FALSE
+egfr,Estimated GFR,covariate,continuous,single,no,,FALSE,TRUE,FALSE
+child_male,Child sex (male),covariate,binary,single,no,0,FALSE,TRUE,FALSE
+low_bw,Low birth weight,covariate,binary,single,no,0,FALSE,TRUE,FALSE
+row_id,Row ID,id,integer,single,no,,FALSE,FALSE,FALSE
