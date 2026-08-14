@@ -107,6 +107,11 @@
   # stop alternating after the first sweep).
   z_spec_as <- analysis_spec
   z_spec_as$imputation$impute_y <- TRUE
+  # Force the Z-block (miceRanger) to run SERIALLY: this function already
+  # parallelises over the m completed datasets (mclapply), and a PSOCK cluster
+  # started inside a fork fails ("cannot open server socket"). Cross-dataset
+  # parallelism (n_cores) is the right level; the per-dataset Z-block stays serial.
+  z_spec_as$parallel$impute_workers <- 1L
   # Reset only the originally-missing Z/Y cells each sweep — NOT the exposures,
   # whose missing (censored) cells are handled by the X block via the fixed bounds.
   orig_na <- lapply(data[intersect(names(data), names(work))], is.na)
@@ -119,7 +124,7 @@
     z_spec <- make_row_level_imputation_spec(work, z_spec_as, var_dict)
     if (length(z_spec$vars) > 0) {
       z_spec$m <- 1L; z_spec$seed <- seed + 1000L + t
-      work <- run_row_level_imputation(work, z_spec, analysis_spec)[[1]]
+      work <- run_row_level_imputation(work, z_spec, z_spec_as)[[1]]
     }
     # --- X block: one congenial censored draw per exposure, given current Z, Y.
     for (x in exposures) {
@@ -156,35 +161,44 @@ run_censored_exposure_block_fcs <- function(data, analysis_spec, var_dict, m, se
   mid <- isTRUE(ce$mid_delete_imputed_y %||% TRUE)
   y_missing <- if (!is.null(data[[y_var]])) is.na(data[[y_var]]) else logical(nrow(data))
 
+  # The m completed datasets are independent -> parallelise over them (fork).
+  # n_cores from censored_exposure$n_cores, else parallel$impute_workers, else 1.
+  n_cores <- as.integer(ce$n_cores %||% analysis_spec$parallel$impute_workers %||% 1L)
+  if (.Platform$OS.type == "windows") n_cores <- 1L        # mclapply forks: unix only
+  n_cores <- max(1L, min(n_cores, m))
+
   log_msg("Censored-exposure block-FCS | exposures:",
           paste(ce$exposure_vars, collapse = ", "),
           "| outer_sweeps:", ce$outer_sweeps %||% 5L,
           "| margin:", ce$margin %||% "shash",
-          "| m:", m)
+          "| m:", m, "| n_cores:", n_cores)
 
-  imputed_list <- vector("list", m)
-  for (d in seq_len(m)) {
+  build_one <- function(d) {
     work <- .ce_one_imputation(data, analysis_spec, var_dict, ce, seed = seed + d)
     # MID: the imputed-Y rows carry no information for beta; drop them before the
     # brms fit so pooling is over information-bearing rows only (von Hippel 2007).
     if (mid && any(y_missing)) work <- work[!y_missing, , drop = FALSE]
-
     # Invariants (asserted, not just commented): every censored exposure is fully
     # imputed, and MID has removed all imputed-Y rows (no Y missing remains).
     for (x in ce$exposure_vars) {
-      if (anyNA(work[[x]])) {
-        stop("Censored exposure '", x, "' still has NA after imputation ",
-             "(dataset ", d, ").", call. = FALSE)
-      }
+      if (anyNA(work[[x]]))
+        stop("Censored exposure '", x, "' still has NA after imputation (dataset ", d, ").", call. = FALSE)
     }
-    if (mid && any(y_missing) && !is.null(work[[y_var]]) && anyNA(work[[y_var]])) {
-      stop("MID invariant violated: imputed-Y rows were not removed ",
-           "(dataset ", d, ").", call. = FALSE)
-    }
-
-    imputed_list[[d]] <- tibble::as_tibble(work)
+    if (mid && any(y_missing) && !is.null(work[[y_var]]) && anyNA(work[[y_var]]))
+      stop("MID invariant violated: imputed-Y rows were not removed (dataset ", d, ").", call. = FALSE)
     log_msg("  completed dataset", d, "of", m,
             if (mid && any(y_missing)) paste0("(MID dropped ", sum(y_missing), " imputed-Y rows)") else "")
+    tibble::as_tibble(work)
+  }
+
+  if (n_cores > 1L) {
+    imputed_list <- parallel::mclapply(seq_len(m), build_one, mc.cores = n_cores, mc.preschedule = FALSE)
+    errs <- vapply(imputed_list, inherits, logical(1), what = "try-error")
+    if (any(errs)) stop("Censored-exposure imputation failed on dataset(s) ",
+                        paste(which(errs), collapse = ", "), ": ",
+                        as.character(imputed_list[[which(errs)[1]]]), call. = FALSE)
+  } else {
+    imputed_list <- lapply(seq_len(m), build_one)
   }
   imputed_list
 }
