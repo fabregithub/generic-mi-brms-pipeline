@@ -182,6 +182,218 @@
 
 ---
 
+## Session: 2026-08-25 — leftcens dependency + Step-1 validation for the censored path
+
+### `leftcens` 0.9.0 was untagged
+
+The pipeline documents a hard requirement on `leftcens >= 0.9.0` (for
+`impute_censored_conditional()`), but the `leftcens` repo's newest tag was `v0.8.0`.
+The 0.9.0 release was fully committed *and pushed* to `origin/main` — only the release
+tag was missing, so there was no immutable ref to pin and no way to satisfy the
+documented requirement from a tag. Tagged `v0.9.0` (at `b3ebc8c`) and pushed; the
+locally installed 0.8.0 (built 2026-08-06, predating the new API) was upgraded.
+
+### Fail-early validation for `censored_exposure_block_fcs` (`01_validate_config.R`)
+
+Step 1 previously validated only the `subject_wide_with_repeated_y_auxiliary`
+strategy, so a misconfigured censored-exposure run got through Step 1 and Step 2 and
+failed inside Step 3. Added a matching validation branch that checks, before any real
+work:
+
+- `leftcens` is installed **and** exports `impute_censored_conditional()` — the error
+  names the `install_github(...@v0.9.0)` command (this duplicates the runtime guard in
+  `00_censored_exposure.R`, but fires at Step 1 instead of Step 3);
+- `censored_exposure$exposure_vars` is set, and the exposures exist in the raw data;
+- the `_lo`/`_hi` bound columns exist (honouring configured suffixes), are numeric, are
+  not all-missing, and satisfy `lo <= hi`;
+- `margin` is one of `"shash"` / `"gaussian"`;
+- `predictors`, if given, exist — and **warns** if the outcome is not among them, since
+  that silently reproduces the biased no-`Y` pre-step this whole strategy exists to
+  avoid;
+- dictionary flags: `use_in_model = TRUE` is required (**stop**); `impute_target = TRUE`
+  **warns** (the X block owns those columns, not miceRanger).
+
+It also logs the censored/interval-valued row count per exposure, which is a useful
+sanity check on the input convention. Verified: all seven paths fire as intended, and
+Step 1 still passes for all five bundled examples.
+
+### Documentation gaps closed
+
+- **`README.md`**: `leftcens` was required by the censored path but **absent from the
+  dependency install block** entirely — it is a GitHub-only package, so there was no
+  install instruction anywhere. Added a pinned
+  `remotes::install_github("fabregithub/leftcens@v0.9.0")` block next to the `survival`
+  one, plus a short install pointer in the feature section.
+- **`00_config.R`** (and the censored example's config): the commented
+  `censored_exposure` template was missing `n_cores`, even though the code reads it
+  (`ce$n_cores %||% parallel$impute_workers`) and the README documents it. Added, with
+  the unix-only/fork caveat. Also added the install command to the block's comment.
+
+### Test-harness bug: Step 12 was never copied into the isolated run
+
+`run_all.R` has sourced `12_export_draws.R` since 2026-07-16 (`8065903`), but
+`test/test_example_common.sh`'s `root_files` list was never updated to copy it. Since
+`run_step()` is a bare `source()` with no existence check, **every** `test/` run has
+aborted at Step 12 with `cannot open the connection` since that date — including the
+full-pipeline run the censored-exposure example still needs. Added
+`"12_export_draws.R"` to `root_files`.
+
+### Validation tracks V0 and V1 — the shipped censored-exposure engine is now validated
+
+New plan document [`validation/PLAN_pipeline_validation.md`](validation/PLAN_pipeline_validation.md)
+covering what the original integration plan left open. Its framing: every bias number in
+`phase1/FINDINGS.md` validated a **prototype** (`cens_mi_y_shash`, ~40 lines written for
+the study), not `run_censored_exposure_block_fcs()` — the code users actually run. Five
+tracks (V0–V4), each with acceptance criteria written *before* the run.
+
+**V0 — full-pipeline regression, PASSED (~78 s).** First complete 11-step run of the
+censored-exposure example (`test/test_censored_exposure_quick.sh`), only possible after
+the `12_export_draws.R` harness fix above. All five criteria met; Steps 09/10 correctly
+omitted (no `mo()`), MID dropped 30 imputed-Y rows per dataset, 0 divergences.
+
+**V1 — the shipped engine in the MC harness, PASSED (300 reps/cell, ~17 min).** New
+procedure 5 (`pipeline_block_fcs`) *sources* `00_censored_exposure.R` and calls the real
+`run_censored_exposure_block_fcs()`, then reuses the harness's own `fit_lm_estimand()` /
+`rubin_pool()` / metrics — so the comparison against oracle / complete-case / no-Y
+pre-step / prototype is like-for-like.
+
+- **Additive DGP:** rel. bias −0.79% (20% ND), +0.48% (40% ND); coverage 0.957 at both;
+  rmse 1.06×/1.24× oracle; 0.0485 vs complete-case's 0.0719 at 40% ND. Every
+  pre-registered criterion met, 300/300 reps in every cell.
+- **Paired agreement with the prototype** ≤0.14% of the estimand in all four cells. One
+  cell (additive, 20% ND) is ~2.9 MC SEs from zero but only 0.0005 in magnitude — 24×
+  under the acceptance bar; recorded honestly rather than rounded away.
+- **Mixture DGP:** reproduces the prototype's known §7.7 bias (+7.54% / +19.55%) rather
+  than exceeding it — evidence of faithful implementation, since the X block *is* a
+  linear draw.
+- **Bonus: independent replication of Phase 1.** Fresh seed (20260825 vs 20260813) puts
+  the no-Y pre-step at −5.88% / −14.14%, coverage 0.923 / 0.820 — essentially on top of
+  the original −5.6% / −14.4%, 0.92 / 0.82. H1 confirmed twice.
+- **Bonus: a V0 observation resolved as noise.** V0's single realization showed the focal
+  exposure 12.6% low with its correlated covariate high (the attenuation signature); at
+  300 reps there is no systematic attenuation. Flagged as a hypothesis at the time, not
+  a finding — correctly.
+
+Findings: [`validation/phase1/FINDINGS_v1.md`](validation/phase1/FINDINGS_v1.md).
+
+**Implementation notes worth keeping.** `00_common_functions.R` is *not*
+standalone-sourceable — it reads `paths$objects` at top level for the runtime-override
+mechanism, so the harness stubs `paths`/`analysis_spec` and sources into a private env
+(not globalenv) to avoid shadowing harness functions. `metrics.R`'s `proc_order` is a
+hardcoded factor-level vector: a procedure name missing from it becomes `NA` and silently
+drops out of the summary. The harness's replication loop is serial, so the module's
+`mclapply` over `m` datasets is safe and is used.
+
+**Still not exercised (deferred to V2):** MID never fired (harness `Y` is complete) and
+the miceRanger Z block was a no-op (covariates complete), so the block-FCS *alternation*
+itself remains untested under Monte Carlo.
+
+### Validation track V2 — robustness sweep, and an under-coverage finding
+
+New harness pieces: [`validation/phase1/R/robustness.R`](validation/phase1/R/robustness.R)
+(MCAR-outcome injector, the 10-scenario grid, per-scenario procedure gating) and
+[`validation/phase1/run_v2_robustness.R`](validation/phase1/run_v2_robustness.R). The V1
+adapter was generalised to any subset of censored exposures, MCAR covariates, and a
+missing outcome.
+
+**Parallelism rewrite.** `run_phase1.R` parallelises *inside* procedures and runs
+replications serially, which idles most of a 24-core box when the inner work is small.
+V2 inverts it: one fork per (scenario × rep) task, `mc.preschedule = FALSE` for load
+balancing (task cost varies ~65×), every procedure told `n_cores = 1`, and the pipeline
+sourced **once in the parent** so forks inherit it copy-on-write. Measured **98% worker
+efficiency** across 2750 tasks.
+
+**Result: 9/10 scenarios pass, 2.95 h / 63.7 CPU-h, zero failures.** Bias never exceeds
+2.71% (bar: 3%) — including every exposure censored, n = 80 000, skew 0.75, rho 0.8.
+MID and the miceRanger Z block are now genuinely exercised (both were dead code in V1):
+600 multi-exposure tasks and 600 MID tasks, all with correct row counts, zero warnings.
+
+**Finding — interval under-coverage, not bias.** `combined` (all exposures censored +
+20% MCAR covariates + 20% missing outcomes) has coverage **0.893**, under the
+pre-registered 0.90 investigate line. Diagnosis: intervals are too narrow, not
+mis-centred. (CI width / 3.92) / empirical SE correlates **0.837** with coverage and
+tracks Z-block involvement — 1.00–1.13 where the Z block is idle (coverage 0.950–0.970),
+0.96 with MID only, 0.90 at 40% MCAR, 0.84 with both. Dose-dependent (20% MCAR is fine,
+40% is not), compounding, and the **oracle stays calibrated (0.95–1.07) throughout**, so
+it is the procedure and not the harness.
+
+Leading hypothesis, **not established**: the X block draws its parameters from a
+posterior (proper MI) and is calibrated wherever it works alone; miceRanger's RF/PMM draw
+does not, and improper MI understates between-imputation variance — exactly the observed
+signature. If so the implication reaches beyond this feature to **any** pipeline analysis
+with substantial covariate missingness. Discriminating test running: `combined` at
+`m`=100 on identical data — improper MI is a bias in the variance estimator and cannot be
+fixed by raising `m`, whereas small-`m` Rubin noise would shrink.
+
+**Cost is dominated by the Z block, not the censored X block.** 90 miceRanger fits per
+replication (`outer_sweeps` × `m`). A replication at n = 80 000 with complete covariates
+costs 367 s; at n = 800 *with* MAR covariates and a missing outcome it costs 266 s —
+covariate missingness, not sample size, drives cost on this path.
+
+**Reproducibility bug fixed.** Per-task seeds keyed on the scenario's index in the
+*filtered* list, so `SCENARIOS=` subsets silently generated different data than the same
+scenario in a full run — which would have confounded the `m`=30 vs `m`=100 comparison.
+Now keyed on the canonical unfiltered position: subsets stay comparable to full runs and
+the completed run remains reproducible.
+
+Findings: [`validation/phase1/FINDINGS_v2.md`](validation/phase1/FINDINGS_v2.md).
+
+### Validation track V4 — the under-coverage attributed: improper MI in the Z block
+
+**Result (5 scenarios × 4 arms × 300 reps, 1500 tasks, 5.25 h, zero failures).** V2's
+interval under-coverage is caused by **improper multiple imputation in the miceRanger Z
+block**, which understates the between-imputation variance `B` by **8–59%**, scaling with
+how much the Z block imputes. `Ubar` moves far less — the textbook improper-MI signature.
+Swapping the Z block for a proper Bayesian draw restores calibration everywhere it works:
+width/SE 0.899 → 1.085 (`mcar_z40`), 0.964 → 1.003 (`missing_y20`), 0.843 → 0.973
+(`combined`). In `base`, where nothing is imputed by that block, all four arms return
+identical numbers — the negative control that makes the rest interpretable.
+
+**MID is exonerated and should stay.** Disabling it makes calibration *worse*
+(width/SE 0.964 → 0.858; 0.843 → 0.754) and introduces **−6 to −7% bias**, against a 3%
+bar. Keeping imputed-`Y` rows pulls the estimate toward the imputation model — exactly
+what MID exists to prevent.
+
+**The V2 two-mechanism account is WITHDRAWN.** It rested on "`missing_y20` has complete
+covariates, so the Z block barely works." That premise was false:
+`run_censored_exposure_block_fcs()` sets `impute_y <- TRUE` internally so the X block can
+condition on a complete `Y`, so in that scenario the Z block is busy imputing **`Y`
+itself** — improperly. One mechanism explains all ten V2 scenarios.
+
+**Scope: this is not a censored-exposure finding.** The Z block is the pipeline's general
+row-level imputation path, so any analysis with substantial covariate or outcome
+missingness should be expected to produce intervals that are too narrow.
+
+**The fix is NOT to adopt the V4 instrument.** `.v4_proper_row_imputation()` is a
+deliberately simple linear/logistic draw built to isolate the mechanism. It overshoots
+(width/SE 1.085 in `mcar_z40`, i.e. ~9% too wide) and its bias is marginally worse
+(−3.18% vs −2.11%). The real fix is to make the Z block propagate parameter uncertainty
+properly. The V4 harness measures any candidate directly.
+
+Findings: [`validation/phase1/FINDINGS_v4.md`](validation/phase1/FINDINGS_v4.md).
+
+**New harness pieces:** `R/proper_impute.R` (the proper-draw instrument),
+`run_v4_variance.R` / `.sh`, three isolating variants in `procedures_pipeline.R`, and
+`rubin_pool()` now returns the variance decomposition (`ubar`, `b`, `fmi`) — the piece V2
+lacked, without which the shortfall could not have been localised.
+
+**Operational note — `resume` is not trusted.** Resuming from an accumulated checkpoint
+reproducibly killed the parent process right after the first chunk, in both detached and
+foreground runs, while an identical configuration with a fresh checkpoint completed all 35
+chunks. The checkpoint's structure looks correct (right columns, classes, procedures) and
+the cause was not found; `resume` is therefore off by default with a warning. This costs
+nothing operationally: the checkpoint still flushes after every chunk and partial results
+are recoverable via `summarise_v4(readRDS("results/v4_checkpoint.rds"))`. Several hours
+were lost to misdiagnosing this as an environment problem (nohup, screen, caffeinate, OOM,
+sleep) before a user-launched run after a reboot ruled all of that out.
+
+### Known gap (not addressed)
+
+The four translated READMEs (`docs/README.{de,es,fr,ja}.md`) contain **zero** mentions
+of `leftcens` or the censored-exposure strategy — they predate the whole feature. This
+needs a proper translation pass, not a lone install line.
+
+---
 ## Ideas for future development
 
 ### Pipeline

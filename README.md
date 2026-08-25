@@ -136,6 +136,7 @@ for the censored exposures. It handles multiple exposures and the three-tier
   detected-not-quantified interval. In the dictionary mark each exposure
   `role = exposure`, `impute_target = FALSE`, `use_in_model = TRUE`.
 - **Requires** `leftcens` (>= 0.9.0), which exports `impute_censored_conditional()`.
+  Not on CRAN: `remotes::install_github("fabregithub/leftcens@v0.9.0")`.
 - **Config knobs** (`censored_exposure`): `exposure_vars`; a reduced `predictors`
   set (condition on the *other* analytes + outcome + key determinants, not the
   full covariate set — the X-block cost is ~`k^2`); `outer_sweeps`; `margin`
@@ -145,6 +146,51 @@ for the censored exposures. It handles multiple exposures and the three-tier
 - Produces the standard `imputed_###.rds` + manifest, so **Steps 4–12 are
   unchanged**. Method background, the validation study, and the design rationale are
   in [`validation/`](validation/).
+
+**Validation status.** On a Monte-Carlo study with a known exposure–response function
+(300 replications per cell, `m` = 30, `n` = 800), this strategy recovers the focal
+censored-exposure coefficient with **relative bias under 1% and 95% interval coverage
+of 0.957** at both 20% and 40% non-detects — statistically indistinguishable from an
+oracle fitted on the uncensored data. Imputing the same exposure *without* the outcome
+(the conventional pre-step) attenuates that coefficient by **−5.9% at 20% ND and −14.1%
+at 40% ND**, with coverage falling to 0.82. The strategy is also markedly more efficient
+than complete-case analysis (RMSE 0.049 vs 0.072 at 40% ND). These figures are for the
+shipped pipeline code, not a prototype of it — full tables and caveats in
+[`validation/phase1/FINDINGS_v1.md`](validation/phase1/FINDINGS_v1.md).
+
+> **Scope of that claim.** It holds for **additive / per-analyte** exposure–response
+> functions. For **mixture / BKMR-style surfaces** with interactions and curvature, a
+> linear congenial imputation — which is what this strategy performs — remains biased
+> (+7.5% at 20% ND, +19.6% at 40% ND, coverage falling to 0.66). Mixture analyses need
+> substantive-model-compatible imputation; see
+> [`validation/PLAN_leftcensored_exposure_integration.md`](validation/PLAN_leftcensored_exposure_integration.md) §7.7.
+
+A follow-up robustness sweep (10 scenarios × 300 replications) confirmed the bias result
+holds well outside the tested corner — with **every** exposure censored, at **n = 80 000**,
+under right-skew, and at exposure correlation 0.8, relative bias never exceeded 2.7%.
+
+> **Caveat on interval width — applies to the whole pipeline, not just this strategy.**
+> The sweep found that 95% credible intervals become **anti-conservative when a
+> substantial fraction of the data is imputed**: coverage was 0.95–0.97 with complete
+> covariates, 0.93 at 40% MCAR covariates, and **0.89** with 20% MCAR covariates plus 20%
+> missing outcomes. Point estimates stayed sound throughout (bias ≤2.7%) — the intervals
+> are too narrow, not mis-centred.
+>
+> A follow-up study **attributed the cause**: the `miceRanger` imputation step is
+> *improper* multiple imputation in Rubin's sense — it does not draw imputation-model
+> parameters from a posterior — so the between-imputation variance is understated by
+> **8–59%**, scaling with how much is imputed. Replacing that step with a proper Bayesian
+> draw restores calibration. This is a property of the pipeline's **general** row-level
+> imputation path, so it applies to any analysis with substantial missingness, not only to
+> censored exposures. Raising `m` does not help, and the
+> multiple-imputation-then-deletion step is not implicated (disabling it makes matters
+> worse). Details and numbers:
+> [`validation/phase1/FINDINGS_v4.md`](validation/phase1/FINDINGS_v4.md).
+>
+> **Practical guidance until the imputation step is fixed:** point estimates and their
+> ordering are reliable; treat reported interval widths as a **lower bound** when a large
+> share of covariate or outcome values is imputed, and be correspondingly cautious about
+> borderline "significant" findings in that regime.
 
 ---
 
@@ -2616,6 +2662,16 @@ If you plan to use the Cox proportional hazards family (`family = "cox"`), the `
 ```r
 install.packages("survival")
 ```
+
+If you plan to use the censored-exposure block-FCS strategy (`strategy = "censored_exposure_block_fcs"`, for a left-/interval-censored focal exposure), the `leftcens` package is also required at imputation time. It is not on CRAN — install it from GitHub, pinned to a release tag:
+
+```r
+install.packages("remotes")
+
+remotes::install_github("fabregithub/leftcens@v0.9.0")
+```
+
+Version **0.9.0 or later** is required: it exports `impute_censored_conditional()`, the outcome-aware, skew-aware conditional draw this strategy is built on. Earlier versions (≤ 0.8.0) do not, and `01_validate_config.R` will stop with an explanatory error.
 
 Run in R or RStudio to install `cmdstanr` from the Stan R-universe repository:
 

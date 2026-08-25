@@ -198,7 +198,9 @@ analysis_spec <- list(
     # "censored_exposure_block_fcs"). Congenial imputation for the special case
     # where a focal EXPOSURE is left-/interval-censored below a reporting limit;
     # imputing it without the outcome biases the exposure-response coefficient.
-    # Requires leftcens >= 0.9.0. Input: each exposure `X` carries per-row bounds
+    # Requires leftcens >= 0.9.0 (not on CRAN):
+    #   remotes::install_github("fabregithub/leftcens@v0.9.0")
+    # Input: each exposure `X` carries per-row bounds
     # `X_lo` / `X_hi` (X_lo == X_hi where observed; X_lo <= 0 with X_hi = LOD for a
     # left-censored non-detect). In 00_variable_dictionary.csv mark each exposure
     # role = "exposure", impute_target = FALSE, use_in_model = TRUE, and
@@ -223,7 +225,10 @@ analysis_spec <- list(
     #   log_scale     = TRUE,            # impute on the log scale (decoupled from dict `scale`)
     #   lo_suffix     = "_lo",           # bound-column suffixes (leftcens interval form)
     #   hi_suffix     = "_hi",
-    #   mid_delete_imputed_y = TRUE      # MID: drop imputed-Y rows before the brms fit
+    #   mid_delete_imputed_y = TRUE,     # MID: drop imputed-Y rows before the brms fit
+    #   n_cores       = NULL             # parallelises the m completed datasets;
+    #                                    #   NULL = parallel$impute_workers. Forks, so
+    #                                    #   unix only (forced to 1 on Windows).
     # ),
 
     # ----------------------------------------------------------

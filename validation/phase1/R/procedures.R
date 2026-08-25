@@ -32,22 +32,34 @@ fit_lm_estimand <- function(data, truth) {
 }
 
 #' Rubin's rules for one scalar estimand across m completed-data fits.
+#'
+#' Also returns the variance DECOMPOSITION -- `ubar` (within-imputation), `b`
+#' (between-imputation), and `fmi` (fraction of missing information). Track V2
+#' found interval under-coverage that the pooled SE alone cannot attribute: a
+#' shortfall in `b` points at improper imputation, a shortfall in `ubar` points
+#' somewhere else entirely. Extra names only -- callers index by name, so this is
+#' backward compatible.
 rubin_pool <- function(est, var, conf = 0.95) {
   ok <- is.finite(est) & is.finite(var)
   est <- est[ok]; var <- var[ok]
   m <- length(est)
-  if (m == 0L) return(c(est = NA, se = NA, ci_lo = NA, ci_hi = NA, df = NA))
+  if (m == 0L) return(c(est = NA, se = NA, ci_lo = NA, ci_hi = NA, df = NA,
+                        ubar = NA, b = NA, fmi = NA, m_used = 0))
   qbar <- mean(est); ubar <- mean(var)
   b <- if (m > 1L) stats::var(est) else 0
   Tt <- ubar + (1 + 1 / m) * b
   df <- if (b > 0) (m - 1) * (1 + ubar / ((1 + 1 / m) * b))^2 else Inf
+  fmi <- if (Tt > 0) ((1 + 1 / m) * b) / Tt else NA_real_
   se <- sqrt(Tt); tcrit <- stats::qt(1 - (1 - conf) / 2, df)
-  c(est = qbar, se = se, ci_lo = qbar - tcrit * se, ci_hi = qbar + tcrit * se, df = df)
+  c(est = qbar, se = se, ci_lo = qbar - tcrit * se, ci_hi = qbar + tcrit * se,
+    df = df, ubar = ubar, b = b, fmi = fmi, m_used = m)
 }
 
-one_row <- function(procedure, est, se, ci_lo, ci_hi, note = "") {
+one_row <- function(procedure, est, se, ci_lo, ci_hi, note = "",
+                    ubar = NA_real_, b = NA_real_, fmi = NA_real_) {
   data.frame(procedure = procedure, estimate = est, se = se,
              ci_lo = ci_lo, ci_hi = ci_hi, note = note,
+             ubar = unname(ubar), b = unname(b), fmi = unname(fmi),
              stringsAsFactors = FALSE)
 }
 
@@ -112,7 +124,8 @@ proc_leftcens_prestep <- function(bundle, m = 10L, seed = NULL, n_cores = 1L) {
   }
   p <- rubin_pool(ests, vars)
   one_row("leftcens_prestep", p["est"], p["se"], p["ci_lo"], p["ci_hi"],
-          sprintf("m=%d", length(mi$imputations)))
+          sprintf("m=%d", length(mi$imputations)),
+          ubar = p["ubar"], b = p["b"], fmi = p["fmi"])
 }
 
 # ---- procedure 4: congenial censored MI including Y (the gold standard) ------
@@ -225,7 +238,8 @@ proc_censored_mi_y_shash <- function(bundle, m = 20L, seed = NULL) {
   }
   pooled <- rubin_pool(ests, vars)
   note <- if (truth$erf_form == "mixture") sprintf("m=%d; linear-approx (§7.7)", m) else sprintf("m=%d", m)
-  one_row("cens_mi_y_shash", pooled["est"], pooled["se"], pooled["ci_lo"], pooled["ci_hi"], note)
+  one_row("cens_mi_y_shash", pooled["est"], pooled["se"], pooled["ci_lo"], pooled["ci_hi"], note,
+          ubar = pooled["ubar"], b = pooled["b"], fmi = pooled["fmi"])
 }
 
 # ---- procedure 4b: brms joint model (DEPRECATED in scaffold) -----------------
@@ -316,13 +330,24 @@ proc_brms_joint <- function(bundle, control = list(), cache = NULL) {
 run_procedures <- function(bundle, which = c("oracle", "complete_case",
                                              "leftcens_prestep", "cens_mi_y_shash"),
                            m = 10L, seed = NULL, n_cores = 1L,
-                           brms_control = list(), brms_cache = NULL) {
+                           brms_control = list(), brms_cache = NULL,
+                           ce_control = list()) {
   out <- list()
   if ("oracle" %in% which)           out$oracle <- proc_oracle(bundle)
   if ("complete_case" %in% which)    out$cc     <- proc_complete_case(bundle)
   if ("leftcens_prestep" %in% which) out$lc     <- proc_leftcens_prestep(bundle, m = m, seed = seed, n_cores = n_cores)
   if ("cens_mi_y" %in% which)        out$cmy    <- proc_censored_mi_y(bundle, m = m, seed = seed)
   if ("cens_mi_y_shash" %in% which)  out$cmys   <- proc_censored_mi_y_shash(bundle, m = m, seed = seed)
+  .ce_args <- function(fun) fun(
+    bundle, m = m, seed = seed, n_cores = n_cores,
+    outer_sweeps = ce_control$outer_sweeps %||% 3L,
+    margin       = ce_control$margin %||% "shash",
+    project_root = ce_control$project_root)
+  if ("pipeline_block_fcs" %in% which)      out$pipe  <- .ce_args(proc_pipeline_block_fcs)
+  # Track V4 isolating variants (see procedures_pipeline.R).
+  if ("pipeline_properZ" %in% which)        out$pz    <- .ce_args(proc_pipeline_properZ)
+  if ("pipeline_noMID" %in% which)          out$nomid <- .ce_args(proc_pipeline_noMID)
+  if ("pipeline_properZ_noMID" %in% which)  out$pznm  <- .ce_args(proc_pipeline_properZ_noMID)
   if ("brms_joint" %in% which)       out$brms   <- proc_brms_joint(bundle, control = brms_control, cache = brms_cache)
   do.call(rbind, out)
 }

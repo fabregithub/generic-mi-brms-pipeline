@@ -110,6 +110,7 @@ prepare_runtime_project() {
     "09_check_mo_parameter_columns.R"
     "10_publication_mo_results.R"
     "11_check_imputation_stability.R"
+    "12_export_draws.R"
     "fit_single_imputation.R"
     "run_all.R"
     "99_clean_fitting_results.sh"

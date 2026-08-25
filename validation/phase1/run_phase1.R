@@ -37,7 +37,7 @@ if (is.null(.here) || !nzchar(.here)) {
   f <- sub("^--file=", "", a[grep("^--file=", a)])
   .here <- if (length(f)) dirname(normalizePath(f)) else "validation/phase1"
 }
-for (f in c("dgp.R", "censoring.R", "procedures.R", "metrics.R")) {
+for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R", "metrics.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -51,7 +51,7 @@ run_phase1 <- function(config = "quick", n_rep = NULL, m = NULL, n = NULL,
                        procs = NULL, erf_forms = NULL, nd_fracs = NULL,
                        base_seed = 20260813L, p = 3L, n_cores = 1L,
                        rho = 0.4, skew = 0.0, sigma_y = 1.0,
-                       brms_control = list(), verbose = TRUE) {
+                       brms_control = list(), ce_control = list(), verbose = TRUE) {
   full <- identical(config, "full")
   n_rep     <- n_rep     %||% (if (full) 300L else 50L)
   m         <- m         %||% (if (full) 30L else 10L)
@@ -95,7 +95,8 @@ run_phase1 <- function(config = "quick", n_rep = NULL, m = NULL, n = NULL,
 
       res <- run_procedures(bundle, which = procs, m = m,
                             seed = base_seed + r, n_cores = n_cores,
-                            brms_control = brms_control, brms_cache = brms_cache)
+                            brms_control = brms_control, brms_cache = brms_cache,
+                            ce_control = ce_control)
       res$rep <- r; res$erf_form <- erf_form; res$nd_frac <- nd_frac
       res$estimand_true <- truth$estimand_true
       k <- k + 1L; raw[[k]] <- res
@@ -118,6 +119,7 @@ run_phase1 <- function(config = "quick", n_rep = NULL, m = NULL, n = NULL,
   meta <- list(config = config, n_rep = n_rep, m = m, n = n, p = p,
                n_cores = n_cores, procs = procs, erf_forms = erf_forms,
                nd_fracs = nd_fracs, rho = rho, skew = skew, sigma_y = sigma_y,
+               ce_control = ce_control,
                base_seed = base_seed, timestamp = Sys.time())
   list(raw = raw, summary = summary, meta = meta)
 }
@@ -143,8 +145,15 @@ if (sys.nframe() == 0L) {
   dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
   options(phase1.results_dir = results_dir)        # enables per-cell checkpointing
 
+  ce_control <- list(
+    outer_sweeps = if (nzchar(Sys.getenv("SWEEPS"))) as.integer(Sys.getenv("SWEEPS")) else NULL,
+    margin       = if (nzchar(Sys.getenv("MARGIN"))) Sys.getenv("MARGIN") else NULL,
+    project_root = if (nzchar(Sys.getenv("PIPELINE_ROOT"))) Sys.getenv("PIPELINE_ROOT") else NULL
+  )
+
   res <- run_phase1(config = config, n_rep = n_rep, m = m, n = n, n_cores = ncores,
-                    procs = procs, erf_forms = erf, nd_fracs = nd, base_seed = seed)
+                    procs = procs, erf_forms = erf, nd_fracs = nd, base_seed = seed,
+                    ce_control = ce_control)
 
   cat("\n================ Phase 1 summary (focal estimand b_logX1) ================\n")
   print_phase1(res$summary)

@@ -75,6 +75,135 @@ safe_step("STEP 1: Validate configuration", {
     )
   }
 
+  if (identical(analysis_spec$imputation$strategy, "censored_exposure_block_fcs")) {
+    if (!requireNamespace("leftcens", quietly = TRUE) ||
+        !"impute_censored_conditional" %in% getNamespaceExports("leftcens")) {
+      stop(
+        "strategy = 'censored_exposure_block_fcs' requires leftcens >= 0.9.0 ",
+        "(exporting impute_censored_conditional()). Install it with: ",
+        "remotes::install_github(\"fabregithub/leftcens@v0.9.0\")"
+      )
+    }
+
+    ce <- analysis_spec$imputation$censored_exposure
+
+    if (is.null(ce) || length(ce$exposure_vars) == 0) {
+      stop(
+        "strategy = 'censored_exposure_block_fcs' requires ",
+        "analysis_spec$imputation$censored_exposure$exposure_vars."
+      )
+    }
+
+    lo_suffix <- ce$lo_suffix %||% "_lo"
+    hi_suffix <- ce$hi_suffix %||% "_hi"
+
+    check_required_vars(raw_data, ce$exposure_vars, "censored exposure variables")
+    check_required_vars(
+      raw_data,
+      c(paste0(ce$exposure_vars, lo_suffix), paste0(ce$exposure_vars, hi_suffix)),
+      paste0("censored exposure bound columns (", lo_suffix, "/", hi_suffix, ")")
+    )
+
+    margin <- ce$margin %||% "shash"
+    if (!margin %in% c("shash", "gaussian")) {
+      stop(
+        "censored_exposure$margin must be 'shash' or 'gaussian', not '",
+        margin, "'."
+      )
+    }
+
+    # The X block conditions on this predictor set. Including the outcome is the
+    # whole point of this strategy (congeniality); omitting it reproduces the
+    # biased no-Y pre-step. Auto (NULL) always includes the outcome.
+    if (!is.null(ce$predictors)) {
+      check_required_vars(raw_data, ce$predictors, "censored_exposure$predictors")
+
+      if (!analysis_spec$outcome$y_var %in% ce$predictors) {
+        warning(
+          "censored_exposure$predictors does not include the outcome '",
+          analysis_spec$outcome$y_var,
+          "'. The X block will then impute the exposure WITHOUT the outcome, ",
+          "which is the uncongenial pre-step this strategy exists to avoid ",
+          "(attenuates the exposure-response coefficient)."
+        )
+      }
+    }
+
+    for (x in ce$exposure_vars) {
+      lo_col <- paste0(x, lo_suffix)
+      hi_col <- paste0(x, hi_suffix)
+      lo <- raw_data[[lo_col]]
+      hi <- raw_data[[hi_col]]
+
+      if (!is.numeric(lo) || !is.numeric(hi)) {
+        stop(
+          "Censored exposure bound columns must be numeric: ",
+          lo_col, " / ", hi_col, "."
+        )
+      }
+
+      if (all(is.na(lo)) || all(is.na(hi))) {
+        stop(
+          "Censored exposure '", x, "' has an all-missing bound column (",
+          lo_col, " / ", hi_col, ")."
+        )
+      }
+
+      inverted <- is.finite(lo) & is.finite(hi) & lo > hi
+      if (any(inverted)) {
+        stop(
+          "Censored exposure '", x, "' has ", sum(inverted),
+          " row(s) where ", lo_col, " > ", hi_col,
+          ". Bounds must satisfy lo <= hi."
+        )
+      }
+
+      n_cens <- sum(!(is.finite(lo) & is.finite(hi) & abs(hi - lo) < 1e-9))
+      log_msg(
+        "Censored exposure", x, ":", n_cens, "of", nrow(raw_data),
+        "row(s) censored/interval-valued"
+      )
+    }
+
+    # Dictionary flags: the exposure must reach the model, and must NOT be a
+    # miceRanger target (the X block owns it).
+    ce_dict <- var_dict %>%
+      dplyr::filter(.data$var %in% ce$exposure_vars)
+
+    not_in_model <- ce_dict %>%
+      dplyr::filter(!.data$use_in_model %in% TRUE) %>%
+      dplyr::pull(.data$var)
+
+    if (length(not_in_model) > 0) {
+      stop(
+        "Censored exposure(s) must be marked use_in_model = TRUE in ",
+        "00_variable_dictionary.csv: ",
+        paste(not_in_model, collapse = ", ")
+      )
+    }
+
+    as_target <- ce_dict %>%
+      dplyr::filter(.data$impute_target %in% TRUE) %>%
+      dplyr::pull(.data$var)
+
+    if (length(as_target) > 0) {
+      warning(
+        "Censored exposure(s) marked impute_target = TRUE in the dictionary: ",
+        paste(as_target, collapse = ", "),
+        ". The censored X block imputes these, not miceRanger; set ",
+        "impute_target = FALSE to make that explicit."
+      )
+    }
+
+    log_msg(
+      "Validated censored-exposure block-FCS strategy |",
+      "exposures:", paste(ce$exposure_vars, collapse = ", "),
+      "| margin:", margin,
+      "| outer_sweeps:", ce$outer_sweeps %||% 5L,
+      "| MID:", isTRUE(ce$mid_delete_imputed_y %||% TRUE)
+    )
+  }
+
 
   dat <- prepare_raw_data(raw_data, analysis_spec, var_dict)
   model_spec <- build_model_spec(analysis_spec, var_dict, dat)

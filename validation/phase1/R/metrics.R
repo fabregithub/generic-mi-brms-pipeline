@@ -38,7 +38,8 @@ summarise_phase1 <- function(raw) {
   })
   out <- do.call(rbind, rows)
   proc_order <- c("oracle", "complete_case", "leftcens_prestep",
-                  "cens_mi_y", "cens_mi_y_shash", "brms_joint")
+                  "cens_mi_y", "cens_mi_y_shash", "pipeline_block_fcs",
+                  "brms_joint")
   out$procedure <- factor(out$procedure, levels = proc_order)
   out <- out[order(out$erf_form, out$nd_frac, out$procedure), ]
   rownames(out) <- NULL
