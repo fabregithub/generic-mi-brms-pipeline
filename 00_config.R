@@ -245,7 +245,26 @@ analysis_spec <- list(
     # additional imputations needed to reach the current m, without
     # touching any existing imputed-data file. Used automatically by the
     # mi_stability$auto_increment loop below.
-    allow_extend = FALSE
+    allow_extend = FALSE,
+
+    # ----------------------------------------------------------
+    # Proper multiple imputation (default TRUE since v1.4.0)
+    # ----------------------------------------------------------
+    # miceRanger fits a random forest to the current completed data and imputes
+    # from it, without drawing the imputation model's parameters from a
+    # posterior. That is *improper* MI: between-imputation variance comes out too
+    # small and pooled credible intervals are too narrow -- measured at up to 16%
+    # too narrow, dropping 95% coverage to 0.89 when a large share of the data is
+    # imputed. Raising m does not help; it is a bias in the variance estimator.
+    #
+    # TRUE bootstraps the training data once per imputation, so the forest itself
+    # varies across imputations and that uncertainty reaches the intervals. It
+    # closes most of the gap at moderate missingness and improves it everywhere,
+    # at the cost of one extra prediction pass per imputation.
+    #
+    # Set FALSE only to reproduce an analysis run with a pre-v1.4.0 version.
+    # Evidence: validation/phase1/FINDINGS_v4.md and FINDINGS_v5.md.
+    proper_draw = TRUE
   ),
 
   # ------------------------------------------------------------

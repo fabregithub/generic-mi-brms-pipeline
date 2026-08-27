@@ -61,8 +61,28 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive") {
 #' @param skew sinh-arcsinh skewness applied to the log-exposures (0 = none).
 #' @param sigma_y Residual SD of the outcome.
 #' @return A list: `data` (data.frame with Y, logX1.., Z1, Z2), `truth`.
+#' @param z_form Structure of the covariates. "linear" (default) reproduces the
+#'   original design: Z1 ~ N(0,1) and Z2 ~ Bern(0.5), independent of the
+#'   exposures. "nonlinear" makes Z1 a non-linear, interacting function of the
+#'   NON-focal exposures and Z2.
+#'
+#'   WHY "nonlinear" EXISTS (Track 05). Every covariate in the original design is
+#'   linear and Gaussian, so a *parametric* imputation model for Z1 is correctly
+#'   specified and is never penalised for misspecification. That makes it
+#'   impossible to compare a flexible imputer (random forest) against a
+#'   parametric one on equal terms -- the comparison can only reward calibration,
+#'   never punish getting the conditional mean wrong. Under "nonlinear", a linear
+#'   imputation model for Z1 IS misspecified while a forest can capture the
+#'   structure, so the two families finally face a fair test.
+#'
+#'   The non-linearity is deliberately built from the non-focal exposures
+#'   (logX2, logX3) and Z2 -- never the focal logX1 -- so the focal estimand's
+#'   geometry is untouched. The OUTCOME model stays exactly linear in
+#'   (logX, Z), so `dgp_formula()` remains correctly specified and `b[1]` is
+#'   still recovered without bias by every procedure. Only the imputation model
+#'   for Z1 becomes hard.
 simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
-                              skew = 0.0, sigma_y = 1.0) {
+                              skew = 0.0, sigma_y = 1.0, z_form = "linear") {
   p <- length(truth$b)
   q <- length(truth$gamma)
 
@@ -75,7 +95,27 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
   colnames(logX) <- paste0("logX", seq_len(p))
 
   # --- covariates: one continuous, one binary ---------------------------------
-  Z <- data.frame(Z1 = stats::rnorm(n), Z2 = stats::rbinom(n, 1, 0.5))
+  z2 <- stats::rbinom(n, 1, 0.5)
+
+  if (identical(z_form, "nonlinear")) {
+    # Z1 as a non-linear, interacting function of the NON-focal exposures and Z2.
+    # tanh gives saturation, the square gives curvature, the product gives an
+    # interaction -- none of which a linear imputation model can represent.
+    x2 <- if (p >= 2L) logX[, 2] else rep(0, n)
+    x3 <- if (p >= 3L) logX[, 3] else rep(0, n)
+    z1_raw <- 0.9 * tanh(1.8 * x2) +
+              0.45 * (x3^2 - 1) +
+              -0.7 * x2 * z2 +
+              0.4 * z2 +
+              stats::rnorm(n, 0, 0.6)
+    # Standardise so Z1 keeps a unit-SD scale and gamma retains its meaning,
+    # making the linear and non-linear designs comparable.
+    z1 <- as.vector(scale(z1_raw))
+  } else {
+    z1 <- stats::rnorm(n)
+  }
+
+  Z <- data.frame(Z1 = z1, Z2 = z2)
   Zmat <- as.matrix(Z[, seq_len(q), drop = FALSE])
 
   # --- outcome ----------------------------------------------------------------

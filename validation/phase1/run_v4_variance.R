@@ -46,6 +46,10 @@
 #   SCENARIOS  comma list                       (default base,mcar_z40,missing_y20,combined)
 #   ARMS       comma list of arms               (default: all four)
 #   SWEEPS / MARGIN / PIPELINE_ROOT             as V2
+#   BART_NTREE number of trees for the BART arm  (default 50)
+#   BART_NSKIP BART burn-in iterations           (default 100)
+#   OUT_TAG    prefix for result/checkpoint files, so several runs can be chained
+#              in one session without overwriting each other (default "v4")
 #
 # SEED note: the default matches V2 and the canonical scenario indexing is shared,
 # so arm `pipeline_block_fcs` here sees byte-identical data to V2's corresponding
@@ -65,7 +69,8 @@ if (is.null(.here) || !nzchar(.here)) {
   .here <- if (length(f)) dirname(normalizePath(f)) else "validation/phase1"
 }
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
-            "metrics.R", "robustness.R", "proper_impute.R")) {
+            "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
+            "bart_impute.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -75,8 +80,9 @@ getenv <- function(key, default) {
 }
 split_csv <- function(x) trimws(strsplit(x, ",")[[1]])
 
-V4_ARMS <- c("pipeline_block_fcs", "pipeline_properZ",
-             "pipeline_noMID", "pipeline_properZ_noMID")
+V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
+             "pipeline_bartMI", "pipeline_properZ", "pipeline_noMID",
+             "pipeline_properZ_noMID")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 
@@ -324,6 +330,8 @@ run_v4 <- function(n_rep = 150L, m = 30L, base_seed = 20260825L, n_cores = NULL,
   summary <- summarise_v4(raw)
   meta <- list(n_rep = n_rep, m = m, base_seed = base_seed, n_cores = n_cores,
                sweeps = sweeps, margin = margin, arms = arms,
+               bart_ntree = getOption("v7.bart.ntree", 50L),
+               bart_nskip = getOption("v7.bart.nskip", 100L),
                scenarios = which_scenarios, n_tasks = length(tasks),
                n_worker_failures = sum(bad), n_task_errors = n_task_err,
                elapsed_sec = elapsed, timestamp = Sys.time())
@@ -347,9 +355,17 @@ if (sys.nframe() == 0L) {
   arms   <- if (nzchar(Sys.getenv("ARMS")))      split_csv(Sys.getenv("ARMS"))      else V4_ARMS
   proot  <- if (nzchar(Sys.getenv("PIPELINE_ROOT"))) Sys.getenv("PIPELINE_ROOT") else NULL
 
+  # BART tuning, exposed so a tuning-sensitivity run needs no file edit.
+  if (nzchar(Sys.getenv("BART_NTREE")))
+    options(v7.bart.ntree = as.integer(Sys.getenv("BART_NTREE")))
+  if (nzchar(Sys.getenv("BART_NSKIP")))
+    options(v7.bart.nskip = as.integer(Sys.getenv("BART_NSKIP")))
+
+  tag <- getenv("OUT_TAG", "v4")
+
   results_dir <- file.path(.here, "results")
   dir.create(results_dir, showWarnings = FALSE, recursive = TRUE)
-  options(v4.checkpoint = file.path(results_dir, "v4_checkpoint.rds"))
+  options(v4.checkpoint = file.path(results_dir, paste0(tag, "_checkpoint.rds")))
 
   res <- run_v4(n_rep = n_rep, m = m, base_seed = seed, n_cores = ncores,
                 which_scenarios = scs, arms = arms, sweeps = sweeps,
@@ -359,10 +375,10 @@ if (sys.nframe() == 0L) {
   print_v4(res$summary)
 
   stamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-  saveRDS(res, file.path(results_dir, "v4_latest.rds"), compress = FALSE)
-  saveRDS(res, file.path(results_dir, sprintf("v4_%s.rds", stamp)), compress = FALSE)
-  utils::write.csv(res$summary, file.path(results_dir, "v4_summary.csv"), row.names = FALSE)
-  utils::write.csv(res$raw, file.path(results_dir, "v4_raw.csv"), row.names = FALSE)
-  cat(sprintf("\nWrote results to %s (v4_latest.rds, v4_summary.csv, v4_raw.csv)\n",
-              results_dir))
+  saveRDS(res, file.path(results_dir, paste0(tag, "_latest.rds")), compress = FALSE)
+  saveRDS(res, file.path(results_dir, sprintf("%s_%s.rds", tag, stamp)), compress = FALSE)
+  utils::write.csv(res$summary, file.path(results_dir, paste0(tag, "_summary.csv")), row.names = FALSE)
+  utils::write.csv(res$raw, file.path(results_dir, paste0(tag, "_raw.csv")), row.names = FALSE)
+  cat(sprintf("\nWrote results to %s (%s_latest.rds, %s_summary.csv, %s_raw.csv)\n",
+              results_dir, tag, tag, tag))
 }

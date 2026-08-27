@@ -162,6 +162,10 @@
 
 ### Validation study (`validation/`)
 
+> **Status index:** [`validation/README.md`](validation/README.md) is the single place
+> showing what is validated, what is open and what is next. Keep it current — it is
+> the evidence base for the claims the README makes.
+
 - `validation/PLAN_leftcensored_exposure_integration.md` — the design/decision
   document (congeniality theory, the two-engine block-FCS, the estimand/scale
   gates, the joint-model reference).
@@ -364,6 +368,23 @@ itself** — improperly. One mechanism explains all ten V2 scenarios.
 row-level imputation path, so any analysis with substantial covariate or outcome
 missingness should be expected to produce intervals that are too narrow.
 
+**Does this affect earlier work? No.** The defect predates the left-censored feature — it
+lives in the general `run_row_level_imputation()` path — so the question was raised for the
+companion study that used an earlier tagged release. Answer: **not affected**. That study
+used a version tagged before the left-censored work began, and had very little
+missingness. The error is strongly dose-dependent: V4 measured 20% MCAR covariates as
+fully calibrated (width/SE 1.00, coverage 0.957), with degradation only appearing at 40%
+and above, or when the outcome is also imputed. Recorded here so the question does not
+have to be re-opened when the fix ships.
+
+**Back-compatibility position.** Old configs must keep *running* (config compatibility);
+identical *numbers* are not promised across versions — analyses cite the pipeline version
+they used instead. Two Step-1 checks added during this session were over-strict and were
+downgraded to warnings after review, because they would have rejected configs that
+previously ran: an unknown name in `censored_exposure$predictors` (the X block has always
+silently dropped these) and `use_in_model = FALSE` on a censored exposure (harmless when
+`predictors` is set explicitly, since the flag only feeds the auto predictor set).
+
 **The fix is NOT to adopt the V4 instrument.** `.v4_proper_row_imputation()` is a
 deliberately simple linear/logistic draw built to isolate the mechanism. It overshoots
 (width/SE 1.085 in `mcar_z40`, i.e. ~9% too wide) and its bias is marginally worse
@@ -386,6 +407,46 @@ nothing operationally: the checkpoint still flushes after every chunk and partia
 are recoverable via `summarise_v4(readRDS("results/v4_checkpoint.rds"))`. Several hours
 were lost to misdiagnosing this as an environment problem (nohup, screen, caffeinate, OOM,
 sleep) before a user-launched run after a reboot ruled all of that out.
+
+### v1.4.0 — proper multiple imputation is now the default (behaviour change)
+
+**`analysis_spec$imputation$proper_draw` defaults to `TRUE`.** The Z block now bootstraps
+its training data once per imputation (`run_row_level_imputation_proper()`), so the forest
+varies across imputations and that uncertainty reaches the intervals. Set it to `FALSE` to
+reproduce a pre-v1.4.0 analysis exactly.
+
+**This changes results.** Analyses with missing covariates or outcomes get wider intervals,
+and point estimates shift slightly. Config compatibility is preserved — old `00_config.R`
+files run unchanged — but numbers are not promised across versions, so analyses must cite
+the pipeline version used. The companion study is unaffected (pre-left-censored tag, very
+little missingness).
+
+**Evidence (V5, 5 scenarios × 5 arms × 300 reps, 8.05 h, zero failures):** the fix closes
+**66%** of the calibration shortfall at 40% covariate missingness (coverage 0.933 → 0.947,
+`B` +32.6%, t = 11.1), **42%** with a missing outcome, and **23%** under heavy combined
+missingness (coverage 0.893 → **0.910**). It never over-corrects (max width/SE 1.014
+against the linear instrument's 1.085), leaves already-calibrated cells alone, and has the
+**best bias of any variant tested**. Zero bootstrap fallbacks across 1500 tasks.
+
+**It is not a complete fix.** Under heavy combined missingness coverage reaches ~0.91, not
+0.95. The reason is worth remembering: **a random forest is already bagged**, so an outer
+bootstrap shifts it only slightly — bagging damps the very uncertainty the bootstrap is
+meant to inject. Measured on the same data, the bootstrap-on-forest inflated `B` by
++31–33% where a parametric posterior draw inflated it by +41–59%. The standard
+"bootstrap for properness" recipe is weaker for bagged learners than for parametric models.
+
+**Why we did NOT switch to `mice`.** The linear instrument calibrates better (0.973 vs
+0.878 in the worst cell) but the DGP has **linear-Gaussian covariates**, so a linear
+imputation model is correctly specified there and is never penalised for misspecification —
+and it already carries the worst bias of the three arms. `mice`'s `rf` method is
+essentially what we implemented. The simulation cannot currently distinguish "properly
+calibrated" from "correctly specified", so that choice is deferred until the DGP has
+non-linear covariates. Findings:
+[`validation/phase1/FINDINGS_v5.md`](validation/phase1/FINDINGS_v5.md).
+
+**Cost.** The proper path adds one prediction pass *per imputation* (`m` passes per
+completed set, not one). The V5 grid took 8.05 h against 5.25 h for the four-arm V4 grid.
+Production runs with large `m` and `n` should expect the Z block to cost meaningfully more.
 
 ### Known gap (not addressed)
 

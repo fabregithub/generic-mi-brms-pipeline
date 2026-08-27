@@ -53,11 +53,12 @@ inject_mcar_outcome <- function(data, y_frac = 0.0, y_col = "Y") {
 #' change the answer.
 .v2_scenario <- function(name, axis, ..., erf_form = "additive", nd_frac = 0.4,
                          n = 800L, m = 30L, n_rep = NULL, rho = 0.4, skew = 0.0,
-                         censor_all = FALSE, mcar_frac = 0.0, y_frac = 0.0) {
+                         censor_all = FALSE, mcar_frac = 0.0, y_frac = 0.0,
+                         z_form = "linear") {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
        skew = skew, censor_all = censor_all, mcar_frac = mcar_frac,
-       y_frac = y_frac)
+       y_frac = y_frac, z_form = z_form)
 }
 
 #' The V2 scenario grid (PLAN §7).
@@ -95,7 +96,19 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("skew075",         "skew",       skew = 0.75),
 
     # Axis 6 -- large n. Confirms the scale test at MC level.
-    .v2_scenario("large_n",         "scale",      n = big_n, n_rep = big_n_rep)
+    .v2_scenario("large_n",         "scale",      n = big_n, n_rep = big_n_rep),
+
+    # --- Track 05: non-linear covariates -------------------------------------
+    # The imputation model for Z1 is now genuinely hard (a linear model leaves
+    # ~0.39 of explainable R-squared on the table; see R/dgp.R). These mirror the
+    # three diagnostic cells so the linear and non-linear designs are directly
+    # comparable, and they are what lets a parametric imputer be PENALISED for
+    # misspecification rather than only rewarded for calibration.
+    .v2_scenario("nl_mcar_z40",     "nonlinear",  mcar_frac = 0.4, z_form = "nonlinear"),
+    .v2_scenario("nl_missing_y20",  "nonlinear",  y_frac = 0.2,    z_form = "nonlinear"),
+    .v2_scenario("nl_combined",     "nonlinear",  censor_all = TRUE,
+                                                  mcar_frac = 0.2, y_frac = 0.2,
+                                                  z_form = "nonlinear")
   )
 }
 
@@ -122,7 +135,8 @@ v2_procedures_for <- function(sc) {
 
 #' Build one bundle for a scenario (simulate -> censor -> thin).
 v2_make_bundle <- function(sc, truth) {
-  comp <- simulate_complete(sc$n, truth, rho = sc$rho, skew = sc$skew)
+  comp <- simulate_complete(sc$n, truth, rho = sc$rho, skew = sc$skew,
+                            z_form = sc$z_form %||% "linear")
   p <- length(truth$b)
   which_cens <- if (isTRUE(sc$censor_all)) seq_len(p) else 1L
 

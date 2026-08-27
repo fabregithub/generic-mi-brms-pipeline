@@ -42,6 +42,7 @@ export SEED="${SEED:-20260825}"      # matches V2 -> reference arm sees identica
 export NCORES="${NCORES:-22}"
 export SWEEPS="${SWEEPS:-3}"
 export MARGIN="${MARGIN:-shash}"
+export OUT_TAG="${OUT_TAG:-v4}"
 
 if [[ ! -f "${PIPELINE_ROOT}/00_censored_exposure.R" ]]; then
   echo "ERROR: PIPELINE_ROOT='${PIPELINE_ROOT}' has no 00_censored_exposure.R" >&2
@@ -61,6 +62,7 @@ PIDF="logs/v4_${STAMP}.pid"
   echo "N_REP=${N_REP} M=${M} SEED=${SEED} NCORES=${NCORES} SWEEPS=${SWEEPS} MARGIN=${MARGIN}"
   echo "SCENARIOS=${SCENARIOS:-<default: base,mcar_z40,missing_y20,combined>}"
   echo "ARMS=${ARMS:-<default: all four>}"
+  echo "OUT_TAG=${OUT_TAG} BART_NTREE=${BART_NTREE:-50} BART_NSKIP=${BART_NSKIP:-100}"
   echo "PIPELINE_ROOT=${PIPELINE_ROOT}"
   echo "==========================="
 } > "${LOG}"

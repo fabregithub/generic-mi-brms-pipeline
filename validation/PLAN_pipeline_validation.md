@@ -458,6 +458,22 @@ research question:
 - **V3** is independent of V1 — it asks a different question (which estimand) and
   touches different files. It can be scheduled whenever `bkmr` is available.
 
+## 10b. RNG conventions (learned the hard way)
+
+Two properties of the harness's randomness that have already caused confusion:
+
+1. **Task seeds are keyed on the scenario's position in the CANONICAL (unfiltered) grid**,
+   not in whatever subset `SCENARIOS=` selected. Otherwise running one scenario alone
+   generates different data than the same scenario in a full run, and the two cannot be
+   compared. Verified by the deterministic arms reproducing to `max |diff| = 0`.
+2. **An arm's numbers are only comparable across runs with an identical arm set.**
+   Procedures consume the task's RNG stream *sequentially*, so adding or removing an arm
+   changes the stream reaching every later arm. The *datasets* are identical; the
+   imputation draws are not. `properBoot`'s `combined` coverage read 0.910 in V5 and 0.927
+   in V6 for exactly this reason (~0.9 SE apart, i.e. noise). When comparing one arm across
+   runs, hold the arm set fixed — or compare within a run, which is what every verdict here
+   does.
+
 ## 11. Reporting conventions
 
 Mirror Phase 1:

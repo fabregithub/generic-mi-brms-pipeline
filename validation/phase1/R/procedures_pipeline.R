@@ -80,9 +80,11 @@ if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
 #'   per completed dataset; across thousands of tasks that is pure noise.
 #'   Errors still propagate normally.
 v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
-                             proper_z = FALSE) {
+                             proper_z = FALSE, mice_z = FALSE, bart_z = FALSE) {
   key <- paste0("env_", if (isTRUE(quiet)) "quiet" else "loud",
-                if (isTRUE(proper_z)) "_properz" else "")
+                if (isTRUE(proper_z)) "_properz" else "",
+                if (isTRUE(mice_z)) "_micez" else "",
+                if (isTRUE(bart_z)) "_bartz" else "")
   if (!is.null(.v1_cache[[key]])) return(.v1_cache[[key]])
 
   root <- .v1_project_root(project_root)
@@ -110,6 +112,24 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
       stop("proper_z = TRUE needs R/proper_impute.R sourced.", call. = FALSE)
     }
     assign("run_row_level_imputation", .v4_proper_row_imputation, envir = e)
+  }
+
+  # Track 05: swap the Z block for mice's parametric proper draws. Replacing the
+  # whole function also removes the pipeline's internal proper_draw dispatch, so
+  # this arm is unambiguously "mice and nothing else".
+  if (isTRUE(mice_z)) {
+    if (!exists(".v5_mice_row_imputation")) {
+      stop("mice_z = TRUE needs R/mice_impute.R sourced.", call. = FALSE)
+    }
+    assign("run_row_level_imputation", .v5_mice_row_imputation, envir = e)
+  }
+
+  # R8 / item 06: swap the Z block for BART -- flexible AND properly dispersed.
+  if (isTRUE(bart_z)) {
+    if (!exists(".v7_bart_row_imputation")) {
+      stop("bart_z = TRUE needs R/bart_impute.R sourced.", call. = FALSE)
+    }
+    assign("run_row_level_imputation", .v7_bart_row_imputation, envir = e)
   }
 
   assign("project_root", root, envir = e)
@@ -150,7 +170,7 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
 #' @return list(data, analysis_spec, var_dict, cens_x, expo_names, ...)
 .v1_make_pipeline_inputs <- function(bundle, outer_sweeps = 3L,
                                      margin = "shash", n_cores = 1L,
-                                     mid = TRUE) {
+                                     mid = TRUE, proper_draw = FALSE) {
   d <- bundle$censored
   truth <- bundle$truth
   p <- length(truth$b)
@@ -222,6 +242,8 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
       m = 1L, maxiter = 5L, verbose = FALSE,
       mean_match_k = NULL, seed = NULL,
       impute_y = FALSE,
+      # Track V4 candidate fix: the pipeline's own opt-in proper-MI Z block.
+      proper_draw = isTRUE(proper_draw),
       censored_exposure = ce
     ),
     parallel = list(impute_workers = as.integer(n_cores))
@@ -262,7 +284,8 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                     outer_sweeps = 3L, margin = "shash",
                                     project_root = NULL, quiet = TRUE,
                                     mid = TRUE, proper_z = FALSE,
-                                    label = NULL) {
+                                    proper_draw = FALSE, mice_z = FALSE,
+                                    bart_z = FALSE, label = NULL) {
   label <- label %||% "pipeline_block_fcs"
 
   if (!requireNamespace("leftcens", quietly = TRUE) ||
@@ -270,7 +293,9 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
     return(one_row(label, NA, NA, NA, NA, "needs leftcens >= 0.9.0"))
   }
 
-  env <- tryCatch(v1_load_pipeline(project_root, quiet = quiet, proper_z = proper_z),
+  env <- tryCatch(v1_load_pipeline(project_root, quiet = quiet,
+                                   proper_z = proper_z, mice_z = mice_z,
+                                   bart_z = bart_z),
                   error = function(e) NULL)
   if (is.null(env)) {
     return(one_row(label, NA, NA, NA, NA, "could not source pipeline"))
@@ -280,7 +305,8 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
   truth <- bundle$truth
 
   inp <- .v1_make_pipeline_inputs(bundle, outer_sweeps = outer_sweeps,
-                                  margin = margin, n_cores = n_cores, mid = mid)
+                                  margin = margin, n_cores = n_cores, mid = mid,
+                                  proper_draw = proper_draw)
 
   imputed <- tryCatch(
     env$run_censored_exposure_block_fcs(
@@ -325,7 +351,10 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
 
   note <- sprintf("m=%d; sweeps=%d; %s; cens=%d", m, outer_sweeps, margin,
                   length(inp$cens_x))
-  if (isTRUE(proper_z)) note <- paste0(note, "; properZ")
+  if (isTRUE(proper_z))     note <- paste0(note, "; properZ")
+  if (isTRUE(proper_draw))  note <- paste0(note, "; properBoot")
+  if (isTRUE(mice_z))       note <- paste0(note, "; micePmm")
+  if (isTRUE(bart_z))       note <- paste0(note, "; bartMI")
   if (!isTRUE(mid))     note <- paste0(note, "; MID off")
   if (isTRUE(mid) && inp$n_y_missing > 0)
     note <- paste0(note, sprintf("; MID dropped %d", inp$n_y_missing))
@@ -353,6 +382,49 @@ proc_pipeline_properZ <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                           project_root = project_root, quiet = quiet,
                           mid = TRUE, proper_z = TRUE,
                           label = "pipeline_properZ")
+}
+
+#' THE CANDIDATE FIX: the pipeline's own proper-MI Z block, switched on via
+#' `analysis_spec$imputation$proper_draw`. Unlike `pipeline_properZ` -- a harness
+#' instrument that swaps in a simple linear/logistic draw -- this arm exercises
+#' real shipped pipeline code (`run_row_level_imputation_proper()`), which
+#' bootstraps the training data per imputation and keeps the random forest.
+#' This is the arm whose result decides whether the fix is adopted.
+proc_pipeline_properBoot <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
+                                     outer_sweeps = 3L, margin = "shash",
+                                     project_root = NULL, quiet = TRUE) {
+  proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
+                          outer_sweeps = outer_sweeps, margin = margin,
+                          project_root = project_root, quiet = quiet,
+                          mid = TRUE, proper_z = FALSE, proper_draw = TRUE,
+                          label = "pipeline_properBoot")
+}
+
+#' Track 05 arm: Z block replaced by `mice`'s parametric proper draws (pmm /
+#' logreg). The counterpart to `properBoot` -- proper by construction but linear,
+#' so it is the arm that a non-linear covariate DGP can finally penalise.
+proc_pipeline_micePmm <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
+                                  outer_sweeps = 3L, margin = "shash",
+                                  project_root = NULL, quiet = TRUE) {
+  proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
+                          outer_sweeps = outer_sweeps, margin = margin,
+                          project_root = project_root, quiet = quiet,
+                          mid = TRUE, proper_z = FALSE, proper_draw = FALSE,
+                          mice_z = TRUE, label = "pipeline_micePmm")
+}
+
+#' R8 / item 06 arm: Z block replaced by BART -- non-parametric like a forest,
+#' fully Bayesian like a parametric draw, so posterior samples are proper by
+#' construction. The arm that has to beat BOTH incumbents to close R8.
+proc_pipeline_bartMI <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
+                                 outer_sweeps = 3L, margin = "shash",
+                                 project_root = NULL, quiet = TRUE) {
+  proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
+                          outer_sweeps = outer_sweeps, margin = margin,
+                          project_root = project_root, quiet = quiet,
+                          mid = TRUE, proper_z = FALSE, proper_draw = FALSE,
+                          mice_z = FALSE, bart_z = TRUE,
+                          label = "pipeline_bartMI")
 }
 
 #' Same engine, MID disabled (imputed-Y rows are KEPT and pooled normally).

@@ -116,7 +116,19 @@ safe_step("STEP 1: Validate configuration", {
     # whole point of this strategy (congeniality); omitting it reproduces the
     # biased no-Y pre-step. Auto (NULL) always includes the outcome.
     if (!is.null(ce$predictors)) {
-      check_required_vars(raw_data, ce$predictors, "censored_exposure$predictors")
+      # BACK-COMPATIBILITY: the X block does `intersect(predictors, names(data))`,
+      # so a predictor that is not in the data has always been silently dropped
+      # rather than being an error. Warn (making the drop visible) instead of
+      # stopping, so a config that ran before still runs.
+      unknown_preds <- setdiff(ce$predictors, names(raw_data))
+      if (length(unknown_preds) > 0) {
+        warning(
+          "censored_exposure$predictors names not present in the data: ",
+          paste(unknown_preds, collapse = ", "),
+          ". These are silently dropped by the X block; remove them from the ",
+          "config or correct the spelling."
+        )
+      }
 
       if (!analysis_spec$outcome$y_var %in% ce$predictors) {
         warning(
@@ -175,10 +187,24 @@ safe_step("STEP 1: Validate configuration", {
       dplyr::pull(.data$var)
 
     if (length(not_in_model) > 0) {
-      stop(
-        "Censored exposure(s) must be marked use_in_model = TRUE in ",
-        "00_variable_dictionary.csv: ",
-        paste(not_in_model, collapse = ", ")
+      # BACK-COMPATIBILITY: `use_in_model` feeds only the AUTO predictor set
+      # (00_censored_exposure.R builds `auto_preds` from it). When `predictors`
+      # is given explicitly the flag is never consulted, so a config with
+      # use_in_model = FALSE plus an explicit predictor set and custom_formula
+      # has always worked. Only fail in the auto case, where it genuinely breaks.
+      if (is.null(ce$predictors)) {
+        stop(
+          "Censored exposure(s) must be marked use_in_model = TRUE in ",
+          "00_variable_dictionary.csv when censored_exposure$predictors is not ",
+          "set explicitly (the X block derives its predictors from that flag): ",
+          paste(not_in_model, collapse = ", ")
+        )
+      }
+      warning(
+        "Censored exposure(s) marked use_in_model = FALSE: ",
+        paste(not_in_model, collapse = ", "),
+        ". Harmless here because censored_exposure$predictors is set explicitly, ",
+        "but check the exposure still reaches the model formula."
       )
     }
 

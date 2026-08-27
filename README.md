@@ -145,7 +145,9 @@ for the censored exposures. It handles multiple exposures and the three-tier
   (parallelises the `m` completed datasets).
 - Produces the standard `imputed_###.rds` + manifest, so **Steps 4–12 are
   unchanged**. Method background, the validation study, and the design rationale are
-  in [`validation/`](validation/).
+  in [`validation/`](validation/) — start at
+  [`validation/README.md`](validation/README.md), the status index for what has been
+  validated, what is open, and what is next.
 
 **Validation status.** On a Monte-Carlo study with a known exposure–response function
 (300 replications per cell, `m` = 30, `n` = 800), this strategy recovers the focal
@@ -187,10 +189,20 @@ under right-skew, and at exposure correlation 0.8, relative bias never exceeded 
 > worse). Details and numbers:
 > [`validation/phase1/FINDINGS_v4.md`](validation/phase1/FINDINGS_v4.md).
 >
-> **Practical guidance until the imputation step is fixed:** point estimates and their
-> ordering are reliable; treat reported interval widths as a **lower bound** when a large
-> share of covariate or outcome values is imputed, and be correspondingly cautious about
-> borderline "significant" findings in that regime.
+> **Largely corrected in v1.4.0.** `analysis_spec$imputation$proper_draw` now defaults to
+> `TRUE`, bootstrapping the imputation model's training data once per imputation so that
+> the uncertainty reaches the intervals. This closes **66%** of the shortfall at 40%
+> covariate missingness (coverage 0.933 → 0.947) and improves every case tested, without
+> ever over-correcting. Set `proper_draw = FALSE` to reproduce a pre-v1.4.0 analysis
+> exactly — note that this is a **behaviour change**, so cite the pipeline version used.
+>
+> **Residual limitation.** The correction is partial. Under *heavy* missingness in both
+> covariates and the outcome, coverage reaches about **0.91** rather than 0.95, because a
+> random forest is already a bagged estimator and an outer bootstrap injects less
+> parameter uncertainty than a parametric posterior draw would. So in that regime: point
+> estimates and their ordering are reliable, but treat interval widths as a mild lower
+> bound and be cautious about borderline "significant" findings. Full analysis in
+> [`validation/phase1/FINDINGS_v5.md`](validation/phase1/FINDINGS_v5.md).
 
 ---
 

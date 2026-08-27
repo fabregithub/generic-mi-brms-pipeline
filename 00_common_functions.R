@@ -688,6 +688,13 @@ make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
 }
 
 run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
+  # Proper-MI path (see run_row_level_imputation_proper). DEFAULT SINCE v1.4.0.
+  # Set analysis_spec$imputation$proper_draw <- FALSE to restore the pre-v1.4.0
+  # improper behaviour exactly -- needed only to reproduce an older analysis.
+  if (isTRUE(analysis_spec$imputation$proper_draw %||% TRUE)) {
+    return(run_row_level_imputation_proper(data, imputation_spec, analysis_spec))
+  }
+
   vars <- imputation_spec$vars
   m <- imputation_spec$m
 
@@ -818,6 +825,128 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
 }
 
 
+
+# ------------------------------------------------------------
+# Proper-MI row-level imputation (opt-in)
+# ------------------------------------------------------------
+# WHY THIS EXISTS. `run_row_level_imputation()` calls miceRanger, which fits a
+# random forest to the current completed data and imputes from it. That is
+# *improper* multiple imputation in Rubin's sense: the imputation model's
+# parameters are never drawn from a posterior, so between-imputation variance is
+# too small and pooled confidence intervals come out too narrow.
+#
+# The validation study measured it: B understated by 8-59%, scaling with how much
+# is imputed, driving 95% interval coverage down to 0.893 in the heaviest
+# scenario. Raising `m` does not help -- it is a bias in the variance estimator,
+# not Monte-Carlo noise. See validation/phase1/FINDINGS_v4.md.
+#
+# THE FIX. Bootstrap the training data once per imputation, fit the forest to the
+# resample, and impute the ORIGINAL rows from that model. Resampling injects the
+# parameter uncertainty the forest does not otherwise represent -- the standard
+# route to proper MI for any predictive imputer, and what `mice`'s own `rf` method
+# does (Doove et al.). The forest's flexibility with non-linear covariates is
+# preserved; only the properness defect is corrected.
+#
+# VALIDATED, PARTIALLY. Adopted as the default in v1.4.0: it closes 66% of the
+# calibration shortfall at 40% covariate missingness (coverage 0.933 -> 0.947),
+# never over-corrects, and has the best bias of any variant tested. It does NOT
+# fully close the gap under heavy combined missingness (coverage 0.893 -> 0.910,
+# still short of nominal) -- a random forest is already bagged, so an outer
+# bootstrap injects less parameter uncertainty than a parametric posterior draw
+# would. See validation/phase1/FINDINGS_v5.md.
+#
+# Default since v1.4.0. Set `analysis_spec$imputation$proper_draw <- FALSE` to
+# restore the pre-v1.4.0 behaviour exactly.
+run_row_level_imputation_proper <- function(data, imputation_spec, analysis_spec) {
+  vars <- imputation_spec$vars
+  m <- as.integer(imputation_spec$m)
+
+  vars <- vars[names(vars) %in% names(data)]
+  vars <- purrr::map(vars, ~ intersect(.x, names(data)))
+  vars <- vars[vapply(vars, length, integer(1)) > 0]
+
+  if (length(vars) == 0) {
+    log_msg("No imputation targets with missingness. Duplicating data m times.")
+    return(rep(list(tibble::as_tibble(data)), m))
+  }
+
+  prep <- prepare_miceranger_data(data)
+  mice_data <- prep$data
+  n <- nrow(mice_data)
+
+  valueSelector <- vapply(names(vars), function(v) {
+    x <- mice_data[[v]]
+    if (is.factor(x)) "value" else if (is.numeric(x) && !is_binary_like(x)) "meanMatch" else "value"
+  }, character(1))
+  names(valueSelector) <- names(vars)
+
+  mm_vars <- names(vars)[valueSelector == "meanMatch"]
+  meanMatchCandidates <- rep(imputation_spec$mean_match_k %||% 5, length(mm_vars))
+  names(meanMatchCandidates) <- mm_vars
+
+  num_threads <- as.integer(
+    analysis_spec$parallel$num_impute_threads_per_worker %||%
+      analysis_spec$parallel$num_impute_threads %||% 1L
+  )
+
+  log_msg("Proper-MI imputation (bootstrap per imputation) | targets:",
+          length(vars), "| m:", m, "| maxiter:", imputation_spec$maxiter)
+
+  # A bootstrap resample can drop every observed value of a target, or every level
+  # of a factor, which makes the forest unfittable. Retry with a fresh resample a
+  # few times, then fall back to fitting on the full data for that imputation --
+  # that single imputation is then improper, which is far better than aborting the
+  # run, and it is logged so the compromise is visible rather than silent.
+  fit_one <- function(j) {
+    for (attempt in seq_len(5L)) {
+      idx <- if (attempt == 5L) seq_len(n) else sample.int(n, n, replace = TRUE)
+      train <- mice_data[idx, , drop = FALSE]
+
+      usable <- all(vapply(names(vars), function(v) {
+        obs <- train[[v]][!is.na(train[[v]])]
+        length(obs) >= 5L &&
+          (!is.factor(mice_data[[v]]) ||
+             length(unique(obs)) >= length(unique(stats::na.omit(mice_data[[v]]))))
+      }, logical(1)))
+
+      if (!usable && attempt < 5L) next
+
+      mo <- tryCatch(
+        miceRanger::miceRanger(
+          data = train, m = 1L, maxiter = imputation_spec$maxiter,
+          vars = vars, valueSelector = valueSelector,
+          meanMatchCandidates = meanMatchCandidates,
+          returnModels = TRUE, parallel = FALSE,
+          verbose = FALSE, num.threads = num_threads
+        ),
+        error = function(e) NULL
+      )
+      if (is.null(mo)) next
+
+      imp <- tryCatch(miceRanger::impute(mice_data, mo, verbose = FALSE),
+                      error = function(e) NULL)
+      if (is.null(imp)) next
+
+      if (attempt == 5L) {
+        log_msg("  imputation", j,
+                ": bootstrap unusable after 4 attempts; fitted on full data (improper for this dataset)")
+      }
+      return(imp$imputedData[[1L]])
+    }
+    stop("Proper-MI imputation failed for dataset ", j,
+         " after all attempts.", call. = FALSE)
+  }
+
+  out <- vector("list", m)
+  for (j in seq_len(m)) {
+    # Deterministic per-imputation seed so a given imputation_spec$seed always
+    # reproduces the same batch, matching the default path's contract.
+    if (!is.null(imputation_spec$seed)) set.seed(imputation_spec$seed + j)
+    out[[j]] <- restore_ordered_factors(fit_one(j), ordered_levels = prep$ordered_levels)
+  }
+
+  out
+}
 
 # ------------------------------------------------------------
 # Subject-wide imputation for repeated outcome data
