@@ -1,6 +1,6 @@
 # Roadmap — one defect, three tracks
 
-**As of 2026-08-26**, after the v1.4.0 imputation fix. Items 01 and 02 are complete
+**As of 2026-08-29**, after V3 closed the mixture question. Items 01 and 02 are complete
 (partially — see below); item 05 is new and now carries the residual gap.
 
 Five validation tracks are closed. The censored-exposure engine is validated for additive
@@ -27,7 +27,8 @@ This roadmap straddles both:
 | ~~02 — Re-validate the fix~~ ✅ | not in either plan | done as the V5 `properBoot` arm |
 | 05 — Non-linear covariate DGP | not in either plan — emerged from V5 | **new, blocks the imputer choice** |
 | 03 — Pilot `m` / FMI | **Phase 5** | V4's original scope, undone |
-| 04 — BKMR estimands | **Phase 2b** | Track V3, not started |
+| ~~04 — BKMR estimands~~ ✅ | **Phase 2b** | Track V3, done 2026-08-29 |
+| 07 — SMC imputation | not in either plan — emerged from V3 | **the remaining fix** |
 
 **Design-plan Phase 2 was the decision gate** and was resolved on 2026-08-13: build the
 linear congenial component for additive/per-analyte ERFs; mixtures need
@@ -202,7 +203,19 @@ advance rather than discovered as a disappointment.
 
 </details>
 
-### 06 — A flexible *and* properly dispersed imputer · *new; carries the residual gap*
+### 06 — A flexible *and* properly dispersed imputer · ✅ **DONE (V7, v1.5.0)**
+
+> **Resolved 2026-08-28.** BART adopted as the `z_imputer` default. Best bias of any
+> variant in **all six** diagnostic cells (max 1.29% against `forest_boot`'s 2.67%),
+> coverage 0.937–0.963, robust at both 50 and 200 trees, and ~4% of pipeline runtime.
+> R8 closes. Residual: intervals 3–8% **wide** in three cells — conservative, and now
+> tracked as its own (low-priority) item in
+> [`INTEGRATION_SUMMARY.md`](INTEGRATION_SUMMARY.md) §2.
+> Full reading: [`phase1/FINDINGS_v7.md`](phase1/FINDINGS_v7.md).
+
+<details>
+<summary>Original scope and criteria (for the record)</summary>
+
 
 V6 closed the choice between the two existing families but not the underlying problem:
 the forest under-disperses (bagging damps the bootstrap), and the parametric draw is
@@ -242,7 +255,17 @@ in `nl_mcar_z40` is −0.73% against `micePmm`'s −4.73% — the right directio
 but 8 reps is noise. The cell to watch is `nl_combined`, where three targets force the
 `m`-chain path and the smoke read −3.20%.
 
-### 03 — Pilot `m` and document FMI · *small; design-plan Phase 5*
+</details>
+
+### 03 — Pilot `m` and document FMI · ✅ **DONE (V7 P3)**
+
+> **Closed 2026-08-28.** Width stabilises by **`m` ≈ 30**: going 10 → 30 narrows intervals
+> ~2.7%, 30 → 50 changes them <0.2%. FMI flat at ≈0.30, and `m ≈ 100 × FMI` independently
+> gives 30. The shipped default was already right. Design-plan **Phase 5** closes.
+
+<details>
+<summary>Original scope (for the record)</summary>
+
 
 Most of the way there already: FMI is now reported per arm and lands between **0.26 and
 0.44** across scenarios. What remains is turning that into a recommended default `m` for
@@ -250,16 +273,45 @@ the censored path and cross-checking it against the auto-increment loop's stoppi
 
 **Do this after 01** — a proper draw changes `B`, which changes FMI.
 
-### 04 — BKMR estimands · *independent; design-plan Phase 2b*
+</details>
 
-The last piece before the mixture verdict is manuscript-final. Today the claim that linear
-congenial imputation fails for mixtures rests on a single local coefficient rather than the
-estimands that matter: the overall mixture effect q25→q75, pairwise interactions, and the
-response surface at representative exposure profiles.
+### 04 — BKMR estimands · ✅ **DONE (V3, 2026-08-29)** — design-plan Phase 2b
 
-Each estimand needs its truth computed **analytically from the generator**, not estimated
-from an oracle fit — that is the real work in this track. Requires `bkmr`, **not currently
-installed**.
+Resolved, negatively and more strongly than expected. On the estimands a BKMR analysis
+reports, measured against analytic truth at 200 replications per cell, the shipped
+censored-exposure engine is the **worst of four arms** — mean 14.6% absolute paired excess
+over the oracle, against 6.4% for LOD/√2 substitution.
+
+It **destroys 57% of the curvature** at 40% non-detects. Interaction estimands survive
+censoring of a single exposure and break only when a second is censored too. The failure is
+therefore *curvature*, not mixtures in general.
+
+Evidence: [`phase1/FINDINGS_v3.md`](phase1/FINDINGS_v3.md). The mixture restriction in the
+root README has been strengthened accordingly.
+
+---
+
+### 07 — Substantive-model-compatible imputation · **the only substantive track left**
+
+V3 established what is broken and why: the X block draws the censored exposure from a
+conditional **linear in (Y, other X, Z)**, which cannot represent a surface with curvature
+in the focal exposure, and so imposes linearity on exactly the rows where curvature would
+appear. Imputing with the wrong functional form is worse than not imputing — LOD/√2
+substitution beats the congenial engine on curvature.
+
+The fix is to put the exposure–response *surface* into the imputation model, or to use a
+joint model containing it. For a **known parametric** surface this is tractable: the
+conditional of the censored exposure given (Y, ·) under a quadratic-plus-interaction outcome
+model is derivable, and `leftcens`'s censored draw could take a non-linear mean. The
+**general** case — a BKMR surface with no closed form — is research rather than engineering,
+and would likely need an SMC-FCS-style rejection step against the fitted surface.
+
+**Until it exists, the mixture path is documented as unusable rather than approximate.**
+That is now stated in the root README, the claims ledger, and `FINDINGS_v3.md`.
+
+This is a build track, not a validation track. When it exists, V3's harness re-runs against
+it unchanged — the estimands, analytic truth, arms and criteria are all in place, and a new
+arm is one function.
 
 ---
 
@@ -269,11 +321,16 @@ installed**.
 DONE (v1.4.0)
   [01 Proper Z-block draw] ──▶ [02 Re-validate] ──▶ partial: 66% / 23% of gap closed
 
-DONE (V6)
-  [05 Non-linear covariate DGP] ──▶ choice closed: properBoot stays; neither uniformly best
+DONE
+  [05 Non-linear covariate DGP] ──▶ [06 BART imputer] ──▶ R8 CLOSED (v1.5.0)
+  [03 Pilot m / FMI] ──▶ R12 CLOSED: m = 30 confirmed
 
-CRITICAL PATH (residual gap)
-  [06 Flexible + properly dispersed imputer]   BART hypothesis; harness already exists
+DONE
+  [04 BKMR estimands] ──▶ mixture path CONFIRMED UNUSABLE (V3, 2026-08-29)
+
+REMAINING
+  [07 Substantive-model-compatible imputation]  the only substantive track left
+                                                V3's harness re-runs against it unchanged
 
 FOLLOWS
   [03 Pilot m / FMI]                                    (B has changed, so FMI has too)
@@ -282,7 +339,7 @@ INDEPENDENT
   [04 BKMR estimands]                                   (install bkmr first)
 ```
 
-Item 06 now carries the residual gap; 03 is unblocked and cheap; 04 remains independent.
+**Item 07 (substantive-model-compatible imputation) is the only substantive track left**, and it is a *build* track rather than a validation one. Everything else is loose ends plus the low-priority interval-overshoot refinement.
 
 ---
 
@@ -293,6 +350,8 @@ Item 06 now carries the residual gap; 03 is unblocked and cheap; 04 remains inde
 | `resume` kills the V4 runner | Unexplained | Reproducibly killed the parent after one chunk; a fresh checkpoint runs fine. Now off by default. Partial results remain recoverable straight from the checkpoint, so it costs nothing operationally — but an unexplained crash is worth understanding. |
 | Translated READMEs | Stale | `docs/README.{de,es,fr,ja}.md` contain **zero** mentions of the censored-exposure strategy or its `leftcens` dependency — they predate the feature. Needs a translation pass, not a patch. |
 | MAR covariate missingness | Unswept | Every robustness scenario used MCAR. MAR-on-covariates is the more realistic mechanism and is untested. |
+| V8 confound: target count vs `Y`'s presence | Open, small | V8's 3-target cells all impute `Y` and its 2-target cells do not, so it cannot say which feature makes the inner-iteration shortcut unsafe. `.ce_default_inner_iter()` requires both conditions, which is safe but conservative. A cell with three non-outcome targets would separate them and could widen the cheap path. |
+| V8 runtime saving unmeasured | Open, small | The ~3× figure comes from the fit count, not from timing: `secs` is logged per replication for all arms together. Needs per-arm instrumentation in the harness. |
 | External testers | Standing goal | Have other users run the pipeline on their own data before broadening release claims. Each analysis pattern that trips someone up should become a bundled example, entering permanent regression coverage. |
 
 Longer-term ideas (sensitivity-analysis runner, multi-outcome support, DAG-based

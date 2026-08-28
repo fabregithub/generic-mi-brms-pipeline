@@ -160,11 +160,38 @@ than complete-case analysis (RMSE 0.049 vs 0.072 at 40% ND). These figures are f
 shipped pipeline code, not a prototype of it — full tables and caveats in
 [`validation/phase1/FINDINGS_v1.md`](validation/phase1/FINDINGS_v1.md).
 
-> **Scope of that claim.** It holds for **additive / per-analyte** exposure–response
-> functions. For **mixture / BKMR-style surfaces** with interactions and curvature, a
-> linear congenial imputation — which is what this strategy performs — remains biased
-> (+7.5% at 20% ND, +19.6% at 40% ND, coverage falling to 0.66). Mixture analyses need
-> substantive-model-compatible imputation; see
+> ### ⚠️ Scope: additive exposure–response functions only. **Do not use this strategy for
+> mixture / BKMR analyses.**
+>
+> The claim above holds for **additive / per-analyte** exposure–response functions.
+>
+> For **mixture / BKMR-style surfaces** with interactions and curvature, this strategy is
+> **not merely inadequate — it is worse than doing nothing sophisticated.** Measured on the
+> estimands a BKMR analysis actually reports, against analytic truth, at 200 replications
+> per cell:
+>
+> | | pipeline | LOD/√2 substitution | complete case |
+> |---|---|---|---|
+> | mean abs. error vs the oracle, 21 cells | **14.6%** | **6.4%** | 10.5% |
+> | pure curvature, 40% non-detects | **−57%** | −1.9% *(n.s.)* | −18% |
+>
+> It **destroys 57% of the curvature** at 40% non-detects, and on that estimand LOD/√2
+> substitution is statistically indistinguishable from the oracle while this strategy is
+> not. The reason is structural: the X block draws the censored exposure from a conditional
+> that is **linear in the predictors**, so it imposes linearity on precisely the rows where
+> curvature would appear. Imputing with the wrong functional form is worse than not
+> imputing.
+>
+> Interaction estimands are more robust — they survive censoring of a single exposure
+> (+2.6% to +5.7%) and break down (−12.5%) only when a second exposure is censored too.
+>
+> **Coverage will not warn you.** In these runs a −42% point bias sat behind 0.945–0.960
+> coverage, because the pooled intervals ran 1.5–1.6× wider than the estimates' true
+> sampling spread.
+>
+> Mixture analyses need **substantive-model-compatible imputation**, which this pipeline
+> does not implement. Evidence:
+> [`validation/phase1/FINDINGS_v3.md`](validation/phase1/FINDINGS_v3.md); background in
 > [`validation/PLAN_leftcensored_exposure_integration.md`](validation/PLAN_leftcensored_exposure_integration.md) §7.7.
 
 A follow-up robustness sweep (10 scenarios × 300 replications) confirmed the bias result
@@ -189,6 +216,30 @@ under right-skew, and at exposure correlation 0.8, relative bias never exceeded 
 > worse). Details and numbers:
 > [`validation/phase1/FINDINGS_v4.md`](validation/phase1/FINDINGS_v4.md).
 >
+> **Corrected in v1.5.0.** `analysis_spec$imputation$z_imputer` defaults to `"bart"`:
+> the Z block draws imputations from a BART posterior, which is proper multiple imputation
+> (parameters drawn from a posterior) *and* flexible enough for non-linear covariates.
+> Across 7 scenarios × 300 replications this gave the best bias of any variant tested
+> (≤1.3% everywhere) with **coverage 0.937–0.963**, and it costs ~4% of pipeline runtime.
+> Requires the `dbarts` package; if absent the pipeline warns and falls back to the v1.4.0
+> imputer. Set `z_imputer = "forest_boot"` or `"forest"` to reproduce a v1.4.0 or
+> pre-v1.4.0 analysis exactly — this is a **behaviour change**, so cite the pipeline
+> version used.
+>
+> **What is and is not established.** Coverage is 0.937–0.963 across every tested
+> condition. Interval *width* readings ran 0–8% above the ideal, but those deviations are
+> within the diagnostic's own Monte-Carlo error at 300 replications — none is statistically
+> significant. So the honest statement is that interval width is **consistent with
+> calibration, bounded to roughly ±8%**, rather than proven exact. Full analysis, including
+> two refuted alternative explanations, in
+> [`validation/phase1/FINDINGS_v7.md`](validation/phase1/FINDINGS_v7.md).
+>
+> **Recommended `m`:** 30, which is the shipped default. Interval width stabilises there
+> and the fraction-of-missing-information rule agrees.
+
+<details>
+<summary>Earlier history of this caveat (v1.4.0)</summary>
+
 > **Largely corrected in v1.4.0.** `analysis_spec$imputation$proper_draw` now defaults to
 > `TRUE`, bootstrapping the imputation model's training data once per imputation so that
 > the uncertainty reaches the intervals. This closes **66%** of the shortfall at 40%
@@ -203,6 +254,8 @@ under right-skew, and at exposure correlation 0.8, relative bias never exceeded 
 > estimates and their ordering are reliable, but treat interval widths as a mild lower
 > bound and be cautious about borderline "significant" findings. Full analysis in
 > [`validation/phase1/FINDINGS_v5.md`](validation/phase1/FINDINGS_v5.md).
+
+</details>
 
 ---
 
@@ -2674,6 +2727,14 @@ If you plan to use the Cox proportional hazards family (`family = "cox"`), the `
 ```r
 install.packages("survival")
 ```
+
+The default imputation path uses **BART** (`z_imputer = "bart"`, since v1.5.0), which needs the `dbarts` package:
+
+```r
+install.packages("dbarts")
+```
+
+Without it the pipeline still runs — it warns and falls back to the v1.4.0 imputer — but intervals will be slightly too narrow where much of the data is imputed. See [`validation/phase1/FINDINGS_v7.md`](validation/phase1/FINDINGS_v7.md).
 
 If you plan to use the censored-exposure block-FCS strategy (`strategy = "censored_exposure_block_fcs"`, for a left-/interval-censored focal exposure), the `leftcens` package is also required at imputation time. It is not on CRAN — install it from GitHub, pinned to a release tag:
 

@@ -170,7 +170,8 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
 #' @return list(data, analysis_spec, var_dict, cens_x, expo_names, ...)
 .v1_make_pipeline_inputs <- function(bundle, outer_sweeps = 3L,
                                      margin = "shash", n_cores = 1L,
-                                     mid = TRUE, proper_draw = FALSE) {
+                                     mid = TRUE, proper_draw = FALSE,
+                                     bart_inner_iter = NULL, z_imputer = NULL) {
   d <- bundle$censored
   truth <- bundle$truth
   p <- length(truth$b)
@@ -244,6 +245,13 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
       impute_y = FALSE,
       # Track V4 candidate fix: the pipeline's own opt-in proper-MI Z block.
       proper_draw = isTRUE(proper_draw),
+      # NULL lets 00_censored_exposure.R apply its default of 1 (the outer loop
+      # already alternates); an explicit value reproduces the pre-fix behaviour.
+      bart_inner_iter = bart_inner_iter,
+      # Selects the pipeline's OWN Z-block imputer (v1.5.0). Setting this rather
+      # than overriding run_row_level_imputation is what makes an arm exercise
+      # shipped code instead of a harness copy of it.
+      z_imputer = z_imputer,
       censored_exposure = ce
     ),
     parallel = list(impute_workers = as.integer(n_cores))
@@ -285,7 +293,8 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                     project_root = NULL, quiet = TRUE,
                                     mid = TRUE, proper_z = FALSE,
                                     proper_draw = FALSE, mice_z = FALSE,
-                                    bart_z = FALSE, label = NULL) {
+                                    bart_z = FALSE, bart_inner_iter = NULL,
+                                    z_imputer = NULL, label = NULL) {
   label <- label %||% "pipeline_block_fcs"
 
   if (!requireNamespace("leftcens", quietly = TRUE) ||
@@ -306,7 +315,9 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
 
   inp <- .v1_make_pipeline_inputs(bundle, outer_sweeps = outer_sweeps,
                                   margin = margin, n_cores = n_cores, mid = mid,
-                                  proper_draw = proper_draw)
+                                  proper_draw = proper_draw,
+                                  bart_inner_iter = bart_inner_iter,
+                                  z_imputer = z_imputer)
 
   imputed <- tryCatch(
     env$run_censored_exposure_block_fcs(
@@ -354,7 +365,10 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
   if (isTRUE(proper_z))     note <- paste0(note, "; properZ")
   if (isTRUE(proper_draw))  note <- paste0(note, "; properBoot")
   if (isTRUE(mice_z))       note <- paste0(note, "; micePmm")
-  if (isTRUE(bart_z))       note <- paste0(note, "; bartMI")
+  if (isTRUE(bart_z))        note <- paste0(note, "; bartHarness")
+  if (!is.null(z_imputer))   note <- paste0(note, "; z=", z_imputer)
+  if (!is.null(bart_inner_iter))
+    note <- paste0(note, sprintf("; inner=%d", as.integer(bart_inner_iter)))
   if (!isTRUE(mid))     note <- paste0(note, "; MID off")
   if (isTRUE(mid) && inp$n_y_missing > 0)
     note <- paste0(note, sprintf("; MID dropped %d", inp$n_y_missing))
@@ -413,18 +427,51 @@ proc_pipeline_micePmm <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                           mice_z = TRUE, label = "pipeline_micePmm")
 }
 
-#' R8 / item 06 arm: Z block replaced by BART -- non-parametric like a forest,
-#' fully Bayesian like a parametric draw, so posterior samples are proper by
-#' construction. The arm that has to beat BOTH incumbents to close R8.
+#' R8 arm: the pipeline's OWN BART Z-block (v1.5.0), selected via `z_imputer`.
+#'
+#' NOTE the difference from the V7 run. There, the BART arm worked by *overriding*
+#' `run_row_level_imputation` with the harness instrument
+#' `.v7_bart_row_imputation` -- so V7 measured the instrument, not shipped code,
+#' and the ported `run_row_level_imputation_bart` was never exercised. This arm
+#' sets the config selector instead, so it runs exactly what a user runs.
+#' `pipeline_bartHarness` below keeps the old wiring for a like-for-like check
+#' that the port reproduces the instrument.
 proc_pipeline_bartMI <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                  outer_sweeps = 3L, margin = "shash",
                                  project_root = NULL, quiet = TRUE) {
   proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
                           outer_sweeps = outer_sweeps, margin = margin,
                           project_root = project_root, quiet = quiet,
-                          mid = TRUE, proper_z = FALSE, proper_draw = FALSE,
-                          mice_z = FALSE, bart_z = TRUE,
+                          mid = TRUE, z_imputer = "bart",
                           label = "pipeline_bartMI")
+}
+
+#' The V7 wiring: BART supplied by the harness instrument via loader override.
+#' Kept so the port can be checked against what V7 actually measured.
+proc_pipeline_bartHarness <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
+                                      outer_sweeps = 3L, margin = "shash",
+                                      project_root = NULL, quiet = TRUE) {
+  proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
+                          outer_sweeps = outer_sweeps, margin = margin,
+                          project_root = project_root, quiet = quiet,
+                          mid = TRUE, bart_z = TRUE,
+                          label = "pipeline_bartHarness")
+}
+
+#' Control arm for the inner-iteration fix: the pipeline's BART forced to
+#' `bart_inner_iter = 3`, i.e. the pre-fix behaviour where the outer block-FCS
+#' sweeps and the imputer's own FCS iterations multiplied (9 alternations where 3
+#' were designed). Against `pipeline_bartMI`, which now inherits the fixed
+#' default of 1: if calibration and bias are unchanged, the fix is a free ~3x
+#' saving on the censored path.
+proc_pipeline_bartMI_iter3 <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
+                                       outer_sweeps = 3L, margin = "shash",
+                                       project_root = NULL, quiet = TRUE) {
+  proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
+                          outer_sweeps = outer_sweeps, margin = margin,
+                          project_root = project_root, quiet = quiet,
+                          mid = TRUE, z_imputer = "bart", bart_inner_iter = 3L,
+                          label = "pipeline_bartMI_iter3")
 }
 
 #' Same engine, MID disabled (imputed-Y rows are KEPT and pooled normally).

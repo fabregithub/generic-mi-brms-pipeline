@@ -59,6 +59,36 @@
   y
 }
 
+#' Default number of inner FCS iterations for the Z block.
+#'
+#' The OUTER block-FCS loop already alternates the Z and X blocks, so it was
+#' assumed the Z-block imputer needed no inner iterations of its own: 3 outer x
+#' 3 inner ran 9 alternations where 3 were designed, and tripled the BART fits.
+#' V8 tested that assumption at 1000 reps per cell and it is only half true --
+#' the outer loop alternates BETWEEN blocks, not among the Z block's own
+#' targets, so with several targets one inner pass never lets them condition on
+#' each other:
+#'
+#'   two targets, neither the outcome  paired bias diff  +0.04 pp (CI +/-0.13) -- free
+#'   three targets incl. imputed Y     paired bias diff  -0.72 pp             -- breaches
+#'
+#' So inner = 1 is used only in the configuration measured to be free, and the
+#' pre-fix inner = 3 everywhere else. Y is excluded from the cheap path
+#' deliberately: the X block conditions on Y, so an under-conditioned Y feeds
+#' straight into the exposure draw. V8's cells confound "3 targets" with
+#' "Y is a target" (see FINDINGS_v8.md, Caveats), and this predicate is the
+#' reading that is safe under either explanation.
+#'
+#' An explicit `analysis_spec$imputation$bart_inner_iter` always wins.
+#'
+#' @param targets Character vector of Z-block imputation targets this sweep.
+#' @param y_var The outcome variable name.
+#' @return 1L on the validated cheap path, else 3L.
+#' @seealso validation/phase1/FINDINGS_v8.md
+.ce_default_inner_iter <- function(targets, y_var) {
+  if (length(targets) <= 2L && !(y_var %in% targets)) 1L else 3L
+}
+
 #' One block-FCS completed dataset (a single imputation).
 .ce_one_imputation <- function(data, analysis_spec, var_dict, ce, seed) {
   set.seed(seed)
@@ -112,6 +142,14 @@
   # started inside a fork fails ("cannot open server socket"). Cross-dataset
   # parallelism (n_cores) is the right level; the per-dataset Z-block stays serial.
   z_spec_as$parallel$impute_workers <- 1L
+  # Z-block inner FCS count. This cannot be resolved here: it depends on which
+  # targets the Z block actually has, which is only known once
+  # make_row_level_imputation_spec() has run inside the sweep loop below. Capture
+  # any explicit user/validation-arm setting now (it always wins) and apply
+  # .ce_default_inner_iter() per sweep. Read from `analysis_spec`, not the
+  # `z_spec_as` copy, so the per-sweep assignment below cannot be mistaken for a
+  # user setting on the next sweep.
+  user_inner_iter <- analysis_spec$imputation$bart_inner_iter
   # Reset only the originally-missing Z/Y cells each sweep — NOT the exposures,
   # whose missing (censored) cells are handled by the X block via the fixed bounds.
   orig_na <- lapply(data[intersect(names(data), names(work))], is.na)
@@ -123,6 +161,8 @@
     # --- Z block: miceRanger (reused helper), m = 1, conditioning on current X, Y.
     z_spec <- make_row_level_imputation_spec(work, z_spec_as, var_dict)
     if (length(z_spec$vars) > 0) {
+      z_spec_as$imputation$bart_inner_iter <-
+        user_inner_iter %||% .ce_default_inner_iter(names(z_spec$vars), y_var)
       z_spec$m <- 1L; z_spec$seed <- seed + 1000L + t
       work <- run_row_level_imputation(work, z_spec, z_spec_as)[[1]]
     }

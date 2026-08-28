@@ -687,11 +687,48 @@ make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
   )
 }
 
+#' Which Z-block imputer a config asks for.
+#'
+#' Selector semantics (v1.5.0):
+#'   "bart"        BART posterior draws -- proper AND flexible. Default.
+#'   "forest_boot" bootstrapped random forest -- the v1.4.0 default.
+#'   "forest"      plain miceRanger -- improper; pre-v1.4.0 behaviour.
+#'
+#' `proper_draw` is honoured for back-compatibility: a config written against
+#' v1.4.0 that sets it FALSE still gets the improper forest, and one that sets it
+#' TRUE still gets the bootstrapped forest it was validated with. Only configs
+#' that specify NEITHER move to the new default.
+resolve_z_imputer <- function(analysis_spec) {
+  sel <- analysis_spec$imputation$z_imputer
+  if (!is.null(sel)) {
+    sel <- match.arg(as.character(sel), c("bart", "forest_boot", "forest"))
+    return(sel)
+  }
+  pd <- analysis_spec$imputation$proper_draw
+  if (!is.null(pd)) return(if (isTRUE(pd)) "forest_boot" else "forest")
+  "bart"
+}
+
 run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
-  # Proper-MI path (see run_row_level_imputation_proper). DEFAULT SINCE v1.4.0.
-  # Set analysis_spec$imputation$proper_draw <- FALSE to restore the pre-v1.4.0
-  # improper behaviour exactly -- needed only to reproduce an older analysis.
-  if (isTRUE(analysis_spec$imputation$proper_draw %||% TRUE)) {
+  z_imp <- resolve_z_imputer(analysis_spec)
+
+  # BART needs dbarts. Rather than break an upgraded install, fall back to the
+  # v1.4.0 imputer with a loud warning -- the run completes, and which imputer
+  # actually ran is visible in the log rather than silent.
+  if (identical(z_imp, "bart") && !requireNamespace("dbarts", quietly = TRUE)) {
+    warning("z_imputer = 'bart' needs the 'dbarts' package, which is not ",
+            "installed. Falling back to 'forest_boot' (the v1.4.0 imputer). ",
+            "Install dbarts, or set analysis_spec$imputation$z_imputer ",
+            "explicitly to silence this.", call. = FALSE, immediate. = TRUE)
+    z_imp <- "forest_boot"
+  }
+
+  log_msg("Z-block imputer:", z_imp)
+
+  if (identical(z_imp, "bart")) {
+    return(run_row_level_imputation_bart(data, imputation_spec, analysis_spec))
+  }
+  if (identical(z_imp, "forest_boot")) {
     return(run_row_level_imputation_proper(data, imputation_spec, analysis_spec))
   }
 
@@ -943,6 +980,175 @@ run_row_level_imputation_proper <- function(data, imputation_spec, analysis_spec
     # reproduces the same batch, matching the default path's contract.
     if (!is.null(imputation_spec$seed)) set.seed(imputation_spec$seed + j)
     out[[j]] <- restore_ordered_factors(fit_one(j), ordered_levels = prep$ordered_levels)
+  }
+
+  out
+}
+
+# ------------------------------------------------------------
+# BART row-level imputation (default since v1.5.0)
+# ------------------------------------------------------------
+# WHY. The Z block must be *proper* multiple imputation -- imputation-model
+# parameters drawn from a posterior -- or between-imputation variance is
+# understated and intervals come out too narrow. Two earlier attempts each got
+# half of it:
+#
+#   "forest"      miceRanger alone. Flexible but improper: B understated 8-59%,
+#                 coverage down to 0.893 under heavy imputation load.
+#   "forest_boot" bootstrap the forest's training data per imputation (v1.4.0).
+#                 Better, but a forest is ALREADY bagged so an outer bootstrap
+#                 shifts it only slightly: +2.0-2.6% bias remained, width/SE 0.921.
+#
+# BART is both: a sum-of-trees model with priors on tree structure AND leaf
+# parameters, so it is non-parametric like a forest and fully Bayesian like a
+# parametric draw. A posterior sample IS a proper draw.
+#
+# THE DRAW. dbarts::bart() returns `yhat.test` as (ndpost x n_missing) posterior
+# draws of the conditional mean and `sigma` as the matching residual-SD draws, so
+#
+#     yhat.test[j, ] + rnorm(n_missing, 0, sigma[j])
+#
+# is a posterior PREDICTIVE draw. Binary targets fit as factors (probit form):
+# probabilities are pnorm(yhat.test[j, ]) and the draw is Bernoulli at those.
+#
+# VALIDATED. Across 7 scenarios x 300 replications it had the best bias of any
+# variant in every cell (max 1.29% against forest_boot's 2.67%), coverage
+# 0.937-0.963, and was robust to the tree count (bias <=0.8% at both 50 and 200
+# trees). Its one weakness is intervals 3-8% too WIDE in some cells -- conservative
+# rather than anti-conservative. Costs ~4% of pipeline runtime.
+# See validation/phase1/FINDINGS_v7.md.
+#
+# Select with analysis_spec$imputation$z_imputer ("bart" / "forest_boot" /
+# "forest"). Requires the dbarts package.
+
+#' Initialise a column for the FCS loop: mean for continuous, mode for binary.
+.rli_init_fill <- function(x) {
+  na <- is.na(x)
+  if (!any(na)) return(x)
+  if (is_binary_like(x)) {
+    tb <- table(x[!na])
+    x[na] <- as.numeric(names(tb)[which.max(tb)])
+  } else {
+    x[na] <- mean(x[!na], na.rm = TRUE)
+  }
+  x
+}
+
+#' One or more posterior predictive draws from a BART fit.
+.rli_bart_draw <- function(y_obs, x_obs, x_mis, ndraw = 1L, binary = FALSE,
+                           ntree = 50L, nskip = 100L) {
+  fit <- tryCatch(
+    dbarts::bart(
+      x.train = x_obs,
+      y.train = if (binary) factor(y_obs, levels = c(0, 1)) else y_obs,
+      x.test  = x_mis,
+      ntree = ntree, nskip = nskip, ndpost = as.integer(ndraw),
+      keeptrees = FALSE, verbose = FALSE
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(fit) || is.null(fit$yhat.test)) return(NULL)
+
+  yh <- fit$yhat.test
+  if (!is.matrix(yh)) yh <- matrix(yh, nrow = 1L)
+  n_mis <- ncol(yh)
+
+  if (binary) {
+    lapply(seq_len(nrow(yh)), function(j) stats::rbinom(n_mis, 1L, stats::pnorm(yh[j, ])))
+  } else {
+    # `sigma` length varies across dbarts versions (ndpost, or nskip + ndpost);
+    # take the trailing ndpost entries so draw j pairs with yhat row j.
+    sg <- utils::tail(fit$sigma, nrow(yh))
+    lapply(seq_len(nrow(yh)), function(j) yh[j, ] + stats::rnorm(n_mis, 0, sg[j]))
+  }
+}
+
+run_row_level_imputation_bart <- function(data, imputation_spec, analysis_spec) {
+  if (!requireNamespace("dbarts", quietly = TRUE)) {
+    stop("z_imputer = 'bart' requires the 'dbarts' package.", call. = FALSE)
+  }
+
+  vars <- imputation_spec$vars
+  m <- as.integer(imputation_spec$m)
+
+  vars <- vars[names(vars) %in% names(data)]
+  vars <- purrr::map(vars, ~ intersect(.x, names(data)))
+  vars <- vars[vapply(vars, length, integer(1)) > 0]
+
+  if (length(vars) == 0) {
+    log_msg("No imputation targets with missingness. Duplicating data m times.")
+    return(rep(list(tibble::as_tibble(data)), m))
+  }
+
+  ce <- analysis_spec$imputation
+  ntree <- as.integer(ce$bart_ntree %||% 50L)
+  nskip <- as.integer(ce$bart_nskip %||% 100L)
+  inner_iter <- as.integer(ce$bart_inner_iter %||% 3L)
+
+  targets <- names(vars)
+  work0 <- as.data.frame(data)
+  na_map <- lapply(work0[targets], is.na)
+  names(na_map) <- targets
+  is_bin <- vapply(targets, function(v) is_binary_like(work0[[v]]), logical(1))
+  names(is_bin) <- targets
+
+  design <- function(d, preds) {
+    preds <- preds[vapply(d[preds], is.numeric, logical(1))]
+    as.data.frame(d[, preds, drop = FALSE])
+  }
+
+  log_msg("BART imputation | targets:", length(targets), "| m:", m,
+          "| ntree:", ntree, "| nskip:", nskip)
+
+  # Fast path: a single target whose predictors are already complete. One fit
+  # then yields all m draws, and there is no chain to iterate because nothing
+  # else is being imputed.
+  if (length(targets) == 1L) {
+    v <- targets[1L]
+    mis <- na_map[[v]]
+    preds <- setdiff(intersect(vars[[v]], names(work0)), v)
+    X <- design(work0, preds)
+    if (any(mis) && ncol(X) && !anyNA(X)) {
+      if (!is.null(imputation_spec$seed)) set.seed(imputation_spec$seed)
+      draws <- .rli_bart_draw(work0[[v]][!mis], X[!mis, , drop = FALSE],
+                              X[mis, , drop = FALSE], ndraw = m,
+                              binary = is_bin[[v]], ntree = ntree, nskip = nskip)
+      if (!is.null(draws)) {
+        log_msg("  single-target fast path: one fit served all", m, "imputations")
+        return(lapply(draws, function(dj) {
+          d <- work0; d[[v]][mis] <- dj; tibble::as_tibble(d)
+        }))
+      }
+    }
+  }
+
+  # General path: m independent FCS chains. No shared-fit shortcut -- each
+  # chain's predictor values differ, and approximating that would break the
+  # properness this imputer exists to provide.
+  out <- vector("list", m)
+  for (j in seq_len(m)) {
+    if (!is.null(imputation_spec$seed)) set.seed(imputation_spec$seed + j)
+    d <- work0
+    for (v in targets) d[[v]] <- .rli_init_fill(d[[v]])
+
+    for (it in seq_len(inner_iter)) {
+      for (v in targets) {
+        mis <- na_map[[v]]
+        if (!any(mis)) next
+        preds <- setdiff(intersect(vars[[v]], names(d)), v)
+        X <- design(d, preds)
+        if (!ncol(X) || anyNA(X)) next
+        dr <- .rli_bart_draw(d[[v]][!mis], X[!mis, , drop = FALSE],
+                             X[mis, , drop = FALSE], ndraw = 1L,
+                             binary = is_bin[[v]], ntree = ntree, nskip = nskip)
+        if (is.null(dr)) {
+          stop("BART fit failed for target '", v, "' (imputation ", j,
+               "). No improper fallback is attempted.", call. = FALSE)
+        }
+        d[[v]][mis] <- dr[[1L]]
+      }
+    }
+    out[[j]] <- tibble::as_tibble(d)
   }
 
   out

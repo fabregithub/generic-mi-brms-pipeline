@@ -264,7 +264,48 @@ analysis_spec <- list(
     #
     # Set FALSE only to reproduce an analysis run with a pre-v1.4.0 version.
     # Evidence: validation/phase1/FINDINGS_v4.md and FINDINGS_v5.md.
-    proper_draw = TRUE
+    #
+    # SUPERSEDED IN v1.5.0 by `z_imputer` below. `proper_draw` is still honoured
+    # for back-compatibility (TRUE -> "forest_boot", FALSE -> "forest"), so a
+    # config written against v1.4.0 keeps the imputer it was validated with.
+    # Leave it unset in new configs and use `z_imputer` instead.
+    # proper_draw = TRUE,
+
+    # ----------------------------------------------------------
+    # Which imputer the Z block (covariates + outcome) uses.
+    # Default "bart" since v1.5.0.
+    # ----------------------------------------------------------
+    #   "bart"        BART posterior draws. Proper AND flexible: best bias of
+    #                 any variant tested (max 1.29% vs 2.67%), coverage
+    #                 0.937-0.963, robust to tree count, ~4% of runtime.
+    #                 Intervals run 3-8% WIDE in some cells -- conservative.
+    #                 Requires the `dbarts` package.
+    #   "forest_boot" Bootstrapped random forest -- the v1.4.0 default. Use to
+    #                 reproduce a v1.4.0 analysis.
+    #   "forest"      Plain miceRanger. IMPROPER: intervals too narrow
+    #                 (coverage to 0.893 under heavy imputation). Pre-v1.4.0
+    #                 behaviour; use only to reproduce an old analysis.
+    #
+    # If "bart" is selected but dbarts is missing, the pipeline warns loudly and
+    # falls back to "forest_boot" rather than failing the run.
+    # Evidence: validation/phase1/FINDINGS_v7.md
+    z_imputer = "bart",
+
+    # BART tuning (only used when z_imputer = "bart"). Defaults validated.
+    bart_ntree = 50,
+    bart_nskip = 100
+
+    # `bart_inner_iter` -- the Z block's own FCS iterations -- is deliberately
+    # LEFT UNSET since v1.5.1. On the censored-exposure path it is chosen per
+    # sweep from the Z block's target set (.ce_default_inner_iter()): 1 when the
+    # block has <= 2 targets and none of them is the outcome (V8 measured that
+    # as free, +0.04 pp paired bias), 3 otherwise (with 3 targets including an
+    # imputed Y, inner = 1 cost -0.72 pp -- outside the 0.5 pp bar). Setting a
+    # value here OVERRIDES that choice for every sweep, including the cells where
+    # inner = 1 is known to bias the exposure coefficient, so set it only to
+    # reproduce an older analysis. Off the censored path the fallback is 3.
+    # Evidence: validation/phase1/FINDINGS_v8.md
+    # bart_inner_iter = 3
   ),
 
   # ------------------------------------------------------------

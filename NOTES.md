@@ -448,6 +448,133 @@ non-linear covariates. Findings:
 completed set, not one). The V5 grid took 8.05 h against 5.25 h for the four-arm V4 grid.
 Production runs with large `m` and `n` should expect the Z block to cost meaningfully more.
 
+### v1.5.0 — BART is the Z-block imputer; R8 and R12 close (behaviour change)
+
+**`analysis_spec$imputation$z_imputer` replaces the `proper_draw` flag**, defaulting to
+`"bart"`. Values: `"bart"` (v1.5.0 default, needs `dbarts`), `"forest_boot"` (the v1.4.0
+default), `"forest"` (plain miceRanger, improper, pre-v1.4.0). `proper_draw` is still
+honoured — `TRUE` → `forest_boot`, `FALSE` → `forest` — so a config written against v1.4.0
+keeps the imputer it was validated with; only configs specifying *neither* move. If `bart`
+is selected and `dbarts` is missing, the pipeline warns loudly and falls back to
+`forest_boot` rather than failing an upgraded install. The imputer used is logged each run.
+
+**Why BART.** The Z block must be proper MI or `B` is understated and intervals are too
+narrow. Two earlier attempts each got half of it: a bootstrapped forest is flexible but
+under-disperses (a forest is *already* bagged, so an outer bootstrap barely moves it), and
+`mice pmm` is properly dispersed but misspecified under non-linear covariates. BART is
+both — a sum-of-trees model with priors on tree structure *and* leaf parameters, so a
+posterior sample IS a proper draw.
+
+**Evidence (V7, 5 chained phases, ~15 h, zero failures):**
+- **P1** (7 scenarios × 4 arms × 300 reps): BART has the **best bias in all six diagnostic
+  cells** (max 1.29% against `forest_boot`'s 2.67% and `mice pmm`'s 4.70%), coverage
+  0.937–0.963, `base` control bit-identical across all four arms, `n_ok` 300 in all 35
+  cells. Cost ~**4% of runtime** — cheaper than either forest arm.
+- **P2** (`ntree` 50 → 200): bias stays ≤0.8%, width/SE moves ≤0.016, and `forest_boot` is
+  identical at both settings (the control). **The verdict is not tuning-fragile**, and the
+  overshoot persists at 200 trees so it is intrinsic, not a tuning artefact.
+- **P3** (`m` ∈ {10,20,30,50}): **width stabilises by `m` ≈ 30** — 10 → 30 narrows ~2.7%,
+  30 → 50 changes <0.2%. FMI flat at ≈0.30, and `m ≈ 100 × FMI` independently gives 30.
+  **R12 / design-plan Phase 5 closes**; the shipped default was already right.
+
+**The width/SE criterion was mis-designed — my error, not BART's.** BART failed the
+pre-registered band (0.97–1.03) in three cells. But `width/SE` divides by the empirical SD
+of the estimates, whose standard error is `sd/sqrt(2(n-1))` ≈ **4.1%** at 300 reps: a ±3%
+band on a ±4%-noise quantity is unattainable by construction. Tested against that noise,
+**none of BART's deviations is significant** (max z = +1.87); the only real deviation in the
+whole table is `forest_boot` being *too narrow* in `combined` (z = −2.10) — the very
+anti-conservatism R8 exists to remove. Two alternative explanations were tested and refuted
+first: a `t`-vs-`z` bias in the 3.92 divisor (`t` = 1.965–1.974, moves the ratio ≤0.008) and
+light-tailed estimates (`emp95/SD` 0.95–1.02, excess kurtosis −0.43 to +0.51).
+
+**Lesson worth keeping:** `width/SE` is an excellent *mechanism* diagnostic — it is how V4
+localised the shortfall to `B` rather than `Ubar` — but a poor *acceptance criterion*,
+because its noise floor exceeds the effect size of interest. Coverage is the acceptance
+criterion (MC SE 0.013). The claim is therefore that BART's width is consistent with
+calibration to within ~±8%, not that it is calibrated.
+
+**Follow-up opened:** a redundancy — block-FCS calls the Z block with `m`=1 per outer sweep
+while the BART imputer runs its own 3 inner FCS iterations, so the censored path performs
+~3× more BART fits than it needs (9 alternations where 3 were designed). Tracked in
+`validation/INTEGRATION_SUMMARY.md` §2. **Mostly resolved in v1.5.1 below — the redundancy
+was real but removing it was not free.** The interval-overshoot item raised alongside it was
+**withdrawn** once the noise floor was computed — see above.
+
+### v1.5.1 — the Z-block inner-iteration count is chosen per sweep (V8)
+
+The v1.5.0 follow-up above assumed the outer block-FCS loop's alternation made the Z
+block's own inner FCS iterations redundant, and defaulted them to 1. **V8 tested that
+assumption at 1000 replications per cell and it is only half true.** The outer loop
+alternates **Z ↔ X**; it does nothing to make the Z block's own targets condition on each
+other. With three targets (two covariates plus an imputed `Y`), `inner = 1` cost **−0.72
+percentage points** of bias against a pre-registered 0.5 pp bar — the entire confidence
+interval outside it. With two non-outcome targets it was genuinely free (+0.04 pp, CI
+±0.13). Evidence: [`validation/phase1/FINDINGS_v8.md`](validation/phase1/FINDINGS_v8.md).
+
+**Coverage and width/SE moved by less than 0.02 in every cell while bias moved 0.72 pp.**
+This was a bias-only defect, invisible to the calibration diagnostics — worth remembering
+before trusting a coverage check to validate a change to the imputation chain.
+
+`.ce_default_inner_iter(targets, y_var)` in `00_censored_exposure.R` now picks the count
+per sweep from the Z block's actual target set: **1** when the block has ≤2 targets and
+none is the outcome, **3** otherwise. `.ce_one_imputation()` calls it inside the sweep
+loop, after `make_row_level_imputation_spec()` — the target set is not known before that.
+An explicit `analysis_spec$imputation$bart_inner_iter` still wins.
+
+`Y` is excluded from the cheap path beyond what the target count alone would require,
+because the X block conditions on `Y` — an under-conditioned `Y` feeds straight into the
+censored exposure draw. V8's cells confound "3 targets" with "`Y` is a target"; requiring
+both conditions is the reading that stays safe under either explanation.
+
+**`bart_inner_iter = 3` was removed from the shipped `00_config.R`** (left commented, with
+the reason). An explicit value overrides the per-sweep choice, so leaving it set would have
+made the new default dead code for anyone using the stock config. Off the censored path the
+fallback in `run_row_level_imputation_bart()` is unchanged at 3.
+
+**This is not a behaviour change for a stock censored-exposure analysis** — that path
+imputes `Y` (MID), so it takes the `inner = 3` branch, which is the behaviour V7 validated.
+Verified bit-for-bit against the stored V8 replications in both routing directions.
+
+**Also settled in the same run:** V7's BART arm overrode `run_row_level_imputation` with the
+validation harness's own instrument, so V7 had formally measured the instrument rather than
+the shipped code. The two are **bit-identical** across all 4000 replications (max difference
+exactly 0 on `estimate`, `se`, `ci_lo`, `ci_hi`, `ubar`, `b`). V7's conclusions apply to the
+shipped pipeline without qualification.
+
+### V3 / R11 — the mixture path is confirmed unusable (2026-08-29)
+
+Not a code change: a **scope finding** that changes what the pipeline may be used for.
+
+The censored-exposure strategy was always documented as additive-only, with the mixture
+caveat resting on a scaffold estimand. V3 measured it on the estimands a BKMR analysis
+actually reports, each with truth derived analytically from the generator, at 200
+replications per cell. The result is worse than the caveat implied: the shipped engine is
+the **worst of four arms** (mean 14.6% absolute paired excess over the oracle, against 6.4%
+for LOD/√2 substitution and 10.5% for complete case), and it **destroys 57% of the
+curvature** at 40% non-detects.
+
+**Why**: the X block draws the censored exposure from a conditional that is *linear in the
+predictors*, so it imposes linearity on precisely the rows where curvature would appear.
+Imputing with the wrong functional form is worse than not imputing — on curvature, LOD/√2
+substitution is statistically indistinguishable from the oracle (p = 0.42) while the
+congenial engine is not.
+
+**Interaction is more robust** than curvature: it survives censoring of a single exposure
+(+2.6% to +5.7%) and breaks only when a second exposure is censored too (−12.5%). The
+failure is *curvature*, not mixtures in general.
+
+**Coverage was blind to it** — 0.945–0.960 alongside a −42% point bias, because the pooled
+intervals ran 1.5–1.6× wider than the estimates' true sampling spread. This is the second
+consecutive track where calibration diagnostics missed a real bias (see v1.5.1 above).
+Coverage is not a substitute for a bias check against known truth.
+
+The root README's mixture scope box has been rewritten from "remains biased" to an explicit
+**do not use**. Evidence:
+[`validation/phase1/FINDINGS_v3.md`](validation/phase1/FINDINGS_v3.md).
+
+The fix — substantive-model-compatible imputation — is unbuilt and is now the only
+substantive track left (`validation/ROADMAP.md` item 07).
+
 ### Known gap (not addressed)
 
 The four translated READMEs (`docs/README.{de,es,fr,ja}.md`) contain **zero** mentions

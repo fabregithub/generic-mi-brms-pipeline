@@ -81,8 +81,9 @@ getenv <- function(key, default) {
 split_csv <- function(x) trimws(strsplit(x, ",")[[1]])
 
 V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
-             "pipeline_bartMI", "pipeline_properZ", "pipeline_noMID",
-             "pipeline_properZ_noMID")
+             "pipeline_bartMI", "pipeline_bartMI_iter3", "pipeline_bartHarness",
+             "pipeline_properZ",
+             "pipeline_noMID", "pipeline_properZ_noMID")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 

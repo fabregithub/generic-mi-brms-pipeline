@@ -41,13 +41,107 @@ set**; `cens_mi_y` is the working congenial reference and a direct preview of th
 ```
 phase1/
 ├── R/
-│   ├── dgp.R          # known-ERF generator: additive + mixture surface (PLAN §7.1)
-│   ├── censoring.R    # left-censor X below a per-analyte LOD; optional MCAR on Z (§7.2)
-│   ├── procedures.R   # the four procedures above (§7.3)
-│   └── metrics.R      # bias / RMSE / coverage vs the known ERF (§7.4)
+│   ├── dgp.R              # known-ERF generator: additive + mixture surface (PLAN §7.1)
+│   ├── censoring.R        # left-censor X below a per-analyte LOD; optional MCAR on Z (§7.2)
+│   ├── procedures.R       # the four procedures above (§7.3)
+│   ├── procedures_pipeline.R  # arms that call the SHIPPED pipeline (V1, V4-V8)
+│   ├── robustness.R       # V2 scenario grid + outcome/covariate missingness injectors
+│   ├── proper_impute.R    # V4/V5 proper-draw Z-block instruments
+│   ├── mice_impute.R      # V6 mice-pmm Z block
+│   ├── bart_impute.R      # V7 BART Z block (harness instrument; V8 proved it exact)
+│   ├── estimands_bkmr.R   # V3: the seven BKMR estimands + their ANALYTIC truth
+│   ├── procedures_bkmr.R  # V3: the four BKMR arms
+│   └── metrics.R          # bias / RMSE / coverage vs the known ERF (§7.4)
 ├── run_phase1.R       # runner: grid × reps, writes results/ (sourceable: run_phase1())
+├── run_v2_robustness.R/.sh   # V2
+├── run_v4_variance.R         # V4-V8 engine; arms/scenarios via ARMS/SCENARIOS
+├── run_v4_variance.sh        # V4/V5
+├── run_r8_overnight.sh       # V7
+├── run_inner_iter_check.sh   # V8
+├── run_v3_bkmr.R/.sh         # V3 (BKMR mixture estimands)
+├── test_v3_harness.R         # V3 self-test: 16 checks, no MCMC, ~1 s
+├── run_status.sh             # which runs are alive (PID-based; see its header)
 └── results/           # generated (git-ignored) — regenerate by running
 ```
+
+## Is a run still going?
+
+```bash
+bash run_status.sh          # every run this directory knows about
+bash run_status.sh v3       # just the V3 runs
+```
+
+Every runner writes `logs/<tag>_<stamp>.pid`, and `run_status.sh` tests those with
+`kill -0` — which sends no signal and only asks whether the process exists.
+
+**Do not check liveness by grepping the process table.** The obvious version is subtly
+broken — and broken in a way that survives testing:
+
+```bash
+until ! pgrep -f "run_v3_bkmr.R" >/dev/null; do sleep 10; done   # fine alone, hangs in pairs
+```
+
+`pgrep -f` matches **full command lines**, and this shell's command line contains the text
+`run_v3_bkmr.R`. pgrep does not match its own ancestors, so *one* such loop works — which
+is exactly why the bug hides. Two of them are **siblings**, not ancestors: each one's pgrep
+finds the *other*, both conditions stay true forever, and both spin until killed. The
+failure is silent and looks identical to a job that is still running.
+
+If you genuinely need a pattern, bracket a character so the literal text does not appear in
+the watchers' own command lines (`pgrep -f "[r]un_v3_bkmr.R"`). That protects against other
+watchers, but not against unrelated processes that mention the same filename — so prefer
+the PID file. PIDs are exact; patterns are approximate.
+
+## Track V3 — BKMR mixture estimands
+
+The one track that changes **what is measured** rather than how missingness is handled.
+Seven contrasts on the exposure surface, each with truth derived analytically from the
+generator rather than from an oracle fit — see `../PLAN_pipeline_validation.md` §8 for
+the estimand table and the pre-registered criteria.
+
+```bash
+# a short pilot first (recommended)
+N_REP=10 SCENARIOS=nd40 ./run_v3_bkmr.sh
+
+# the gate on its own -- cheapest possible check that the harness is sound
+ARMS=oracle_bkmr SCENARIOS=nd40 N_REP=44 ./run_v3_bkmr.sh
+
+# the registered run: nd20, nd40, nd40_all x 200 reps  (~12.7 h)
+./run_v3_bkmr.sh
+
+# cheaper: drop the mildest cell               (~8.5 h)
+SCENARIOS=nd40,nd40_all ./run_v3_bkmr.sh
+```
+
+**`nd40_all` censors all three exposures at 40%** and is in the default set. It is the
+cell the track most needs: the mixture estimands are functions of all three exposures, and
+the two sharp tests (`int_X1X2`, `curv_X1`) depend on X1 and X2 jointly — so this is the
+only cell where both exposures entering them are imputed rather than one.
+
+**The gate matters.** `oracle_bkmr` is not the yardstick here — the analytic truth is —
+so the oracle's job is to test the harness. If it does not recover the analytic truth
+with near-nominal coverage, nothing the other arms report is interpretable. Read it
+first, every time.
+
+**Check the machinery first — it takes a second and no MCMC:**
+
+```bash
+Rscript test_v3_harness.R
+```
+
+16 checks. The load-bearing one is the first: it rebuilds `eta` from
+`simulate_complete()`'s own output, strips the covariate and intercept terms, and
+requires what is left to equal `h_true()` exactly. If those two ever drift apart, every
+bias V3 reports is wrong by the same silent amount and nothing in the output would show
+it. The rest cover the contrast algebra, the closed-form cross-check at three
+`(mu_x, sd_x)` settings, the additive generator zeroing the non-linear estimands, and
+that `int_X1X2` and `curv_X1` respond to `b_int` and `b_quad` respectively and to
+nothing else.
+
+**A 50-knot Gaussian predictive process is the default** (`KNOTS=50`), because the full
+GP costs 165 s per fit at n = 800 against 16-17 s with knots. The approximation is
+*validated by the gate* rather than assumed; `KNOTS=0` fits the full GP if you want to
+check it directly.
 
 ## Running
 
@@ -102,9 +196,12 @@ of the true estimand; a calibrated procedure is ~0.95). The gate reads:
 These are explicit simplifications to keep Phase 1 to *no new package code*; each is a
 known follow-up, flagged in code:
 
-1. **Estimand = focal main-effect coefficient `b_logX1`** for both ERF forms. The
-   richer mixture estimands (overall mixture effect q25→q75, pairwise interactions,
-   `h` at exposure profiles; PLAN §7.4) are the next increment.
+1. ~~**Estimand = focal main-effect coefficient `b_logX1`** for both ERF forms.~~
+   **Addressed 2026-08-28 by Track V3** (`R/estimands_bkmr.R`, `run_v3_bkmr.sh`): the
+   richer mixture estimands — overall mixture effect, single-exposure effects, the
+   X1:X2 interaction and the curvature in X1 — are now implemented with **analytic**
+   truth, and BKMR is the analysis model rather than a matched linear one. The scalar
+   tracks (V1–V2, V4–V8) still use `b_logX1`, which is what keeps them comparable.
 2. **`cens_mi_y` uses a *linear* imputation model**, correctly specified for the additive
    (log-linear-Gaussian) DGP, where it tracks the oracle. For the **mixture surface** the
    linear model is misspecified, so `cens_mi_y` is itself biased there (empirically it is —

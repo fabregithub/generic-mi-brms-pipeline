@@ -349,6 +349,8 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   if ("pipeline_properBoot" %in% which)     out$pb    <- .ce_args(proc_pipeline_properBoot)
   if ("pipeline_micePmm" %in% which)        out$mp    <- .ce_args(proc_pipeline_micePmm)
   if ("pipeline_bartMI" %in% which)         out$bm    <- .ce_args(proc_pipeline_bartMI)
+  if ("pipeline_bartMI_iter3" %in% which)   out$bm3   <- .ce_args(proc_pipeline_bartMI_iter3)
+  if ("pipeline_bartHarness" %in% which)    out$bmh   <- .ce_args(proc_pipeline_bartHarness)
   if ("pipeline_noMID" %in% which)          out$nomid <- .ce_args(proc_pipeline_noMID)
   if ("pipeline_properZ_noMID" %in% which)  out$pznm  <- .ce_args(proc_pipeline_properZ_noMID)
   if ("brms_joint" %in% which)       out$brms   <- proc_brms_joint(bundle, control = brms_control, cache = brms_cache)
