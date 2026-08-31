@@ -21,6 +21,9 @@ on:
       - ".github/workflows/site.yml"
   workflow_dispatch:
 
+# Action versions are pinned to majors that run on Node 24. GitHub is retiring
+# Node 20 on the runners, and v4/v3 of these actions targeted it -- they still
+# worked, but emitted deprecation warnings and will eventually fail.
 permissions:
   contents: read
   pages: write
@@ -35,7 +38,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: quarto-dev/quarto-actions/setup@v2
         with:
@@ -49,7 +52,7 @@ jobs:
       - name: Fail if the render produced no home page
         run: test -f _site/index.html
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -61,4 +64,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
