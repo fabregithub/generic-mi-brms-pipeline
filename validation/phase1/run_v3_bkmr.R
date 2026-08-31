@@ -88,7 +88,8 @@ if (is.null(.here) || !nzchar(.here)) {
 }
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
             "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
-            "bart_impute.R", "estimands_bkmr.R", "procedures_bkmr.R")) {
+            "bart_impute.R", "estimands_bkmr.R", "smc_impute.R",
+            "procedures_bkmr.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -98,7 +99,14 @@ getenv <- function(key, default) {
 }
 split_csv <- function(x) trimws(strsplit(x, ",")[[1]])
 
-V3_ARMS <- c("oracle_bkmr", "cc_bkmr", "sub_lod2_bkmr", "pipeline_bkmr")
+V3_ARMS <- c("oracle_bkmr", "cc_bkmr", "sub_lod2_bkmr", "pipeline_bkmr",
+             # V9: the SMC arms. Not in the V3 default set -- V3 is closed and its
+             # numbers must stay reproducible. Select them explicitly via ARMS.
+             "smc_oracle_bkmr", "smc_plugin_bkmr")
+
+# The arm set V3 was registered and run with. Kept as the default so
+# `./run_v3_bkmr.sh` reproduces the published V3 result unchanged.
+V3_DEFAULT_ARMS <- c("oracle_bkmr", "cc_bkmr", "sub_lod2_bkmr", "pipeline_bkmr")
 
 # ---- scenarios ---------------------------------------------------------------
 
@@ -166,6 +174,13 @@ V3_SCENARIOS <- c("nd20", "nd40", "nd40_all")
         bundle, grid, m = m, iter = iter, n_knots = n_knots,
         seed = base_seed + r, n_cores = 1L, outer_sweeps = sweeps,
         margin = margin, project_root = project_root)
+    for (md in c("oracle", "plugin")) {
+      if (paste0("smc_", md, "_bkmr") %in% arms)
+        parts[[length(parts) + 1L]] <- proc_bkmr_smc(
+          bundle, grid, m = m, iter = iter, n_knots = n_knots,
+          seed = base_seed + r, mode = md, sweeps = sweeps,
+          rho = sc$rho, sd_x = 1, mu_x = 0, sigma_y = 1)
+    }
 
     do.call(rbind, parts)
   }, error = function(e) {
@@ -257,7 +272,7 @@ print_v3 <- function(s) {
 
 run_v3 <- function(n_rep = 200L, n_obs = 800L, m = 10L, iter = 3000L,
                    n_knots = NULL, base_seed = 20260828L, n_cores = NULL,
-                   which_scenarios = V3_SCENARIOS, arms = V3_ARMS,
+                   which_scenarios = V3_SCENARIOS, arms = V3_DEFAULT_ARMS,
                    sweeps = 3L, margin = "shash", project_root = NULL,
                    q_lo = 0.25, q_hi = 0.75, verbose = TRUE) {
 
@@ -375,7 +390,7 @@ if (sys.nframe() == 0L) {
   sweeps <- as.integer(getenv("SWEEPS", 3L))
   margin <- getenv("MARGIN", "shash")
   scs    <- if (nzchar(Sys.getenv("SCENARIOS"))) split_csv(Sys.getenv("SCENARIOS")) else V3_SCENARIOS
-  arms   <- if (nzchar(Sys.getenv("ARMS")))      split_csv(Sys.getenv("ARMS"))      else V3_ARMS
+  arms   <- if (nzchar(Sys.getenv("ARMS")))      split_csv(Sys.getenv("ARMS"))      else V3_DEFAULT_ARMS
   proot  <- if (nzchar(Sys.getenv("PIPELINE_ROOT"))) Sys.getenv("PIPELINE_ROOT") else NULL
   q_lo   <- as.numeric(getenv("QLO", 0.25))
   q_hi   <- as.numeric(getenv("QHI", 0.75))

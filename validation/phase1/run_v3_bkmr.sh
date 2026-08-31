@@ -96,17 +96,24 @@ set -uo pipefail
 SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
 cd "$(dirname "$SELF")"
 
+# Log and PID files follow OUT_TAG, so a run launched with OUT_TAG=v9 is called
+# v9_<stamp> everywhere -- log, PID, results and `run_status.sh <tag>` filter --
+# rather than results being v9_* while the log said v3_*. Computed before the
+# detach block so parent and child agree; OUT_TAG is inherited by the child.
+TAG="${OUT_TAG:-v3}"
+
 if [[ "${V3_DETACHED:-0}" != "1" ]]; then
   mkdir -p logs
   export V3_STAMP="$(date +%Y%m%d-%H%M%S)"
   V3_DETACHED=1 nohup bash "$SELF" >/dev/null 2>&1 &
   PID=$!
-  echo "$PID" > "logs/v3_${V3_STAMP}.pid"
+  echo "$PID" > "logs/${TAG}_${V3_STAMP}.pid"
   command -v caffeinate >/dev/null 2>&1 && nohup caffeinate -i -w "$PID" >/dev/null 2>&1 &
   echo "V3 BKMR run detached.  PID ${PID}"
-  echo "Log:   validation/phase1/logs/v3_${V3_STAMP}.log"
-  echo "Watch: tail -f validation/phase1/logs/v3_${V3_STAMP}.log"
-  echo "Alive? bash validation/phase1/run_status.sh v3"
+  echo "Log:   validation/phase1/logs/${TAG}_${V3_STAMP}.log"
+  echo "Watch: tail -f validation/phase1/logs/${TAG}_${V3_STAMP}.log"
+  echo "Alive? bash validation/phase1/run_status.sh ${TAG}"
+  echo "Stop:  kill \$(cat validation/phase1/logs/${TAG}_${V3_STAMP}.pid)"
   exit 0
 fi
 
@@ -122,12 +129,12 @@ export M="${M:-10}"
 export KNOTS="${KNOTS:-50}"
 export SWEEPS="${SWEEPS:-3}"
 export MARGIN="${MARGIN:-shash}"
-export OUT_TAG="${OUT_TAG:-v3}"
+export OUT_TAG="${TAG}"          # TAG was resolved from OUT_TAG above
 export SCENARIOS="${SCENARIOS:-nd20,nd40,nd40_all}"
 export ARMS="${ARMS:-oracle_bkmr,cc_bkmr,sub_lod2_bkmr,pipeline_bkmr}"
 
 STAMP="${V3_STAMP:-$(date +%Y%m%d-%H%M%S)}"
-LOG="logs/v3_${STAMP}.log"
+LOG="logs/${TAG}_${STAMP}.log"
 mkdir -p results logs
 
 {
@@ -141,5 +148,18 @@ mkdir -p results logs
   echo "========================================"
 } > "$LOG"
 
-Rscript run_v3_bkmr.R >> "$LOG" 2>&1
-echo "[$(date '+%H:%M:%S')] done rc=$? -> results/${OUT_TAG}_latest.rds" >> "$LOG"
+# RECORD THE PID OF THE PROCESS THAT DOES THE WORK, NOT THIS WRAPPER.
+#
+# This wrapper used to record its own PID, which is wrong in the one case that
+# matters: if the wrapper dies while Rscript keeps going, the R process is
+# reparented to init, the recorded PID refers to nothing, and `run_status.sh`
+# reports "done" for a run that is still burning 22 cores -- while
+# `kill $(cat ...pid)` silently kills nothing. That happened on the first V9
+# launch. Whatever killed the wrapper was never identified; recording the worker
+# instead makes the question moot, because the PID now tracks the thing whose
+# liveness is actually being asked about.
+Rscript run_v3_bkmr.R >> "$LOG" 2>&1 &
+RPID=$!
+printf '%s\n' "$RPID" > "logs/${TAG}_${STAMP}.pid"
+wait "$RPID"; rc=$?
+echo "[$(date '+%H:%M:%S')] done rc=$rc -> results/${OUT_TAG}_latest.rds" >> "$LOG"

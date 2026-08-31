@@ -249,3 +249,85 @@ proc_bkmr_pipeline <- function(bundle, grid, m = 10L, iter = 1000L,
                                  length(imputed) - n_ok_fits, length(imputed)))
   bkmr_rows(label, tab, substr(note, 1, 120))
 }
+
+
+# ---- arms 5 & 6: substantive-model-compatible imputation (V9) ----------------
+
+#' SMC imputation, then BKMR per completed dataset.
+#'
+#' THE EXPERIMENT V3 DID NOT RUN. V3 inferred that the shipped X block destroys
+#' curvature because its conditional is linear in the predictors. This arm
+#' replaces exactly that one component -- the draw of the censored exposure --
+#' with a draw from the CORRECT conditional under the generator's own surface,
+#' and changes nothing else. Everything downstream (BKMR fit, estimand
+#' extraction, Rubin pooling) is shared with `pipeline_bkmr`, so a difference
+#' between the two arms is attributable to the conditional and nothing else.
+#'
+#' Two modes, and the pair is the point:
+#'
+#'   "oracle"  the generator's TRUE coefficients. An upper bound: what SMC could
+#'             achieve if the surface and its parameters were known exactly.
+#'             Answers "is the linear conditional the cause?" and nothing else.
+#'   "plugin"  the same functional form, coefficients estimated from the current
+#'             completed data each sweep and drawn from their posterior (so the
+#'             imputation stays proper). The realistic version, and the one whose
+#'             gap to "oracle" measures what estimating the surface costs.
+#'
+#' THIS IS A HARNESS INSTRUMENT, NOT PIPELINE CODE -- it does not touch
+#' `00_censored_exposure.R`. It measures what SMC imputation could achieve on
+#' this generator, which is what roadmap item 07 would have to build. V8's lesson
+#' about mistaking an instrument for the shipped path applies; the arm names say
+#' `smc_`, never `pipeline_`.
+proc_bkmr_smc <- function(bundle, grid, m = 10L, iter = 1000L, n_knots = NULL,
+                          seed = NULL, mode = c("oracle", "plugin"),
+                          sweeps = 3L, rho = 0.4, sd_x = 1, mu_x = 0,
+                          sigma_y = 1, label = NULL) {
+  mode  <- match.arg(mode)
+  label <- label %||% paste0("smc_", mode, "_bkmr")
+
+  if (!is.null(seed)) set.seed(seed)
+  truth <- bundle$truth
+
+  imputed <- tryCatch(
+    smc_impute_datasets(bundle$censored, truth, m = as.integer(m), mode = mode,
+                        sweeps = sweeps, rho = rho, sd_x = sd_x, mu_x = mu_x,
+                        sigma_y = sigma_y),
+    error = function(e) structure(list(), err = conditionMessage(e)))
+
+  if (!length(imputed)) {
+    return(bkmr_na_rows(label, grid,
+                        paste("smc failed:", attr(imputed, "err") %||% "no datasets")))
+  }
+
+  ests <- vars <- matrix(NA_real_, nrow = length(imputed),
+                         ncol = length(grid$names),
+                         dimnames = list(NULL, grid$names))
+
+  for (i in seq_along(imputed)) {
+    dr <- fit_bkmr_draws(imputed[[i]], grid, iter = iter, n_knots = n_knots,
+                         seed = if (is.null(seed)) NULL else seed + 9000L + i)
+    if (is.null(dr)) next
+    mo <- bkmr_draws_moments(dr)
+    ests[i, mo$estimand] <- mo$est
+    vars[i, mo$estimand] <- mo$var
+  }
+
+  n_ok_fits <- sum(is.finite(ests[, 1]))
+  if (n_ok_fits == 0L) {
+    return(bkmr_na_rows(label, grid, "all per-imputation bkmr fits failed"))
+  }
+
+  tab <- do.call(rbind, lapply(grid$names, function(nm) {
+    pl <- rubin_pool(ests[, nm], vars[, nm])
+    data.frame(estimand = nm, est = unname(pl["est"]), se = unname(pl["se"]),
+               ci_lo = unname(pl["ci_lo"]), ci_hi = unname(pl["ci_hi"]),
+               ubar = unname(pl["ubar"]), b = unname(pl["b"]),
+               fmi = unname(pl["fmi"]), stringsAsFactors = FALSE)
+  }))
+
+  note <- sprintf("smc-%s; m=%d; iter=%d; sweeps=%d", mode, m, iter, sweeps)
+  if (n_ok_fits < length(imputed))
+    note <- paste0(note, sprintf("; %d/%d bkmr fits failed",
+                                 length(imputed) - n_ok_fits, length(imputed)))
+  bkmr_rows(label, tab, substr(note, 1, 120))
+}

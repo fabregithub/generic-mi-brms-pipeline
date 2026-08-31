@@ -1,0 +1,64 @@
+# Build the documentation site and publish it to GitHub Pages.
+#
+# NO gh-pages BRANCH. GitHub Pages has deployed straight from a workflow
+# artifact since 2022 (`upload-pages-artifact` + `deploy-pages`), so there is no
+# second branch to maintain, merge or accidentally commit to.
+#
+# NO R IN CI. The site is plain Markdown -- Quarto renders it without executing
+# any code, so the build needs Quarto alone. Installing brms/cmdstanr here would
+# add many minutes and a large surface for breakage, for no benefit.
+#
+# One-time repository setting: Settings -> Pages -> Source = "GitHub Actions".
+name: Documentation site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "README.md"
+      - "docs/**"
+      - "_quarto.yml"
+      - ".github/workflows/site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Let a newer build supersede an in-flight one, but never cancel a deploy midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          # Pinned to the version this site was verified against locally, so a
+          # Quarto release cannot silently change the output. Bump deliberately.
+          version: 1.10.18
+
+      - name: Render site
+        run: quarto render
+
+      - name: Fail if the render produced no home page
+        run: test -f _site/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

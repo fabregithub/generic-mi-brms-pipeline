@@ -18,6 +18,8 @@
 # PLAN §7.4) are a documented extension -- see README "Scaffold limitations".
 # =============================================================================
 
+if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
+
 #' Draw the true regression coefficients that define the ERF.
 #'
 #' Returned separately from the data so the "truth" is explicit and auditable.
@@ -25,7 +27,33 @@
 #' @param p Number of exposures.
 #' @param q Number of covariates (here fixed at 2: one continuous, one binary).
 #' @param erf_form "additive" or "mixture".
-make_truth <- function(p = 3L, q = 2L, erf_form = "additive") {
+#' @param y_form Shape of the outcome in the COVARIATES. "linear" (default)
+#'   reproduces every track up to V10: `Y` is linear in `(logX, Z)`, so the
+#'   conditional of `Z1` given `(Y, X)` is linear-Gaussian and a *parametric*
+#'   imputation model for `Z1` is correctly specified.
+#'
+#'   WHY "nonlinear" EXISTS (V11). That linearity is a confound in a shipped
+#'   decision. `z_imputer = "bart"` was chosen over `mice pmm` and `forest_boot`
+#'   in V6/V7 on a design where the outcome is linear in `Z` by construction --
+#'   and FINDINGS_v7.md says so itself: "`Y` is linear in `(logX, Z)` by
+#'   construction, which is why parametric arms do well in the outcome-dominated
+#'   cells." A linear imputer is never penalised for misspecification against the
+#'   outcome, so the comparison could only ever reward calibration.
+#'
+#'   Under "nonlinear" the outcome gains `b_zq * (Z1^2 - 1)`, which makes
+#'   `p(Z1 | Y, X)` non-linear and a linear imputation model for `Z1` genuinely
+#'   misspecified. `z_form = "nonlinear"` (V6) is a different axis: it makes `Z1`
+#'   a non-linear function of the OTHER PREDICTORS. This one makes the OUTCOME
+#'   non-linear in `Z1`, which is what conditions the imputation draw.
+#'
+#'   The term is centred (`Z1^2 - 1` has mean zero for standard-normal `Z1`) so
+#'   the outcome's mean is unchanged, and [dgp_formula()] adds the matching
+#'   `I(Z1^2)` term so the ANALYSIS model stays correctly specified. That
+#'   separation is the whole point: the focal estimand `b[1]` remains exactly
+#'   recoverable, so any bias is attributable to the imputation model and never
+#'   to analysis misspecification.
+make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
+                       y_form = "linear") {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -37,11 +65,16 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive") {
   b_int  <- if (erf_form == "mixture" && p >= 2L) 0.25 else 0.0   # logX1 * logX2
   b_quad <- if (erf_form == "mixture") 0.15 else 0.0              # logX1^2
 
+  # Curvature of the outcome in the continuous covariate (V11). Sized comparably
+  # to gamma[1] = 0.5 so it is a real feature of the surface rather than a nudge.
+  b_zq <- if (identical(y_form, "nonlinear")) 0.40 else 0.0
+
   list(
     intercept = 0.0,
     b = b, gamma = gamma,
     b_int = b_int, b_quad = b_quad,
     erf_form = erf_form,
+    y_form = y_form, b_zq = b_zq,
     # The primary Phase-1 estimand: the focal exposure's main-effect coefficient.
     # For the mixture surface this is the *local* main effect at logX2 = 0,
     # logX1 = 0 (the point about which b_int / b_quad are centred), so the
@@ -124,6 +157,12 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
     if (p >= 2L) eta <- eta + truth$b_int * logX[, 1] * logX[, 2]
     eta <- eta + truth$b_quad * logX[, 1]^2
   }
+  # V11: outcome curvature in the continuous covariate. Centred, so the mean of
+  # Y is unchanged and the linear and non-linear designs stay comparable.
+  if (identical(truth$y_form %||% "linear", "nonlinear") && q >= 1L) {
+    eta <- eta + (truth$b_zq %||% 0) * (Zmat[, 1]^2 - 1)
+  }
+
   Y <- eta + stats::rnorm(n, 0, sigma_y)
 
   data <- data.frame(Y = Y, logX, Z, check.names = FALSE)
@@ -142,6 +181,12 @@ dgp_formula <- function(truth) {
   if (truth$erf_form == "mixture") {
     if (p >= 2L) rhs <- c(rhs, "logX1:logX2")
     rhs <- c(rhs, "I(logX1^2)")
+  }
+  # V11: keep the ANALYSIS model correctly specified when the outcome is
+  # non-linear in Z1, so the focal estimand stays recoverable and any bias is
+  # attributable to the imputation model alone.
+  if (identical(truth$y_form %||% "linear", "nonlinear") && q >= 1L) {
+    rhs <- c(rhs, "I(Z1^2)")
   }
   stats::as.formula(paste("Y ~", paste(rhs, collapse = " + ")))
 }

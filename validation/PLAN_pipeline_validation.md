@@ -564,6 +564,263 @@ not an arm, and is deliberately out of V3's confirmatory scope.
 
 ---
 
+## 8b. Track V9 — Is the linear conditional really the cause? (SMC mechanism test)
+
+> **STATUS: RESOLVED — 2026-08-29.** 200 tasks, 100 reps, 10.7 h, zero errors.
+> **The V3 diagnosis is confirmed causally.** Replacing only the censored-exposure draw
+> closes **89–100%** of the curvature gap; mean absolute excess over the oracle across all
+> fourteen cells falls from **17.2% to 0.9%**. The plug-in arm, which estimates the surface
+> each sweep, matches the oracle arm to **0.2 pp** — the fix needs the right functional
+> *form*, not the true parameters. Control was bit-identical to V3 on 2,800 shared rows.
+> Full reading: [`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md).
+
+**Question.** V3 concluded that the shipped X block destroys curvature *because* its
+conditional is linear in the predictors. That is an inference from a pattern, not a
+demonstration. Does replacing only that component restore the curvature estimand?
+
+This gates roadmap item **07**: if the answer is no, 07 would be a research-scale build
+aimed at the wrong target.
+
+**The manipulation.** One component changes — the draw of the censored exposure. Everything
+downstream (BKMR fit, estimand extraction, Rubin pooling) is shared with `pipeline_bkmr`,
+so a difference is attributable to the conditional and nothing else.
+
+| arm | conditional used for the censored exposure |
+|---|---|
+| `pipeline_bkmr` | shipped: **linear** in (Y, other X, Z) |
+| `smc_oracle_bkmr` | the generator's **true** surface and coefficients — an upper bound |
+| `smc_plugin_bkmr` | the same functional form, coefficients estimated each sweep and drawn from their posterior (proper) — the realistic version |
+
+`smc_*` are **harness instruments, not pipeline code**, and are named so they cannot be
+mistaken for it (the V8 lesson). They measure what SMC *could* achieve here.
+
+**The sampler.** The target is `p(x | Y, rest) ∝ p(Y | x, rest)·p(x | other X)·1{x < LOD}`.
+The outcome mean is quadratic in `x`, so the log target is a quartic in one dimension —
+no closed form, but a grid inverse-CDF over the truncated support is exact to grid
+resolution. `test_v9_smc.R` validates it against independent numerical integration across
+five regimes (strong/negative/zero curvature, tight outcome variance, hard truncation),
+agreeing to ≤0.002 on means, SDs and five quantiles, and checks that the quadratic
+coefficients are recovered exactly and the exposure prior matches the generator's MVN
+conditional.
+
+### Acceptance criteria (registered before the run)
+
+**Read every arm as excess over `oracle_bkmr` on the same estimand**, paired on identical
+datasets. The oracle carries BKMR's own finite-sample bias (V3: +15–17% on `curv_X1`), so
+raw bias would charge the imputation for error the estimator makes anyway.
+
+| | criterion |
+|---|---|
+| **PRIMARY** | `smc_oracle_bkmr` excess over the oracle on `curv_X1`: **within ±10 pp**. V3 measured the pipeline at −56.7% / −58.4% there, so this is a wide gate around zero against a very large known effect |
+| **SECONDARY** | `smc_plugin_bkmr` excess on `curv_X1`, and the **oracle-to-plugin gap** — what it costs to estimate the surface rather than know it |
+| **CONTROL** | `pipeline_bkmr` must reproduce V3's `curv_X1` excess (−56.7% at `nd40`) within Monte-Carlo error. If it does not, something changed and the comparison is void |
+| **NEGATIVE** | No arm should improve `overall_q75_q25`, which is degenerate on this generator |
+
+**Interpretation, fixed in advance.** If `smc_oracle` lands near zero excess while
+`pipeline` stays near −57%, the V3 diagnosis is **confirmed causally** and item 07 has a
+defined target and a measured upper bound. If `smc_oracle` is also badly biased, the
+diagnosis is **wrong**, the linear conditional is not the operative cause, and 07 must be
+re-scoped before any of it is built. Both outcomes are informative; the second is the more
+valuable one to learn cheaply.
+
+**Scope.** `nd40` and `nd40_all` at 100 replications. `nd20` is dropped: V3 found the
+mildest effect there (−11.7%), so it carries the least signal per BKMR fit. 100 reps gives
+~3.6% Monte-Carlo error on `curv_X1`, which resolves a 57 pp effect at ~16σ. Measured cost
+~10 h (from V3's 5.80 s per fit at 22 workers, 31 fits per replication).
+
+---
+
+## 8c. Track V10 — MAR covariate missingness
+
+> **STATUS: RESOLVED — 2026-08-29.** 12 scenarios × 1000 reps, 87 min, zero errors.
+> **MAR does not degrade the engine; it is slightly easier than MCAR** (−0.17% vs −1.67%
+> at 40% missing, coverage 0.948–0.967). The strength=0 control reproduced MCAR, and
+> realised fractions matched to 0.1 pp. **The registered ±1 pp bias bar is breached at 40%
+> (+1.50 pp), in the favourable direction** — recorded as a breach, not rewritten. Full
+> reading: [`phase1/FINDINGS_v10.md`](phase1/FINDINGS_v10.md).
+
+**Question.** Every claim the root README makes about the additive path — V1's bias ≤0.8%
+and coverage 0.957, V2's ten-scenario sweep, V4–V8's variance work — rests on **MCAR**
+covariates. MCAR is the easy case and the unrealistic one. Does the shipped engine hold
+under **MAR**, the mechanism multiple imputation is actually built for?
+
+This is a scope gap in live claims, not a refinement.
+
+**The mechanism.** `logit P(Z missing) = a + strength·z(Y) + strength·z(logX2)`, with `a`
+solved numerically so the realised fraction matches the target — which keeps each MAR cell
+comparable to the MCAR cell at the same fraction, so a difference is the *mechanism* and
+not the *amount* missing.
+
+Both drivers are fully observed, so this is MAR and not MNAR. **Verified**: at n = 40,000,
+missingness regressed on the drivers plus the true `Z1` gives a `Z1` coefficient of +0.0015
+(p = 0.91), while the marginal association with `Z1` is strong (p < 1e-150) — exactly the
+signature of MAR, since `Y` depends on `Z1`. The driver is deliberately the **outcome**,
+which the Z block conditions on: if the engine still degrades, the problem is the imputer
+rather than the mechanism being out of scope.
+
+| scenario | what it adds |
+|---|---|
+| `mar_z20`, `mar_z40` | matched to `mcar_z20` / `mcar_z40` |
+| `mar_z40_strong` | doubled logit coefficients — a harder mechanism |
+| `mar_z40_mcarctl` | **strength = 0**, which reduces the MAR injector to MCAR |
+| `nl_mar_z40` | MAR with non-linear covariates (the V6/V7 cell) |
+| `mar_combined`, `nl_mar_combined` | MAR covariates **and** a missing outcome |
+
+### Acceptance criteria (registered before the run)
+
+| | criterion |
+|---|---|
+| **CONTROL** | `mar_z40_mcarctl` must match `mcar_z40` on bias and coverage within Monte-Carlo error. This proves the new injector changed the *mechanism* and nothing else. **A control failure invalidates the run** |
+| **MAIN** | `mar_z40` vs `mcar_z40`: bias within **1 pp** and coverage within **0.03**. Wider than V8's bars because these are unpaired (different missingness draws), so the comparison carries both cells' Monte-Carlo error |
+| **DOSE** | `mar_z40_strong` shows whether any degradation scales with mechanism strength — a null at `mar_z40` plus a null here is much stronger evidence than a null alone |
+| **STRESS** | `nl_mar_z40`, `mar_combined`, `nl_mar_combined` reported; no pre-set bar |
+
+**Expected outcome, stated in advance so a null is not over-read.** MAR is precisely the
+assumption MI handles, and the Z block conditions on `Y`, which is the driver — so the
+engine *should* cope. A null result therefore confirms the claims rather than surprising
+anyone; its value is that the claims currently rest on an untested assumption. A
+*non*-null would be a live defect in what the README tells users today.
+
+**Scope.** Additive ERF, the scalar estimand `b_logX1`, the shipped `pipeline_bartMI` arm
+plus the oracle. Cheap relative to the BKMR tracks — `lm` fits, not MCMC.
+
+---
+
+## 8d. Track V11 — Does the imputer choice survive a non-linear outcome?
+
+> **STATUS: BUILT, CRITERIA REGISTERED, NOT YET RUN — 2026-08-29.**
+> Files: `y_form` in `phase1/R/dgp.R`, four scenarios in `phase1/R/robustness.R`.
+
+**Question.** `z_imputer = "bart"` has been the shipped default since v1.5.0, chosen over
+`mice pmm` and `forest_boot` in V6/V7. **Every cell in that comparison had an outcome
+linear in `(logX, Z)` by construction** — and `FINDINGS_v7.md` says so itself:
+
+> *"`Y` is linear in `(logX, Z)` by construction, which is why parametric arms do well in
+> the outcome-dominated cells. Untested under a non-linear outcome."*
+
+The Z block imputes `Z1` conditioning on `Y`. If `Y` is linear in `Z1`, then
+`p(Z1 | Y, X)` is linear-Gaussian and a **parametric imputer is correctly specified against
+the outcome and can never be penalised for misspecification**. The comparison could only
+ever reward calibration. That is a confound in a shipped decision, and this track removes
+it.
+
+**The manipulation.** The outcome gains `b_zq * (Z1^2 - 1)` with `b_zq` = 0.40, comparable
+to `gamma[1]` = 0.50. `dgp_formula()` gains the matching `I(Z1^2)` term, so the **analysis
+model stays correctly specified** and the focal estimand `b_logX1` = 0.4 remains exactly
+recoverable — any bias is the imputation model's, never analysis misspecification.
+
+**Distinct from V6's axis.** `z_form = "nonlinear"` makes `Z1` a non-linear function of the
+*other predictors*. `y_form = "nonlinear"` makes the *outcome* non-linear in `Z1`, which is
+what conditions the imputation draw. They are different confounds; only the first was ever
+addressed.
+
+**Verified before registering:**
+
+| check | result |
+|---|---|
+| oracle still recovers `b_logX1` under `y_form = "nonlinear"` | +0.14% (MC error 0.24%) |
+| is `p(Z1 &#124; Y, X)` actually non-linear? adding `I(Y^2)` to a linear `Z1` model | `y_form="linear"`: **F = 0.0, p = 0.83**; `y_form="nonlinear"`: **F = 521.6, p < 2e-16** |
+| outcome mean unchanged (term is centred) | −0.151 vs −0.153 |
+
+### Arms and cells
+
+The V6/V7 comparison, re-run: `pipeline_block_fcs` (plain forest), `pipeline_properBoot`,
+`pipeline_micePmm`, `pipeline_bartMI` (shipped), plus the oracle.
+
+Four non-linear-outcome cells, each **matched to an existing linear cell** so the contrast
+is the outcome's shape and nothing else: `ynl_mcar_z40` ↔ `mcar_z40`,
+`ynl_missing_y20` ↔ `missing_y20`, `ynl_combined` ↔ `combined`, `ynl_mar_z40` ↔ `mar_z40`.
+The matched linear cells are re-run in the same job so both sides share the run.
+
+### Acceptance criteria (registered before the run)
+
+| | criterion |
+|---|---|
+| **CONTROL** | `mcar_z40`, `combined` and `mar_z40` with `pipeline_bartMI` must reproduce **V10 bit-identically** on reps 1–300. **Not V7** — see below. `missing_y20` has no reproducible baseline and is uncontrolled. **A control failure invalidates the run** |
+| **PRIMARY** | Does `bartMI` remain the best or joint-best arm on bias in the non-linear-outcome cells? Reported as bias per arm per cell with MC error |
+| **SECONDARY** | The **degradation of `micePmm`** from its matched linear cell to its non-linear one. V7's concern predicts pmm gets worse; the size of that is the measure of how much the old comparison was flattering it |
+| **DECISION** | If `bartMI` is no longer best, the v1.5.0 default is **decided on a biased comparison** and must be revisited. If it remains best, the default is confirmed on a design that could have refuted it |
+
+**Either answer is useful, and the second is the point.** A default that survives a test
+designed to break it is worth more than one that was never tested. This is not expected to
+change the shipped default — it is expected to *earn* it.
+
+**Scope.** Additive ERF, scalar estimand `b_logX1`, `m` = 30. One curvature form
+(`Z1^2`), one coefficient size. It does not test a non-linear outcome in the *exposures* —
+that is the mixture path, which V3/V9 govern.
+
+**Cost — MEASURED, and much higher than first estimated.** A 44-task pilot with all four
+imputer arms at `m` = 30 took **14.3 min at 22 workers**, i.e. 0.325 min/task. The initial
+"1–2 h" guess was extrapolated from V10, which ran a *single* arm; four arms at `m` = 30
+cost roughly an order of magnitude more.
+
+| design | tasks | wall | MC error on bias |
+|---|---|---|---|
+| 8 cells × 300 reps | 2,400 | **13.0 h** | 0.73 pp |
+| 8 cells × 500 reps | 4,000 | 21.7 h | 0.57 pp |
+| 8 cells × 1000 reps | 8,000 | 43.3 h | 0.40 pp |
+
+#### The control is registered against V10, not V7 — because V7 is not reproducible
+
+The obvious baseline was V7 P1: same four arms, same `SEED=20260825`, same `N_REP=300`,
+same `M=30`, and canonical scenario indices 1–13 unchanged. It should have matched to the
+last digit. **It does not.** A 2-replication pre-check against `mcar_z40` /
+`pipeline_bartMI` showed differences up to 0.0128 in the estimate.
+
+That discrepancy **predates all V11 work**. V8 (2026-08-28) and V7 (2026-08-27) already
+disagree on the same cell, arm and replications — max difference 0.0128 on reps 1–5 —
+and V8 ran before `y_form`, `seed_as` and v1.5.1 existed. The most likely cause is v1.5.0's
+`z_imputer` selector, which was introduced *between* the two runs and changed how
+`pipeline_bartMI` resolves its Z-block imputer.
+
+By contrast **V8 and V10 are bit-identical across all 1000 replications** of
+`mcar_z40` / `pipeline_bartMI` (estimate, `se`, `ubar`, `b` — max difference exactly 0),
+despite straddling v1.5.1. So the post-v1.5.0 tree is stable and reproducible, and V10 is
+the right baseline.
+
+**What this means for V7's standing.** V7's *conclusions* are not in doubt — V8's port
+check re-established them bit-identically against the shipped code, and V9's control
+reproduced V3 exactly. But V7's **raw 2026-08-27 numbers cannot be regenerated from the
+current tree**, so they should be cited as published results rather than treated as a
+reproducible reference. Recorded here rather than discovered mid-analysis by someone else.
+
+### Power: 300 replications, and why that is enough
+
+The two criteria need different precisions, and the naive per-arm figure (0.73 pp at 300
+reps) answers neither. Measured on **V7 P1**, which ran these same four arms at 300
+replications:
+
+| comparison | pairing | MC error | min. detectable at 80% power |
+|---|---|---|---|
+| **arm vs arm** within a cell (PRIMARY) | paired, r = 0.96–0.99 | **0.13 pp** | 0.37 pp |
+| **cell vs cell**, same arm (SECONDARY) | *was* unpaired | 1.04 pp | **2.90 pp** |
+
+The primary was always comfortable — V7's actual `bartMI`-vs-`micePmm` gaps ranged 0.59 to
+3.85 pp, i.e. 4.5–30σ. **The secondary was not**: a 2.90 pp minimum detectable effect
+against an expected 3–4 pp is ~80–95% power, which is too thin to rest a conclusion on.
+
+**The fix was pairing, not more replications.** `seed_as` makes each non-linear cell draw
+its data with its matched linear cell's seed, so the pair sees byte-identical exposures,
+covariates and outcome noise and differs *only* by the `b_zq (Z1^2 - 1)` term. Verified: the
+two cells' `X` and `Z` columns are `identical()`, and their outcomes differ by exactly
+`b_zq (Z1^2 - 1)` to 6.7e-16. Measured on a 60-replication pilot, that correlates the pair
+at **0.954** and cuts the Monte-Carlo error **4.3×**:
+
+| SECONDARY comparison | MC error at 300 reps | min. detectable |
+|---|---|---|
+| unpaired (before) | 1.04 pp | 2.90 pp |
+| **paired (registered)** | **0.23 pp** | **0.65 pp** |
+
+At 60 replications the paired design already put `micePmm`'s degradation at −3.62 pp, about
+7σ. **300 replications is therefore ample for both criteria at no extra runtime** — a
+better trade than the 43 h that 1000 replications would have cost to fix the same problem
+by brute force.
+
+`m` = 30 is **not** reducible: the control criterion requires bit-identical reproduction of
+V7, which used `m` = 30.
+
+---
+
 ## 9. Track V4 — Variance attribution (and pilot `m`)
 
 > **STATUS: RESOLVED — 2026-08-25.** 5 scenarios × 4 arms × 300 reps, 1500 tasks, 5.25 h,

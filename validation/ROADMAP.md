@@ -1,6 +1,6 @@
 # Roadmap — one defect, three tracks
 
-**As of 2026-08-29**, after V3 closed the mixture question. Items 01 and 02 are complete
+**As of 2026-08-29**, after V9 confirmed the V3 diagnosis causally. Items 01 and 02 are complete
 (partially — see below); item 05 is new and now carries the residual gap.
 
 Five validation tracks are closed. The censored-exposure engine is validated for additive
@@ -299,12 +299,26 @@ in the focal exposure, and so imposes linearity on exactly the rows where curvat
 appear. Imputing with the wrong functional form is worse than not imputing — LOD/√2
 substitution beats the congenial engine on curvature.
 
-The fix is to put the exposure–response *surface* into the imputation model, or to use a
-joint model containing it. For a **known parametric** surface this is tractable: the
-conditional of the censored exposure given (Y, ·) under a quadratic-plus-interaction outcome
-model is derivable, and `leftcens`'s censored draw could take a non-linear mean. The
-**general** case — a BKMR surface with no closed form — is research rather than engineering,
-and would likely need an SMC-FCS-style rejection step against the fitted surface.
+**V9 has now validated that target empirically**, which removes most of the risk from this
+track. Drawing the censored exposure from the correct conditional under the same surface
+closes **89–100%** of the curvature gap and cuts the mean absolute excess over the oracle
+from 17.2% to 0.9%. Two results narrow the work sharply:
+
+- **Oracle parameters are not needed.** The plug-in arm estimates the surface's
+  coefficients from the current completed data each sweep, draws them from their posterior,
+  and matches the oracle arm to **0.2 pp**. What matters is the functional *form*.
+- **Obtaining the form is the whole remaining problem.** Both V9 arms were *handed* the
+  generator's formula. A real BKMR analysis does not know the surface — that is what BKMR
+  is for.
+
+So the work is no longer "does SMC help?" but "how is the surface represented in the
+imputation conditional when it is being estimated non-parametrically?" A plausible route is
+an SMC-FCS-style step conditioning on the *fitted* BKMR surface at the current iteration,
+which would make the imputation and the analysis model genuinely congenial. V9's sampler
+(`phase1/R/smc_impute.R`) already handles a one-dimensional truncated draw against an
+arbitrary mean function, so the machinery for the draw itself exists.
+
+For a **known parametric** surface the fix is essentially done and demonstrated.
 
 **Until it exists, the mixture path is documented as unusable rather than approximate.**
 That is now stated in the root README, the claims ledger, and `FINDINGS_v3.md`.
@@ -327,6 +341,8 @@ DONE
 
 DONE
   [04 BKMR estimands] ──▶ mixture path CONFIRMED UNUSABLE (V3, 2026-08-29)
+  [V9 mechanism test]  ──▶ cause CONFIRMED: the linear conditional (2026-08-29)
+                           SMC closes 89-100% of the gap; form matters, not params
 
 REMAINING
   [07 Substantive-model-compatible imputation]  the only substantive track left
@@ -349,7 +365,7 @@ INDEPENDENT
 |---|---|---|
 | `resume` kills the V4 runner | Unexplained | Reproducibly killed the parent after one chunk; a fresh checkpoint runs fine. Now off by default. Partial results remain recoverable straight from the checkpoint, so it costs nothing operationally — but an unexplained crash is worth understanding. |
 | Translated READMEs | Stale | `docs/README.{de,es,fr,ja}.md` contain **zero** mentions of the censored-exposure strategy or its `leftcens` dependency — they predate the feature. Needs a translation pass, not a patch. |
-| MAR covariate missingness | Unswept | Every robustness scenario used MCAR. MAR-on-covariates is the more realistic mechanism and is untested. |
+| ~~MAR covariate missingness~~ | ✅ **done (V10, 2026-08-29)** | MAR does not degrade the engine — it is slightly *easier* than MCAR (−0.17% vs −1.67% at 40%), across a doubling of mechanism strength and in the non-linear and missing-outcome cells. MNAR is **out of scope by decision** — a study-design question, not an analysis one. |
 | V8 confound: target count vs `Y`'s presence | Open, small | V8's 3-target cells all impute `Y` and its 2-target cells do not, so it cannot say which feature makes the inner-iteration shortcut unsafe. `.ce_default_inner_iter()` requires both conditions, which is safe but conservative. A cell with three non-outcome targets would separate them and could widen the cheap path. |
 | V8 runtime saving unmeasured | Open, small | The ~3× figure comes from the fit count, not from timing: `secs` is logged per replication for all arms together. Needs per-arm instrumentation in the harness. |
 | External testers | Standing goal | Have other users run the pipeline on their own data before broadening release claims. Each analysis pattern that trips someone up should become a bundled example, entering permanent regression coverage. |

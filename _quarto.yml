@@ -1,0 +1,114 @@
+# =============================================================================
+# Quarto website configuration
+# -----------------------------------------------------------------------------
+# Builds the documentation site from the SAME Markdown that GitHub renders --
+# `README.md` plus the guides in `docs/`. There is no separate copy of the docs
+# for the website, so the two can never drift apart.
+#
+# WHY QUARTO AND NOT pkgdown. pkgdown builds its site from package metadata
+# (`DESCRIPTION`, `man/*.Rd`, `NAMESPACE`). This repository is a project template
+# to clone and edit, not a package to install -- it has none of those, and
+# pkgdown's central feature, the function reference, would be empty. Quarto is
+# already a dependency of the pipeline itself (Steps 8 and 10 render Quarto
+# reports), so this adds no new requirement.
+#
+# THE HOME PAGE IS README.md. `pre-render` copies it to `index.md` so the site
+# root and the GitHub landing page are byte-identical and there is one source of
+# truth. `index.md` is generated and git-ignored -- do not edit it.
+#
+# NON-RENDERED FILES ARE COPIED AS RESOURCES. The docs link to `00_config.R`,
+# the validation write-ups and so on. Those are not Markdown pages, so they are
+# copied verbatim into the site to keep those links from 404-ing.
+# =============================================================================
+project:
+  type: website
+  output-dir: _site
+  pre-render:
+    - bash -c "cp README.md index.md"
+  render:
+    - index.md
+    - docs/*.md
+  # Quarto copies every non-source file in the project by default, so this list
+  # is mostly EXCLUSIONS. Without them a local build picks up run outputs --
+  # measured at 87 MB, almost all of it validation/phase1/results and logs.
+  # Those are git-ignored so CI never sees them, but a developer building
+  # locally would, and anything ever committed there would bloat the artifact.
+  resources:
+    - "*.R"
+    - "*.csv"
+    - "*.sh"
+    - "LICENSE"
+    - "EXPORT_FORMAT.md"
+    - "examples/**"
+    - "validation/**"
+    - "!validation/phase1/results/**"
+    - "!validation/phase1/logs/**"
+    - "!validation/phase1/fits/**"
+    - "!test/**"
+    - "!objects/**"
+    - "!fits/**"
+    - "!results/**"
+    - "!log/**"
+    - "!_site/**"
+
+website:
+  title: "MICE + brms Pipeline"
+  description: "A reusable template for Bayesian regression with multiple imputation."
+  site-url: "https://fabregithub.github.io/generic-mi-brms-pipeline/"
+  repo-url: "https://github.com/fabregithub/generic-mi-brms-pipeline"
+  repo-actions: [source, issue]
+  search:
+    location: sidebar
+    type: overlay
+  navbar:
+    left:
+      - href: index.md
+        text: "Overview"
+      - href: docs/index.md
+        text: "Guides"
+      - href: docs/setup.md
+        text: "Setup"
+      - text: "Validation"
+        href: validation/README.md
+    right:
+      - icon: github
+        href: "https://github.com/fabregithub/generic-mi-brms-pipeline"
+        aria-label: "GitHub repository"
+  sidebar:
+    style: floating
+    collapse-level: 2
+    contents:
+      - href: index.md
+        text: "Overview"
+      - href: docs/index.md
+        text: "All guides"
+      - section: "Getting started"
+        contents:
+          - docs/setup.md
+          - docs/examples.md
+      - section: "Configuring an analysis"
+        contents:
+          - docs/config-reference.md
+          - docs/variable-dictionary.md
+          - docs/choosing-m.md
+      - section: "Data situations"
+        contents:
+          - docs/censored-exposures.md
+          - docs/repeated-measures.md
+      - section: "Running and reporting"
+        contents:
+          - docs/performance.md
+          - docs/operations.md
+          - docs/reporting.md
+  page-footer:
+    left: "Generic MICE + brms Pipeline Template"
+    right: "Built with [Quarto](https://quarto.org)"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-overflow: wrap
+    link-external-newwindow: true

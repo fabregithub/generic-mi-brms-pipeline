@@ -575,6 +575,64 @@ The root README's mixture scope box has been rewritten from "remains biased" to 
 The fix — substantive-model-compatible imputation — is unbuilt and is now the only
 substantive track left (`validation/ROADMAP.md` item 07).
 
+### V9 — the mixture failure's cause is confirmed, and the fix is demonstrated (2026-08-29)
+
+Again not a code change: a **mechanism result** that de-risks the remaining build.
+
+V3 concluded that the censored-exposure X block destroys curvature *because* its
+conditional is linear in the predictors — but that was an inference from a pattern, not a
+demonstration. V9 replaced only that component, drawing the censored exposure from the
+correct conditional under the same surface, and changed nothing else.
+
+| `curv_X1`, paired excess over the oracle | `nd40` | `nd40_all` |
+|---|---|---|
+| shipped pipeline (linear conditional) | −55.6% | −59.2% |
+| SMC, true surface | +5.9% | −0.3% |
+| SMC, surface estimated each sweep | +6.2% | −0.1% |
+
+**89–100% of the gap closes.** Across all fourteen cells the mean absolute excess over the
+oracle falls from **17.2% to 0.9%**. The control arms were bit-identical to V3 on all 2,800
+shared rows, so this is measured against exactly the behaviour V3 recorded.
+
+**Estimating the surface rather than knowing it costs 0.2 pp.** The plug-in arm fits the
+outcome model on the current completed data each sweep and draws the coefficients from
+their posterior. The fix needs the right functional *form*, not the true parameters — which
+is the useful news for anyone building it.
+
+**What is still missing**: both arms were *handed* the generator's formula. A real BKMR
+analysis does not know the surface. That gap is the whole content of
+`validation/ROADMAP.md` item 07, now much better defined.
+
+**Nothing shipped changes.** The SMC code is a validation harness instrument
+(`validation/phase1/R/smc_impute.R`), deliberately not wired into
+`00_censored_exposure.R`, and the root README's mixture restriction stands. Evidence:
+[`validation/phase1/FINDINGS_v9.md`](validation/phase1/FINDINGS_v9.md).
+
+### V10 — MAR covariate missingness tested; the additive claims hold (2026-08-29)
+
+The pipeline's additive-path claims all rested on **MCAR** covariates — the easy,
+unrealistic mechanism. V10 is the first test of MAR, the mechanism MI is actually built for.
+
+| cell | rel. bias | coverage |
+|---|---|---|
+| `mcar_z40` | −1.668% | 0.957 |
+| `mar_z40` | **−0.167%** | 0.967 |
+| `mar_z40_strong` (doubled coefficients) | +0.252% | 0.966 |
+| `nl_mar_combined` (MAR + non-linear covariates + 20% missing Y) | −0.945% | 0.958 |
+
+**MAR does not degrade the engine — it is slightly easier than MCAR.** The strength=0
+control reproduced the MCAR cell (−0.11 pp), so the injector changed only the mechanism,
+and realised missing fractions matched to 0.1 pp, ruling out the obvious confound.
+
+**The registered ±1 pp criterion is breached at 40% (+1.50 pp)** — in the favourable
+direction. Recorded as a breach rather than rewritten after the fact; the conclusion does
+not depend on the bar.
+
+Consequence for the docs: the root README's scope note widens from MCAR to MAR, and the
+MCAR-based figures are now known to be *conservative*. **MNAR remains untested** and is the
+harder open question. Evidence:
+[`validation/phase1/FINDINGS_v10.md`](validation/phase1/FINDINGS_v10.md).
+
 ### Known gap (not addressed)
 
 The four translated READMEs (`docs/README.{de,es,fr,ja}.md`) contain **zero** mentions

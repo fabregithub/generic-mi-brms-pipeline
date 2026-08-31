@@ -166,7 +166,9 @@ print_v4 <- function(s) {
 
   t0 <- Sys.time()
   res <- tryCatch({
-    truth  <- make_truth(p = 3L, erf_form = sc$erf_form)
+    # y_form defaults to "linear", so every pre-V11 scenario is unchanged.
+    truth  <- make_truth(p = 3L, erf_form = sc$erf_form,
+                         y_form = sc$y_form %||% "linear")
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(
@@ -228,8 +230,11 @@ run_v4 <- function(n_rep = 150L, m = 30L, base_seed = 20260825L, n_cores = NULL,
   for (sc in scs) {
     for (r in seq_len(n_rep)) {
       k <- k + 1L
+      # Seed on `seed_as` when a cell is deliberately paired with another (V11):
+      # the pair then sees byte-identical data and differs only in the feature
+      # under test, making their contrast paired rather than unpaired.
       tasks[[k]] <- list(sc = sc, rep = r,
-                         canon_index = match(sc$name, canon_names))
+                         canon_index = match(sc$seed_as %||% sc$name, canon_names))
     }
   }
 
