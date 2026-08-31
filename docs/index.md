@@ -4,6 +4,9 @@ Detailed documentation for the pipeline. The [main README](../README.md) is the 
 point — what this is, whether it fits your analysis, and how to start. These guides hold
 the detail.
 
+Reading this on GitHub? The same pages are published with a sidebar and full-text search at
+<https://fabregithub.github.io/generic-mi-brms-pipeline/>.
+
 ## Getting started
 
 | Guide | What it covers |

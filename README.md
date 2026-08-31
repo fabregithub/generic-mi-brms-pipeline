@@ -1,5 +1,8 @@
 # Generic MICE + brms Pipeline Template
 
+📖 **Documentation site: <https://fabregithub.github.io/generic-mi-brms-pipeline/>** —
+the same guides as in this repository, with a sidebar and full-text search.
+
 This is a reusable R pipeline template for Bayesian regression analyses with optional multiple imputation.
 
 It supports:
@@ -37,6 +40,15 @@ The default example uses the built-in public dataset `datasets::airquality`, so 
 
 The README is the entry point: what this is, whether it fits your analysis, and how to
 start. Detailed material lives in focused guides under [`docs/`](docs/index.md).
+
+Everything below is also published as a browsable site with search — useful for the longer
+reference pages, where GitHub's in-repo search struggles:
+
+**<https://fabregithub.github.io/generic-mi-brms-pipeline/>**
+
+The site is built from these same Markdown files by
+[`_quarto.yml`](_quarto.yml) on every push to `main`, so it cannot drift from the
+repository.
 
 | Guide | What it covers |
 |---|---|
