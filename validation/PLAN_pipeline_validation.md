@@ -688,8 +688,13 @@ plus the oracle. Cheap relative to the BKMR tracks — `lm` fits, not MCMC.
 
 ## 8d. Track V11 — Does the imputer choice survive a non-linear outcome?
 
-> **STATUS: BUILT, CRITERIA REGISTERED, NOT YET RUN — 2026-08-29.**
-> Files: `y_form` in `phase1/R/dgp.R`, four scenarios in `phase1/R/robustness.R`.
+> **STATUS: RESOLVED — 2026-08-31.** 2,400 tasks, 300 reps, 10.5 h, zero errors.
+> **The default survives**: `bartMI` is never significantly beaten under a non-linear
+> outcome (paired *p* = 0.11–0.34, favouring `bartMI` in two of three). The V7 hypothesis is
+> **not supported** — all arms degrade 2.86–3.30 pp, spread 0.44 pp. The substantive finding
+> is pipeline-wide: a non-linear outcome costs **≈3 pp of bias whichever imputer is used**,
+> and coverage does not reveal it. Full reading:
+> [`phase1/FINDINGS_v11.md`](phase1/FINDINGS_v11.md).
 
 **Question.** `z_imputer = "bart"` has been the shipped default since v1.5.0, chosen over
 `mice pmm` and `forest_boot` in V6/V7. **Every cell in that comparison had an outcome
@@ -818,6 +823,79 @@ by brute force.
 
 `m` = 30 is **not** reducible: the control criterion requires bit-identical reproduction of
 V7, which used `m` = 30.
+
+---
+
+## 8e. Track V12 — Is the non-linear-outcome penalty the SHAPE of the Z draw?
+
+> **STATUS: BUILT, CRITERIA REGISTERED, NOT YET RUN — 2026-08-31.**
+> Files: Z-block samplers and `proc_smc_scalar()` in `phase1/R/smc_impute.R`,
+> `phase1/test_v12_zdraw.R`, arms `smc_zexact` / `smc_zgauss`.
+
+**Question.** V11 found that a non-linear outcome costs ≈3 pp of bias for **every**
+imputer — BART, `mice pmm`, forest and bootstrapped forest, spread only 0.44 pp. That is
+strange if the conditional *mean* were the problem, since those arms differ enormously in
+how flexibly they model it. What actually differs, and what they all share?
+
+**The diagnosis.** They all draw a covariate as *(fitted conditional mean) + homoscedastic
+Gaussian noise*. Computed exactly from the generator:
+
+| | `p(Z1 | Y, X)` under a **linear** outcome | under a **non-linear** outcome |
+|---|---|---|
+| SD across `Y` ∈ [−2, 2] | **constant, 0.894** | **0.626 → 1.216** |
+| skew | **0.000 everywhere** | **−0.086 → −1.338** |
+
+Under a linear outcome that Gaussian draw is *exactly right*. Under a non-linear one the
+true conditional is heteroscedastic and skewed. **The imputers share the part that is wrong
+(the noise) and differ only in the part that is not (the mean)** — precisely the pattern V11
+measured.
+
+Two earlier hypotheses were tested and **rejected** before this one: that the conditional
+becomes *bimodal* (it does not — the N(0,1) prior keeps it unimodal at every `Y`), and that
+the harm is in the **X** block (it is not — in these cells the exposure's predictors are
+complete, and the oracle arm, which imputes nothing, degrades by 0.01 pp).
+
+**The manipulation.** Two Z-block draws sharing the **same, correct conditional mean**,
+differing only in shape:
+
+| arm | Z draw |
+|---|---|
+| `smc_zgauss` | exact conditional mean + **homoscedastic Gaussian** noise — what every shipped imputer effectively does, but handed the mean exactly, so no mean-modelling error remains |
+| `smc_zexact` | a draw from the **true conditional**, spread and skew included |
+
+Both use the same exact exposure draw and the same outcome model, so their difference is
+attributable to the Z draw's shape and nothing else. `pipeline_bartMI` is carried as the
+reference point.
+
+**Verified before registering** (`test_v12_zdraw.R`, 16 checks): `"exact"` reproduces the
+true conditional's mean, SD *and* skew (to ±0.01, ±0.01, ±0.05, including skew −1.34);
+`"gaussian"` matches the mean to three decimals while driving skew to ~0; the two coincide
+under a linear outcome; and the binary covariate's Bernoulli conditional matches a direct
+Bayes calculation.
+
+### Acceptance criteria (registered before the run)
+
+| | criterion |
+|---|---|
+| **CONTROL** | In the **linear** cells, `smc_zexact` and `smc_zgauss` must be indistinguishable — the true conditional is Gaussian there, so there is nothing for shape to add. A difference means the two draws differ for some reason other than shape, and the run is void |
+| **PRIMARY** | The **paired** `smc_zgauss` − `smc_zexact` difference in the four non-linear cells. This is the cost of getting the shape wrong, with the mean held exactly right |
+| **SECONDARY** | How much of V11's ≈3 pp that accounts for — i.e. whether shape is most of the story or only part |
+
+**Interpretation, fixed in advance.** If the shape contrast is large, the defect is the
+*form of the draw* and the fix is a shape-aware Z-block sampler — a concrete, buildable
+change to `run_row_level_imputation_bart()`, not research. If it is small, shape is not the
+mechanism and the ≈3 pp lies elsewhere again.
+
+**This is a different defect from V3/V9.** That one is the **X** block drawing the exposure
+from a conditional with the wrong functional *form*. This one is the **Z** block drawing a
+covariate with the right mean and the wrong *shape*. They are not the same bug, and one fix
+will not close both.
+
+**Cost — measured.** 88 tasks in 1.7 min at 22 workers (3 arms + oracle, `m` = 30), i.e.
+0.019 min/task. The registered design — 8 cells (four non-linear plus their matched linear
+twins) × 1000 reps = 8,000 tasks — is **~2.6 h**. Cheap because the analysis model is `lm`,
+not MCMC. The shape contrast is paired on identical data, so its Monte-Carlo error should
+be well under 0.2 pp.
 
 ---
 

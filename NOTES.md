@@ -696,6 +696,38 @@ feature — the function reference — would be empty. Quarto was already a pipe
 dependency. Deployment is via a GitHub Actions artifact, so there is **no `gh-pages`
 branch** to maintain.
 
+### V11 — the imputer default survives a non-linear outcome (2026-08-31)
+
+A scope finding, not a code change.
+
+`z_imputer = "bart"` was chosen in V6/V7 on a design where the outcome is **linear in
+`(logX, Z)` by construction**, so a parametric imputer for `Z1` was correctly specified
+against the outcome and could never be penalised for misspecification. `FINDINGS_v7.md`
+named that confound and left it untested. V11 removed it by adding `b_zq (Z1^2 - 1)` to the
+outcome, with the analysis model gaining the matching `I(Z1^2)` term so the focal estimand
+stays exactly recoverable.
+
+**The default survives.** `bartMI` is never significantly beaten in any non-linear cell —
+where the summary table shows another arm ahead, the *paired* difference is
+indistinguishable (*p* = 0.11–0.34) and favours `bartMI` in two of three. Those arms only
+look better because they start at +1.6% to +1.8% bias and a uniform −3 pp shift carries them
+through zero: cancellation, not robustness, and it would reverse under opposite curvature.
+
+**The V7 hypothesis was wrong.** All four imputers degrade by 2.86–3.30 pp — a spread of
+0.44 pp. The confound was real but inert, and the V6/V7 verdict stands on evidence that
+could have overturned it.
+
+**The finding with consequences is pipeline-wide**: a non-linear outcome costs ≈3 pp of bias
+*whichever* imputer is used, taking the shipped default from 0.53% to 3.10% mean absolute
+bias — outside the figures quoted for the additive path. The scope box in
+[`docs/censored-exposures.md`](docs/censored-exposures.md) now says so, and notes the
+mechanism is general: the Z block conditions on the outcome, so any analysis with missing
+covariates is affected. **Coverage was unchanged** (0.953 → 0.953), since a 3% relative bias
+is ≈0.28 SE at `n` = 800 — the third consecutive track where calibration diagnostics missed
+a bias finding (V3, V8, V11).
+
+Evidence: [`validation/phase1/FINDINGS_v11.md`](validation/phase1/FINDINGS_v11.md).
+
 ### Known gap (not addressed)
 
 The four translated READMEs (`docs/README.{de,es,fr,ja}.md`) contain **zero** mentions

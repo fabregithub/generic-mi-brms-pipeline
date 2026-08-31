@@ -1,6 +1,6 @@
 # Roadmap — one defect, three tracks
 
-**As of 2026-08-29**, after V9 confirmed the V3 diagnosis causally. Items 01 and 02 are complete
+**As of 2026-08-31**, after V11 tested the imputer default against a non-linear outcome. Items 01 and 02 are complete
 (partially — see below); item 05 is new and now carries the residual gap.
 
 Five validation tracks are closed. The censored-exposure engine is validated for additive
@@ -291,7 +291,7 @@ root README has been strengthened accordingly.
 
 ---
 
-### 07 — Substantive-model-compatible imputation · **the only substantive track left**
+### 07 — Substantive-model-compatible imputation · *the mixture-path fix*
 
 V3 established what is broken and why: the X block draws the censored exposure from a
 conditional **linear in (Y, other X, Z)**, which cannot represent a surface with curvature
@@ -329,6 +329,57 @@ arm is one function.
 
 ---
 
+### 08 — A shape-aware Z-block draw · **opened 2026-08-31, pending V12**
+
+**The defect.** Every row-level imputer in the pipeline draws a covariate as
+*(fitted conditional mean) + homoscedastic Gaussian noise*. Under an outcome linear in the
+covariates that is exactly right: `p(Z1 | Y, X)` is Gaussian with constant SD (0.894) and
+zero skew at every `Y`. Under a **non-linear** outcome the same conditional becomes
+heteroscedastic and skewed — SD running 0.626 → 1.216 across `Y`, skew reaching −1.338 —
+and the Gaussian draw is then wrong in a way no amount of flexibility in the *mean* model
+can repair.
+
+**The evidence that it is real.** V11 measured a ≈3 pp bias penalty under a non-linear
+outcome for **all four** imputers — BART, `mice pmm`, forest, bootstrapped forest — with a
+spread of only 0.44 pp, while the oracle arm (which imputes nothing) moved 0.01 pp. Arms
+that differ enormously in how they model the conditional mean degrade almost identically,
+which is what a shared defect in the *noise* looks like and not what a mean-modelling
+problem looks like.
+
+**Why this is not item 07.** Item 07 is the **X** block drawing the exposure from a
+conditional with the wrong functional *form* — a mixture-path problem, and research-scale.
+This is the **Z** block drawing a covariate with the right mean and the wrong *shape*. They
+are different defects; neither fix closes the other.
+
+| | 07 — X-block form | **08 — Z-block shape** |
+|---|---|---|
+| affects | mixture / BKMR analyses | **any analysis with missing covariates and a non-linear outcome** |
+| measured cost | 57% of the curvature destroyed | ≈3 pp of bias, every imputer |
+| the fix | research: obtain the surface when it is estimated non-parametrically | bounded: sample the conditional in `run_row_level_imputation_bart()` instead of adding Gaussian noise |
+
+**Status: pending [Track V12](PLAN_pipeline_validation.md#8e-track-v12--is-the-non-linear-outcome-penalty-the-shape-of-the-z-draw).**
+V12 contrasts two Z draws sharing the same exact conditional mean and differing only in
+shape. **This item is conditional on that result** — if the shape contrast is small, the
+mechanism above is wrong, and item 08 should be **closed as "cause not established"**
+rather than quietly left open. Two earlier hypotheses were already tested and rejected
+(bimodality of the conditional; the X block being at fault), so this one is not a guess of
+last resort but it is still a hypothesis.
+
+**If V12 confirms it, this should be done before 07.** It is cheaper — a different draw in
+one function against an open research question — and it reaches a far wider set of users.
+Item 07 matters only to people doing mixture work, who are currently told not to use that
+path at all.
+
+**Sketch of the fix, if it lands.** `run_row_level_imputation_bart()` currently does
+`yhat + rnorm(n_mis, 0, sigma)`. A shape-aware version would sample from the conditional
+implied by the fitted outcome model rather than assume it Gaussian — the machinery exists
+in `phase1/R/smc_impute.R` (`.smc_draw_z`) as a validated one-dimensional grid sampler. The
+open design question is how to obtain that conditional inside the pipeline, where the
+outcome model is a `brms` fit rather than a known formula.
+
+
+---
+
 ## Dependencies
 
 ```
@@ -345,7 +396,9 @@ DONE
                            SMC closes 89-100% of the gap; form matters, not params
 
 REMAINING
-  [07 Substantive-model-compatible imputation]  the only substantive track left
+  [08 Shape-aware Z-block draw]                 pending V12; CHEAPER and WIDER than 07
+                                                affects any analysis with missing covariates
+  [07 Substantive-model-compatible imputation]  research-scale; mixture path only
                                                 V3's harness re-runs against it unchanged
 
 FOLLOWS
@@ -355,7 +408,7 @@ INDEPENDENT
   [04 BKMR estimands]                                   (install bkmr first)
 ```
 
-**Item 07 (substantive-model-compatible imputation) is the only substantive track left**, and it is a *build* track rather than a validation one. Everything else is loose ends plus the low-priority interval-overshoot refinement.
+**Two build tracks remain: item 08 (shape-aware Z-block draw, pending V12) and item 07 (substantive-model-compatible imputation).** If V12 confirms the mechanism, 08 should be done first — it is cheaper and affects far more analyses. Everything else is loose ends plus the low-priority interval-overshoot refinement.
 
 ---
 

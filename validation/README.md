@@ -17,7 +17,7 @@ Keep this file current: the validation study is the evidence base for the claims
 README makes about bias, coverage and scope, so a stale entry here silently becomes a
 wrong claim in the documentation.
 
-Last updated: **2026-08-29** · after V9 (mixture cause confirmed) and V10 (MAR tested — claims hold)
+Last updated: **2026-08-31** · after V11 — the `bart` default survives a non-linear outcome; a new pipeline-wide scope limit
 
 ---
 
@@ -37,7 +37,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V10
+### Validation plan — Tracks V0–V11
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -55,6 +55,7 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V8 | Is the Z-block inner-iteration shortcut safe? Is V7's BART arm the shipped code? | ✅ resolved | Shortcut **unsafe with ≥3 targets** (−0.72 pp bias, bar 0.5); kept only where measured free (v1.5.1). V7 port **bit-identical** |
 | V9 | Is the linear conditional really what destroys curvature? | ✅ resolved | **Yes.** Replacing only that component closes **89–100%** of the gap; mean excess 17.2% → 0.9%. Estimating the surface rather than knowing it costs 0.2 pp |
 | V10 | Do the additive-path claims hold under **MAR**, not just MCAR? | ✅ resolved | **Yes — MAR is *easier*.** Bias −0.17% vs MCAR's −1.67% at 40%; coverage 0.948–0.967. Registered ±1 pp bar breached, favourably |
+| V11 | Does the imputer choice survive a **non-linear outcome**? | ✅ resolved | **Yes** — `bartMI` never significantly beaten. But **every** arm loses ≈3 pp of bias: a pipeline-wide scope limit, not an imputer question |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -72,7 +73,8 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | ~~06~~ | ~~Flexible + properly dispersed imputer~~ — **BART adopted v1.5.0**, R8 closed | [`phase1/FINDINGS_v7.md`](phase1/FINDINGS_v7.md) |
 | ~~03~~ | ~~Pilot `m` / FMI~~ — **closed**, `m` = 30 confirmed | [`phase1/FINDINGS_v7.md`](phase1/FINDINGS_v7.md) |
 | ~~04~~ | ~~BKMR estimands~~ *(= Phase 2b, = Track V3)* — **closed 2026-08-29**; superseded by open item **07** below | [`phase1/FINDINGS_v3.md`](phase1/FINDINGS_v3.md) |
-| **07** | **Substantive-model-compatible imputation** — the only substantive track. **V9 validated the target**: the fix works and needs the right functional *form*, not oracle parameters. What remains is obtaining that form when the surface is unknown | [`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md) |
+| **08** | **Shape-aware Z-block draw** — every imputer draws covariates as *mean + homoscedastic Gaussian*, which is wrong under a non-linear outcome (≈3 pp, all arms). **Pending V12**; if confirmed, cheaper and wider-reaching than 07 | [`ROADMAP.md`](ROADMAP.md) |
+| **07** | **Substantive-model-compatible imputation** — the mixture-path fix. **V9 validated the target**: the fix works and needs the right functional *form*, not oracle parameters. What remains is obtaining that form when the surface is unknown | [`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md) |
 | — | ~~MAR covariate missingness~~ — **done (V10)**; the MCAR-only scope gap is closed | [`phase1/FINDINGS_v10.md`](phase1/FINDINGS_v10.md) |
 | — | Interval overshoot (BART runs 3–8% wide) — low priority, conservative direction | [`INTEGRATION_SUMMARY.md`](INTEGRATION_SUMMARY.md) §2 |
 
@@ -106,45 +108,33 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed runs — V9 and V10, 2026-08-29
+### ✅ Last completed run — V11, 2026-08-31 (10.5 h)
 
-**V10 — MAR covariate missingness** (87 min, 12,000 tasks, 1000 reps/cell, zero errors).
-[`phase1/FINDINGS_v10.md`](phase1/FINDINGS_v10.md)
+2,400 tasks, 300 reps in all 40 cells, zero errors.
+[`phase1/FINDINGS_v11.md`](phase1/FINDINGS_v11.md)
 
-Every additive-path claim in the root README was MCAR-only. That gap is now closed, and the
-answer is favourable: **MAR does not degrade the engine — it is slightly easier than MCAR.**
+`z_imputer = "bart"` was chosen in V6/V7 on a design where the outcome is **linear in
+`(logX, Z)` by construction** — so a parametric imputer was correctly specified against the
+outcome and could never be penalised for it. V7 named that confound and left it untested.
 
-| cell | rel. bias | coverage |
-|---|---|---|
-| `mcar_z40` | −1.668% | 0.957 |
-| `mar_z40` | **−0.167%** | 0.967 |
-| `mar_z40_strong` (doubled coefficients) | +0.252% | 0.966 |
-| `nl_mar_combined` (hardest cell) | −0.945% | 0.958 |
+**The default survives.** `bartMI` is never significantly beaten in any non-linear-outcome
+cell. Where the summary table shows another arm with smaller bias, the *paired* difference
+is indistinguishable (*p* = 0.11–0.34) and in two of three cases favours `bartMI`. Those
+arms only look better because they start at **+1.6% to +1.8%** bias and a uniform −3 pp
+shift carries them *through* zero — cancellation, not robustness, and it would reverse if
+the curvature had the opposite sign.
 
-The strength=0 control reproduced MCAR (−0.11 pp), so the injector changed only the
-mechanism; realised missingness matched to 0.1 pp, ruling out the obvious confound. **The
-registered ±1 pp bar is breached at 40% (+1.50 pp) — favourably**, and is recorded as a
-breach rather than rewritten. *Why* MAR is easier is not established; MNAR remains
-untested.
+**The V7 hypothesis is not supported.** All four arms degrade by 2.86–3.30 pp; the spread is
+0.44 pp. The confound was real but inert, and the V6/V7 verdict stands on evidence that
+could have overturned it.
 
-**V9 — the mixture failure's cause** (10.7 h, 200 tasks, zero errors).
-[`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md)
+**The finding that matters is pipeline-wide.** A non-linear outcome costs ≈3 pp of bias
+*whichever imputer is used* — `bartMI` goes from 0.53% to 3.10% mean absolute bias, outside
+the ≤1% / ≤2.7% the README quotes for the additive path. **Coverage is unchanged**
+(0.953 → 0.953), because at `n` = 800 a 3% relative bias is only ≈0.28 SE. Third
+consecutive track where calibration diagnostics missed a bias finding (V3, V8, V11).
 
-V3 *inferred* that the linear imputation conditional destroys curvature. V9 replaced only
-that component and the estimands came back.
-
-| `curv_X1`, paired excess over the oracle | `nd40` | `nd40_all` |
-|---|---|---|
-| `pipeline_bkmr` (linear conditional) | −55.6% | −59.2% |
-| `smc_oracle_bkmr` (true surface) | **+5.9%** | **−0.3%** |
-| `smc_plugin_bkmr` (surface estimated each sweep) | **+6.2%** | **−0.1%** |
-
-Mean absolute excess across fourteen cells falls from **17.2% to 0.9%**. Estimating the
-surface rather than knowing it costs **0.2 pp** — the fix needs the right functional
-*form*, not the true parameters. Both arms were *handed* that form, which is now item 07's
-entire remaining content. Control was bit-identical to V3 on 2,800 shared rows.
-
-**The shipped pipeline is unchanged by either run.**
+Control was bit-identical to V10 on all three shared cells.
 
 ---
 
@@ -170,6 +160,7 @@ entire remaining content. Control was bit-identical to V3 on 2,800 shared rows.
 | [`phase1/FINDINGS_v3.md`](phase1/FINDINGS_v3.md) | V3: the mixture verdict on real BKMR estimands — curvature destroyed, pipeline worst of four arms | Before anyone points the censored path at a mixture analysis; citing the scope limit |
 | [`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md) | V9: the mechanism test — replacing the linear conditional restores the estimands | Designing the SMC fix (item 07), or citing *why* the mixture path fails |
 | [`phase1/FINDINGS_v10.md`](phase1/FINDINGS_v10.md) | V10: MAR covariate missingness — the additive claims survive their first non-MCAR test | Citing scope beyond MCAR, or before claiming anything about MNAR |
+| [`phase1/FINDINGS_v11.md`](phase1/FINDINGS_v11.md) | V11: the imputer default tested against a non-linear outcome; the ≈3 pp scope limit | Before quoting additive-path bias figures, or revisiting `z_imputer` |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),
 `run_v2_robustness.sh` (V2), `run_v4_variance.sh` (V4, V5, V6, V7 and V8 — the arm/scenario

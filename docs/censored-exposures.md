@@ -101,6 +101,29 @@ The MCAR-based numbers above are therefore conservative rather than optimistic. 
 (MNAR) missingness is outside what any imputation engine can address and is a matter of
 study design, as noted above.
 
+> **The figures above assume the outcome is linear in the covariates.** Every validation
+> cell up to V10 generated `Y` as a linear function of `(log X, Z)`. When the outcome is
+> instead curved in a covariate, **bias degrades by about 3 percentage points regardless of
+> which imputer is used** — the shipped `bart` default moves from 0.53% to 3.10% mean
+> absolute bias, and the other three imputers degrade by a statistically indistinguishable
+> amount (spread 0.44 pp). This is a property of the pipeline rather than of the imputer
+> choice, and it is not captured by the figures above.
+>
+> The mechanism is general, not specific to censored exposures: the Z block imputes
+> covariates *conditioning on the outcome*, so when the outcome is a non-linear function of
+> a covariate, that conditional is harder for every imputer. Any analysis with missing
+> covariates is affected.
+>
+> **Coverage does not warn you** — it was unchanged at 0.953, because at `n` = 800 a 3%
+> relative bias is only ≈0.28 standard errors. Point estimates move; intervals do not
+> notice. This is the third consecutive validation track where calibration diagnostics
+> missed a real bias finding.
+>
+> Measured with one curvature form and a **correctly specified** analysis model, so this is
+> imputation-induced bias alone; omitting the non-linear term from your own model would add
+> ordinary misspecification on top. Evidence:
+> [`validation/phase1/FINDINGS_v11.md`](../validation/phase1/FINDINGS_v11.md).
+
 > **Caveat on interval width — applies to the whole pipeline, not just this strategy.**
 > The sweep found that 95% credible intervals become **anti-conservative when a
 > substantial fraction of the data is imputed**: coverage was 0.95–0.97 with complete

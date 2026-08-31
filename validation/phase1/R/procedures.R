@@ -353,6 +353,12 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   if ("pipeline_bartHarness" %in% which)    out$bmh   <- .ce_args(proc_pipeline_bartHarness)
   if ("pipeline_noMID" %in% which)          out$nomid <- .ce_args(proc_pipeline_noMID)
   if ("pipeline_properZ_noMID" %in% which)  out$pznm  <- .ce_args(proc_pipeline_properZ_noMID)
+  # Track V12 (smc_impute.R): the Z-block draw, shape versus mean. Both arms use
+  # the same correct conditional mean; only the draw's shape differs.
+  .smc_args <- function(zm) proc_smc_scalar(
+    bundle, m = m, seed = seed, sweeps = ce_control$outer_sweeps %||% 3L, z_mode = zm)
+  if ("smc_zexact" %in% which)              out$sze   <- .smc_args("exact")
+  if ("smc_zgauss" %in% which)              out$szg   <- .smc_args("gaussian")
   if ("brms_joint" %in% which)       out$brms   <- proc_brms_joint(bundle, control = brms_control, cache = brms_cache)
   do.call(rbind, out)
 }

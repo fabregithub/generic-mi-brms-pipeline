@@ -70,7 +70,7 @@ if (is.null(.here) || !nzchar(.here)) {
 }
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
             "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
-            "bart_impute.R")) {
+            "bart_impute.R", "smc_impute.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -83,7 +83,9 @@ split_csv <- function(x) trimws(strsplit(x, ",")[[1]])
 V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              "pipeline_bartMI", "pipeline_bartMI_iter3", "pipeline_bartHarness",
              "pipeline_properZ",
-             "pipeline_noMID", "pipeline_properZ_noMID")
+             "pipeline_noMID", "pipeline_properZ_noMID",
+             # V12: Z-block draw shape (harness instruments, not pipeline code)
+             "smc_zexact", "smc_zgauss")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 
