@@ -633,6 +633,54 @@ MCAR-based figures are now known to be *conservative*. **MNAR remains untested**
 harder open question. Evidence:
 [`validation/phase1/FINDINGS_v10.md`](validation/phase1/FINDINGS_v10.md).
 
+### v1.5.2 — documentation restructure and a published site (no behaviour change)
+
+**No pipeline code changed in this release.** It is versioned because for a template that
+people clone, the documentation is much of the product.
+
+**The README went from 3,078 lines to 615** (~66 minutes of reading to ~16). Ten focused
+guides now live in [`docs/`](docs/), indexed from the README and from
+[`docs/index.md`](docs/index.md):
+
+| guide | covers |
+|---|---|
+| `setup.md` | R, CmdStan, Quarto and packages on macOS, Windows, Linux |
+| `config-reference.md` | option-by-option `00_config.R` reference |
+| `variable-dictionary.md` | dictionary fields, and when config may override them |
+| `choosing-m.md` | how many imputations, the auto m-increment loop, the three run modes |
+| `censored-exposures.md` | below-LOD exposures, their validation, and the mixture restriction |
+| `repeated-measures.md` | subject-wide versus row-wise imputation |
+| `performance.md` | sizing workers and chains; memory-versus-cores |
+| `operations.md` | restarting, monitoring, CmdStan cache, debugging a fit |
+| `reporting.md` | publication outputs and Methods/Results templates |
+| `examples.md` | the four bundled examples and the automated tests |
+
+**The mixture restriction is deliberately duplicated**, in full, in both the README and
+`docs/censored-exposures.md` — the only content copied rather than linked. Acting on that
+warning matters more than finding it, and a reader who never opens `docs/` must still not
+miss it.
+
+**Heading levels were repaired.** Sections 5, 8, 9 and 10 had been `#` rather than `##`,
+giving the document five H1s and a broken outline (the links worked; the hierarchy did
+not). Section numbers were then dropped entirely — the documentation index is the map now,
+and numbering had become a holdover from when the README *was* the documentation.
+
+**The four translated READMEs were deleted** (`docs/README.{de,es,fr,ja}.md`). They
+predated the censored-exposure feature, never mentioned `leftcens` or the block-FCS
+strategy, and — most seriously — omitted the restriction against mixture/BKMR analyses, so
+non-English readers were missing a safety-critical caveat. Keeping four translations in
+step with the pipeline was not sustainable; a translation that has silently fallen behind
+is worse than none.
+
+**A documentation site is published** at
+<https://fabregithub.github.io/generic-mi-brms-pipeline/>, built by
+[`_quarto.yml`](_quarto.yml) from the same Markdown the repository serves, so the two
+cannot drift. Quarto rather than pkgdown: pkgdown builds from package metadata
+(`DESCRIPTION`, `man/`, `NAMESPACE`), none of which this template has, and its central
+feature — the function reference — would be empty. Quarto was already a pipeline
+dependency. Deployment is via a GitHub Actions artifact, so there is **no `gh-pages`
+branch** to maintain.
+
 ### Known gap (not addressed)
 
 The four translated READMEs (`docs/README.{de,es,fr,ja}.md`) contain **zero** mentions
