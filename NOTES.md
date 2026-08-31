@@ -450,6 +450,12 @@ Production runs with large `m` and `n` should expect the Z block to cost meaning
 
 ### v1.5.0 — BART is the Z-block imputer; R8 and R12 close (behaviour change)
 
+> **No `v1.5.0` tag exists, and none can be added.** This release and v1.5.1 landed in the
+> same commit (`5a66b7d`), so the tag on that commit is `v1.5.1`. To check out the tree in
+> which BART became the default, use `v1.5.1`; `v1.4.0` is the last tag that predates it.
+> Do not go looking for a `v1.5.0` tag.
+
+
 **`analysis_spec$imputation$z_imputer` replaces the `proper_draw` flag**, defaulting to
 `"bart"`. Values: `"bart"` (v1.5.0 default, needs `dbarts`), `"forest_boot"` (the v1.4.0
 default), `"forest"` (plain miceRanger, improper, pre-v1.4.0). `proper_draw` is still
@@ -637,6 +643,15 @@ harder open question. Evidence:
 
 **No pipeline code changed in this release.** It is versioned because for a template that
 people clone, the documentation is much of the product.
+
+> **The `v1.5.2` tag (`1c01b2e`) predates three commits that belong to this work**, because
+> it was cut before they were written: the GitHub Actions bump to Node 24 majors
+> (`c7796da`), the site URL added to the README (`f037541`), and this changelog entry. A
+> checkout of `v1.5.2` therefore has a workflow that emits deprecation warnings and a
+> README that does not link to the site the release introduces. The tag was left in place
+> rather than force-moved, since it had already been pushed — moving a published tag
+> silently leaves anyone who fetched it on different code. Use `main`, or the next tag, for
+> the complete state.
 
 **The README went from 3,078 lines to 615** (~66 minutes of reading to ~16). Ten focused
 guides now live in [`docs/`](docs/), indexed from the README and from
