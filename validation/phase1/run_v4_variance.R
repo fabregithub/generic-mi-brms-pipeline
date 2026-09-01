@@ -85,7 +85,8 @@ V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              "pipeline_properZ",
              "pipeline_noMID", "pipeline_properZ_noMID",
              # V12: Z-block draw shape (harness instruments, not pipeline code)
-             "smc_zexact", "smc_zgauss")
+             "smc_zexact", "smc_zgauss", "smc_zexact_xship", "smc_zgauss_xship",
+             "smc_xgrid")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 

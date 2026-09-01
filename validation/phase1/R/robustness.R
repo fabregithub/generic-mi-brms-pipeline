@@ -223,7 +223,21 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("ynl_missing_y20", "y_nonlinear", y_frac = 0.2,    y_form = "nonlinear", seed_as = "missing_y20"),
     .v2_scenario("ynl_combined",    "y_nonlinear", censor_all = TRUE, mcar_frac = 0.2,
                  y_frac = 0.2, y_form = "nonlinear", seed_as = "combined"),
-    .v2_scenario("ynl_mar_z40",     "y_nonlinear", mar_frac = 0.4,  y_form = "nonlinear", seed_as = "mar_z40")
+    .v2_scenario("ynl_mar_z40",     "y_nonlinear", mar_frac = 0.4,  y_form = "nonlinear", seed_as = "mar_z40"),
+    # ---- Axis 8 (V15): the f-sweep, for the attenuation SHAPE ----------------
+    # THEORY -> PREDICTION -> TEST. V3 measured curvature attenuation at two
+    # non-detect fractions only (20% -> 11.7%, 40% -> 56.7%; a 4.85x rise for 2x
+    # the censoring). No mechanistically motivated law reproduces that ratio;
+    # `f^2` is the least-bad at 4.00 and is frank curve-fitting. These cells add
+    # four UNMEASURED points so the shape can be pinned rather than guessed.
+    # Mixture ERF, focal exposure only -- curv_X1 depends on X1 alone, which V3
+    # confirmed (nd40 -56.7% vs nd40_all -58.4%: censoring the others adds ~2 pp).
+    .v2_scenario("mixf10", "fsweep", erf_form = "mixture", nd_frac = 0.10),
+    .v2_scenario("mixf20", "fsweep", erf_form = "mixture", nd_frac = 0.20),
+    .v2_scenario("mixf30", "fsweep", erf_form = "mixture", nd_frac = 0.30),
+    .v2_scenario("mixf40", "fsweep", erf_form = "mixture", nd_frac = 0.40),
+    .v2_scenario("mixf50", "fsweep", erf_form = "mixture", nd_frac = 0.50),
+    .v2_scenario("mixf60", "fsweep", erf_form = "mixture", nd_frac = 0.60)
   )
 }
 

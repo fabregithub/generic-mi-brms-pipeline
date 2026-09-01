@@ -13,11 +13,18 @@
 > `ROADMAP.md`, and `phase1/FINDINGS_*.md`.
 
 **Single source of truth for what has been validated, what is open, and what is next.**
+
+> **New: [`THEORY.md`](THEORY.md)** — the thirteen tracks turn out to be instances of a
+> single condition. The imputation must draw from `p(v | Y, rest) ∝ p(Y | v, rest; θ)·p(v | rest)`,
+> and the pipeline's linear-Gaussian draw equals that **iff** the outcome is linear in `v`
+> **and** `p(v | rest)` is Gaussian. That boundary is derived and numerically exact (theory
+> 0.8944 against 0.894 measured); the magnitudes when it is violated are **not** derived, and
+> three failed attempts are recorded there so they are not retried.
 Keep this file current: the validation study is the evidence base for the claims the
 README makes about bias, coverage and scope, so a stale entry here silently becomes a
 wrong claim in the documentation.
 
-Last updated: **2026-08-31** · after V11 — the `bart` default survives a non-linear outcome; a new pipeline-wide scope limit
+Last updated: **2026-09-01** · after V13 — the exposure draw dominates; item 08 closed, item 07 widened
 
 ---
 
@@ -37,7 +44,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V11
+### Validation plan — Tracks V0–V13
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -56,6 +63,8 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V9 | Is the linear conditional really what destroys curvature? | ✅ resolved | **Yes.** Replacing only that component closes **89–100%** of the gap; mean excess 17.2% → 0.9%. Estimating the surface rather than knowing it costs 0.2 pp |
 | V10 | Do the additive-path claims hold under **MAR**, not just MCAR? | ✅ resolved | **Yes — MAR is *easier*.** Bias −0.17% vs MCAR's −1.67% at 40%; coverage 0.948–0.967. Registered ±1 pp bar breached, favourably |
 | V11 | Does the imputer choice survive a **non-linear outcome**? | ✅ resolved | **Yes** — `bartMI` never significantly beaten. But **every** arm loses ≈3 pp of bias: a pipeline-wide scope limit, not an imputer question |
+| V12 | Is that penalty the **shape** of the Z-block draw? | ✅ resolved | **Partly** — shape costs 1.3–1.9 pp at heavy covariate missingness (*p* < 1e-4), but only **32–49%** of the penalty. The rest is the conditional mean and/or the exposure draw |
+| V13 | Which block causes the rest of that penalty? | ✅ resolved | **The exposure draw** (3.1–3.4 pp of ~3.9). A **Z-only fix moves bias away from truth** — item 08 closed as scoped, item 07 widened |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -73,7 +82,7 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | ~~06~~ | ~~Flexible + properly dispersed imputer~~ — **BART adopted v1.5.0**, R8 closed | [`phase1/FINDINGS_v7.md`](phase1/FINDINGS_v7.md) |
 | ~~03~~ | ~~Pilot `m` / FMI~~ — **closed**, `m` = 30 confirmed | [`phase1/FINDINGS_v7.md`](phase1/FINDINGS_v7.md) |
 | ~~04~~ | ~~BKMR estimands~~ *(= Phase 2b, = Track V3)* — **closed 2026-08-29**; superseded by open item **07** below | [`phase1/FINDINGS_v3.md`](phase1/FINDINGS_v3.md) |
-| **08** | **Shape-aware Z-block draw** — every imputer draws covariates as *mean + homoscedastic Gaussian*, which is wrong under a non-linear outcome (≈3 pp, all arms). **Pending V12**; if confirmed, cheaper and wider-reaching than 07 | [`ROADMAP.md`](ROADMAP.md) |
+| ~~08~~ | ~~Shape-aware Z-block draw~~ — **closed as scoped (V13)**: harmful on its own; the exposure draw dominates and belongs to 07 | [`phase1/FINDINGS_v13.md`](phase1/FINDINGS_v13.md) |
 | **07** | **Substantive-model-compatible imputation** — the mixture-path fix. **V9 validated the target**: the fix works and needs the right functional *form*, not oracle parameters. What remains is obtaining that form when the surface is unknown | [`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md) |
 | — | ~~MAR covariate missingness~~ — **done (V10)**; the MCAR-only scope gap is closed | [`phase1/FINDINGS_v10.md`](phase1/FINDINGS_v10.md) |
 | — | Interval overshoot (BART runs 3–8% wide) — low priority, conservative direction | [`INTEGRATION_SUMMARY.md`](INTEGRATION_SUMMARY.md) §2 |
@@ -108,33 +117,39 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed run — V11, 2026-08-31 (10.5 h)
+### ✅ Last completed run — V13, 2026-09-01 (153 min)
 
-2,400 tasks, 300 reps in all 40 cells, zero errors.
-[`phase1/FINDINGS_v11.md`](phase1/FINDINGS_v11.md)
+8,000 tasks, 1000 reps in all 48 cells, zero errors.
+[`phase1/FINDINGS_v13.md`](phase1/FINDINGS_v13.md)
 
-`z_imputer = "bart"` was chosen in V6/V7 on a design where the outcome is **linear in
-`(logX, Z)` by construction** — so a parametric imputer was correctly specified against the
-outcome and could never be penalised for it. V7 named that confound and left it untested.
+V12 confirmed the Z-draw shape mechanism but could not separate it from the exposure draw.
+V13 did, with a 2×2 whose three steps sum **exactly** to the measured total:
 
-**The default survives.** `bartMI` is never significantly beaten in any non-linear-outcome
-cell. Where the summary table shows another arm with smaller bias, the *paired* difference
-is indistinguishable (*p* = 0.11–0.34) and in two of three cases favours `bartMI`. Those
-arms only look better because they start at **+1.6% to +1.8%** bias and a uniform −3 pp
-shift carries them *through* zero — cancellation, not robustness, and it would reverse if
-the curvature had the opposite sign.
+| step | `ynl_mcar_z40` | `ynl_mar_z40` |
+|---|---|---|
+| Z conditional **mean** | +1.85 pp | +2.14 pp |
+| Z draw **shape** | **−1.43 pp** | **−1.32 pp** |
+| **Exposure draw** | **+3.41 pp** | **+3.14 pp** |
+| total | +3.83 pp | +3.95 pp |
 
-**The V7 hypothesis is not supported.** All four arms degrade by 2.86–3.30 pp; the spread is
-0.44 pp. The confound was real but inert, and the V6/V7 verdict stands on evidence that
-could have overturned it.
+**The exposure draw dominates**, and **the shape fix is harmful on its own.** Its effect is a
+consistent negative shift in signed bias whichever exposure draw is used; with the *exact*
+exposure draw the bias sits positive so that shift helps — all V12 could see — but with the
+*shipped* draw the bias is already negative, so the same shift carries it from −2.19% to
+−3.62%. The Gaussian Z draw and the linear exposure draw were partly cancelling.
 
-**The finding that matters is pipeline-wide.** A non-linear outcome costs ≈3 pp of bias
-*whichever imputer is used* — `bartMI` goes from 0.53% to 3.10% mean absolute bias, outside
-the ≤1% / ≤2.7% the README quotes for the additive path. **Coverage is unchanged**
-(0.953 → 0.953), because at `n` = 800 a 3% relative bias is only ≈0.28 SE. Third
-consecutive track where calibration diagnostics missed a bias finding (V3, V8, V11).
+**A Z-only fix recovers 11–21%** of the gap, and only because the mean correction outweighs
+the shape correction pulling the other way. **Roadmap item 08 is therefore closed as
+scoped** — the cheap part is the part that does not work alone.
 
-Control was bit-identical to V10 on all three shared cells.
+**Item 07 is widened instead.** The `leftcens` linear conditional accounts for most of this
+penalty *and* the whole mixture failure (V3/V9), so the two defects share a cause. Fixing it
+would help additive analyses with missing covariates, not only mixture ones.
+
+CONTROL 2 passed. CONTROL 1 failed in the two missing-outcome cells — the SMC instrument
+does not impute `Y` as the pipeline does, so `leftcens` received `NA` predictors there. The
+analysis is bounded to the two complete-outcome cells, where the control holds at
+0.10–0.13 pp.
 
 ---
 
@@ -145,6 +160,7 @@ Control was bit-identical to V10 on all three shared cells.
 | Document | What it is | Read it when |
 |---|---|---|
 | [`INTEGRATION_SUMMARY.md`](INTEGRATION_SUMMARY.md) | **Start here.** Requirement → design → implementation → evidence traceability; open blocks with theoretical resolutions; the claims ledger | Orienting, writing methods text, or checking what may be claimed |
+| [`THEORY.md`](THEORY.md) | **Why the pipeline fails where it fails.** One congeniality condition, derived and numerically exact, that explains all thirteen tracks — plus an explicit list of what is *not* derived | Before designing a fix, or when a new result looks surprising |
 | [`ROADMAP.md`](ROADMAP.md) | What is left to do, in dependency order | Deciding what to work on next |
 | [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposure_integration.md) | The design/theory document: congeniality argument, two-engine block-FCS, estimand gates | Understanding *why* the feature is built the way it is |
 | [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md) | The validation plan: tracks, pre-registered acceptance criteria, gates | Before running a validation track, to see its criteria |
@@ -161,6 +177,8 @@ Control was bit-identical to V10 on all three shared cells.
 | [`phase1/FINDINGS_v9.md`](phase1/FINDINGS_v9.md) | V9: the mechanism test — replacing the linear conditional restores the estimands | Designing the SMC fix (item 07), or citing *why* the mixture path fails |
 | [`phase1/FINDINGS_v10.md`](phase1/FINDINGS_v10.md) | V10: MAR covariate missingness — the additive claims survive their first non-MCAR test | Citing scope beyond MCAR, or before claiming anything about MNAR |
 | [`phase1/FINDINGS_v11.md`](phase1/FINDINGS_v11.md) | V11: the imputer default tested against a non-linear outcome; the ≈3 pp scope limit | Before quoting additive-path bias figures, or revisiting `z_imputer` |
+| [`phase1/FINDINGS_v12.md`](phase1/FINDINGS_v12.md) | V12: the Z-draw shape isolated — confirmed, and quantified at ~40% of the penalty | Before building the shape fix, or citing what it would buy |
+| [`phase1/FINDINGS_v13.md`](phase1/FINDINGS_v13.md) | V13: the three-way decomposition — the exposure draw dominates and a Z-only fix backfires | Before building any single-component fix |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),
 `run_v2_robustness.sh` (V2), `run_v4_variance.sh` (V4, V5, V6, V7 and V8 — the arm/scenario

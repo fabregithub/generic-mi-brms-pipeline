@@ -341,6 +341,36 @@ rmse may rise with `rho`. Any cell where **bias** exceeds 3% or coverage falls b
 
 ---
 
+## 7b. How tracks are designed from here: predict, then test
+
+**Adopted 2026-09-01.** Tracks V0–V14 were *characterisation* runs: register an acceptance
+threshold, run, describe what happened, explain it afterwards. That produced thirteen sound
+findings and no theory, so each new result arrived as a surprise rather than as a test of
+anything. [`THEORY.md`](THEORY.md) closed part of that gap retrospectively. From here the
+loop runs forwards:
+
+> **1. State the theory. 2. Derive a numeric prediction for an unmeasured cell.
+> 3. Run. 4. The theory survives or is revised — and the revision is recorded.**
+
+**What changes in practice.** A registered *acceptance criterion* asks "is the pipeline good
+enough?" A registered *prediction* asks "is our understanding right?" — and can be wrong,
+which is the point. A track designed this way states, before running:
+
+- the mechanism it assumes,
+- a **number** it expects in a cell nobody has measured,
+- what result would **falsify** the mechanism, not merely disappoint it.
+
+**Weak theory is allowed; pretending otherwise is not.** If the best available law is
+frank curve-fitting, the prediction is registered as such and the run's job is to pin the
+shape rather than to confirm anything. What is not allowed is presenting a fitted constant
+as a derivation — the failure mode `THEORY.md` §4 already records three times.
+
+**Predictions are kept even when wrong**, with the superseding result beside them, for the
+same reason findings are corrected rather than overwritten: a wrong prediction that was
+honestly registered is evidence about the theory, while a quietly deleted one is nothing.
+
+---
+
 ## 8. Track V3 — Phase 2b: BKMR estimands
 
 > **STATUS: RESOLVED — 2026-08-29.** 3 scenarios × 4 arms × 7 estimands × 200 reps,
@@ -828,9 +858,14 @@ V7, which used `m` = 30.
 
 ## 8e. Track V12 — Is the non-linear-outcome penalty the SHAPE of the Z draw?
 
-> **STATUS: BUILT, CRITERIA REGISTERED, NOT YET RUN — 2026-08-31.**
-> Files: Z-block samplers and `proc_smc_scalar()` in `phase1/R/smc_impute.R`,
-> `phase1/test_v12_zdraw.R`, arms `smc_zexact` / `smc_zgauss`.
+> **STATUS: RESOLVED — 2026-09-01.** 8,000 tasks, 1000 reps, 115 min, zero errors.
+> **The shape mechanism is confirmed**: holding the conditional mean exactly right, the
+> draw's shape costs **1.9 pp** at 40% MCAR and **1.3 pp** at 40% MAR (*p* < 1e-4), scaling
+> down to zero as covariate missingness falls. **But it is only 32–49% of the penalty** —
+> the exact draw eliminates the penalty entirely, so the rest lies in the conditional mean
+> and/or the exposure draw, which this design conflates. Control passed twice, including an
+> exact 0.000 in the cell with no covariate missingness. Full reading:
+> [`phase1/FINDINGS_v12.md`](phase1/FINDINGS_v12.md).
 
 **Question.** V11 found that a non-linear outcome costs ≈3 pp of bias for **every**
 imputer — BART, `mice pmm`, forest and bootstrapped forest, spread only 0.44 pp. That is
@@ -896,6 +931,198 @@ will not close both.
 twins) × 1000 reps = 8,000 tasks — is **~2.6 h**. Cheap because the analysis model is `lm`,
 not MCMC. The shape contrast is paired on identical data, so its Monte-Carlo error should
 be well under 0.2 pp.
+
+---
+
+## 8f. Track V13 — Attributing the rest of the non-linear-outcome penalty
+
+> **STATUS: RESOLVED — 2026-09-01.** 8,000 tasks, 1000 reps, 153 min, zero errors.
+> **The exposure draw dominates** (3.1–3.4 pp of ~3.9), and a **Z-only fix moves bias away
+> from truth** — roadmap item 08 is closed as scoped. CONTROL 2 passed; CONTROL 1 failed in
+> the two missing-outcome cells because the SMC instrument does not impute `Y`, bounding the
+> analysis to the two complete-outcome cells. Full reading:
+> [`phase1/FINDINGS_v13.md`](phase1/FINDINGS_v13.md).
+
+**Question.** V12 confirmed the Z-draw *shape* mechanism but could only attribute **32–49%**
+of the ≈3 pp non-linear-outcome penalty to it. The remainder lies in the Z conditional
+**mean**, the **exposure draw**, or both — V12's design varied all of them at once and could
+not separate them. This run does.
+
+**The design: a 2×2 plus the shipped reference.**
+
+| arm | Z draw | X (exposure) draw |
+|---|---|---|
+| `pipeline_bartMI` | BART-estimated mean + Gaussian | shipped (`leftcens`) |
+| `smc_zgauss_xship` | **exact** mean + Gaussian | shipped (`leftcens`) |
+| `smc_zexact_xship` | **exact** draw (mean + shape) | shipped (`leftcens`) |
+| `smc_zgauss` | exact mean + Gaussian | **exact** |
+| `smc_zexact` | **exact** draw | **exact** |
+
+Reading down the shipped-X column and then across gives a **complete, additive
+decomposition** of the whole penalty:
+
+| step | isolates |
+|---|---|
+| `pipeline_bartMI` → `smc_zgauss_xship` | the Z conditional **mean** (BART-estimated vs exact), X held shipped |
+| `smc_zgauss_xship` → `smc_zexact_xship` | the Z draw **shape**, X held shipped |
+| `smc_zexact_xship` → `smc_zexact` | the **exposure draw** (`leftcens` vs exact), Z held exact |
+
+The three steps sum to `pipeline_bartMI` → `smc_zexact`, which V12 measured as the whole
+penalty (degradation −2.89 pp vs +0.02 pp). Every step is paired on identical data.
+
+**A bug this design already caught.** The first implementation passed `leftcens` filled
+values *and* point bounds on every row. The pipeline's actual convention
+(`.ce_exposure_bounds()`) is the opposite: an observed row supplies `y` with `NA` bounds, a
+censored row supplies bounds with `y = NA`. The wrong version put the `_xship` arms 5 pp
+adrift *in the linear cells*, where they should have matched — visible only because a smoke
+test compared them against a cell whose answer was already known. Fixed; the corrected arms
+now reproduce `bartMI`'s between-imputation variance (`b` = 0.00095 vs 0.00099, `b_share`
+0.356 vs 0.359), confirming they share its exposure draw.
+
+### Acceptance criteria (registered before the run)
+
+| | criterion |
+|---|---|
+| **CONTROL 1** | In the **linear** cells all four SMC arms must agree, and agree with each other to within Monte-Carlo error. Shape has nothing to add there and the exposure draw is the only remaining difference |
+| **CONTROL 2** | The `_xship` arms must reproduce `pipeline_bartMI`'s `b` and `b_share`, confirming they genuinely share its exposure draw. A mismatch means the arm is not what it claims |
+| **PRIMARY** | The three-way decomposition above, paired, with Monte-Carlo error on each step. The three must approximately sum to the total |
+| **SECONDARY** | Whether a **Z-only** fix (mean + shape, exposure draw untouched) is sufficient — that is, how much of the penalty survives at `smc_zexact_xship` |
+
+**Why the SECONDARY matters most.** Roadmap item 08 proposes changing only the Z-block draw.
+If `smc_zexact_xship` still carries most of the penalty, a Z-only fix is not worth building
+on its own and item 08 must be re-scoped to include the exposure draw — which drags in
+item 07's territory and stops being cheap.
+
+**Cost — measured.** 88 tasks in 1.4 min at 22 workers (5 arms + oracle, `m` = 30). The
+registered design, 8 cells × 1000 reps = 8,000 tasks, is **~3.9 h**.
+
+---
+
+## 8g. Track V14 — Does a *shippable* exposure draw work? (item 07's candidate)
+
+> **STATUS: BUILT, CRITERIA REGISTERED, NOT YET RUN — 2026-09-01.**
+> Files: `.ce_smc_x_grid()` and `x_mode = "grid"` in `phase1/R/smc_impute.R`,
+> `phase1/test_v14_smcx.R`, arm `smc_xgrid`.
+
+**Question.** V13 established that the exposure draw carries most of the
+non-linear-outcome penalty (3.1–3.4 pp of ~3.9) and V9 that it carries the whole mixture
+failure. Both were measured against a sampler that **knew the generator's surface**. Can a
+draw that knows only the analysis *formula* — estimating everything else, as a shipped
+version would — achieve the same?
+
+**The arm.** `smc_xgrid` uses `.ce_smc_x_grid()`: it reuses `leftcens`'s own exposure model
+(shash margin → `x_to_z` → interval-censored `survreg` on the `z` scale → posterior draw of
+β and scale), so the prior *is* the pipeline's model rather than an approximation of it. The
+only change is what the draw conditions on — `leftcens` conditions on `Y` linearly, this
+conditions on `Y` through the substantive model's actual likelihood, evaluated on a grid.
+Coefficients are re-fitted each sweep and drawn from their posterior (`mode = "plugin"`), so
+nothing about the truth is supplied.
+
+**Why a grid and not importance sampling.** Tested and rejected. With a non-linear
+exposure–response, `mu(x) = Y` can have a second root far from the linear solution — for the
+harness surface at `Y` = 1.5 the roots are +2.0 and −4.667, and censoring admits only
+−4.667. Importance sampling from any linear-conditional proposal misses it, and **`ESS`
+does not warn you**: measured at `σ_y` = 0.1, the draw was off by 4.6 while `ESS/K` reported
+0.999, because uniformly-bad candidates produce uniform weights. A grid has no proposal to
+misplace. Verified in `test_v14_smcx.R`:
+
+| `σ_y` | grid error | importance-sampling error |
+|---|---|---|
+| 1.0 | 0.027 | 0.001 |
+| 0.5 | 0.064 | 0.204 |
+| 0.3 | 0.231 | 3.665 |
+| 0.2 | **0.014** | 4.370 |
+| 0.1 | **0.003** | 4.596 |
+
+The grid is *not* uniformly better — where the proposal is well matched importance sampling
+is near-exact and the grid carries discretisation error instead. Its virtue is that it does
+not collapse.
+
+### Acceptance criteria (registered before the run)
+
+| | criterion |
+|---|---|
+| **CONTROL** | In the four **linear** cells `smc_xgrid` must agree with `smc_zexact` and with `pipeline_bartMI` to within Monte-Carlo error. A linear outcome makes the shipped conditional correct, so there is nothing for this to improve; a difference means the arm perturbs cells it should leave alone |
+| **PRIMARY** | In the four **non-linear** cells, the paired difference `smc_xgrid` − `smc_zexact`. **Pre-declared as adequate if within ±1 pp**: the candidate must approach the exact sampler, which V13 measured as eliminating the penalty (degradation +0.02 pp against the shipped −2.89) |
+| **SECONDARY** | How much of the ≈3 pp penalty `smc_xgrid` recovers relative to `pipeline_bartMI`, and whether its `b` / `b_share` stay comparable to the shipped arm's — a draw that recovers bias by collapsing between-imputation variance would be the V4 defect in new clothing |
+
+**What each outcome means.** Within ±1 pp of the exact sampler: item 07 has a *shippable*
+method and the work becomes engineering — wiring `.ce_smc_x_grid()` into
+`00_censored_exposure.R` behind a config flag. Materially worse: the gap between knowing the
+surface and estimating it is the real obstacle, and 07 needs re-scoping again.
+
+**This tests the additive path only.** Whether the same draw recovers the *mixture*
+estimands needs the BKMR harness (V9's cells), which is a separate ~10 h run. The scalar
+test comes first because it is cheap and because a failure here would make the expensive one
+pointless.
+
+**Cost — measured.** 88 tasks in 2.1 min at 22 workers (3 arms + oracle, `m` = 30), i.e.
+0.0239 min/task — the grid arm costs about 1.5× a conventional one. The registered design,
+8 cells × 1000 reps = 8,000 tasks, is **~3.2 h**.
+
+---
+
+## 8h. Track V15 — the attenuation shape (first prediction-led track)
+
+> **STATUS: BUILT, PREDICTION REGISTERED, NOT YET RUN — 2026-09-01.**
+> Six `mixf*` scenarios in `phase1/R/robustness.R`.
+
+**The open question.** [`THEORY.md`](THEORY.md) §4 records that curvature attenuation grows
+**faster than the censored fraction** — V3 measured 20% non-detects → 11.7% excess and 40% →
+56.7%, a **4.85×** rise for 2× the censoring. Nothing explains why, and it matters: it says
+the penalty for uncongeniality accelerates with the amount of missing data.
+
+**Candidate laws, tested against that ratio.** The estimand is a second difference in the
+exposure, so its sensitivity to a misplaced imputation runs through `x²`:
+
+| law | predicted ratio | vs observed 4.85 |
+|---|---|---|
+| `f` (proportional) | 2.00 | −2.85 |
+| `f/(1−f)` | 2.67 | −2.18 |
+| **`f²`** | **4.00** | **−0.85** |
+| `f·E[x²|censored]` | 1.14 | −3.70 |
+| `f·sd(x²|censored)` | 1.83 | −3.01 |
+| `f·|q_f|` | 0.60 | −4.24 |
+| `f²·E[x²|censored]` | 2.29 | −2.56 |
+
+**None fits well.** `f²` is least-bad and has **no derivation** — it is curve-fitting to two
+points, and the mechanistically motivated candidates are worse. That is the honest state of
+the theory, and it is why this run's primary job is to establish the shape.
+
+### The registered prediction
+
+Calibrating `excess% = 323.4 · f²` on both measured points:
+
+| `f` | predicted excess | status |
+|---|---|---|
+| 0.10 | **3.2%** | unmeasured |
+| 0.20 | 12.9% | measured 11.7% |
+| 0.30 | **29.1%** | unmeasured |
+| 0.40 | 51.8% | measured 56.7% |
+| 0.50 | **80.9%** | unmeasured |
+| 0.60 | **116.4%** | unmeasured |
+
+**Falsification, pre-declared.** `f²` is rejected if the measured excess at any of
+`f` ∈ {0.10, 0.30, 0.50, 0.60} differs from the prediction by more than **10 percentage
+points**, or if the fitted exponent of a log–log regression of excess on `f` excludes 2 at
+95%. The `f` = 0.60 cell is the sharpest test: 116.4% requires the estimate to have flipped
+sign and overshot, which is easy to refute.
+
+**What each outcome buys.** If `f²` survives, there is a quantitative law to explain and the
+exponent is a target for derivation. If it fails, the four new points still pin the shape
+well enough to constrain what a derivation must produce — which is more than two points can
+do. Either way the theory is revised against data rather than around it.
+
+**Design.** Six cells (`mixf10`…`mixf60`), mixture ERF, focal exposure censored only —
+`curv_X1` depends on X1 alone, which V3 confirmed (`nd40` −56.7% against `nd40_all` −58.4%,
+so censoring the other exposures adds ~2 pp). Arms: `oracle_bkmr` and `pipeline_bkmr`; the
+estimand is the paired excess between them. Realised non-detect fractions verified exact
+(0.100 … 0.600).
+
+**Cost.** BKMR, so this is the expensive harness: 11 fits per replication against V3's 13.
+At V3's measured 5.80 s per fit, 6 cells × 100 reps ≈ **10.6 h**. Monte-Carlo error at 100
+reps is ~3.5 pp on the excess, against predicted gaps of 17–35 pp between candidate laws —
+ample.
 
 ---
 

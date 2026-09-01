@@ -178,8 +178,10 @@
 #'   spread and skew.
 smc_impute_datasets <- function(d, truth, m = 10L, mode = c("oracle", "plugin"),
                                 sweeps = 3L, rho = 0.4, sd_x = 1, mu_x = 0,
-                                sigma_y = 1, n_grid = 512L, z_mode = NULL) {
-  mode <- match.arg(mode)
+                                sigma_y = 1, n_grid = 512L, z_mode = NULL,
+                                x_mode = c("exact", "shipped", "grid"), margin = "shash") {
+  mode   <- match.arg(mode)
+  x_mode <- match.arg(x_mode)
   p <- length(truth$b)
   xcols <- paste0("logX", seq_len(p))
   zcols <- c("Z1", "Z2")
@@ -258,13 +260,49 @@ smc_impute_datasets <- function(d, truth, m = 10L, mode = c("oracle", "plugin"),
           .smc_eta(s2, truth, mode, coefs, fm, xcols, zcols)
         }
 
-        qc <- .smc_quadratic_coefs(eta_fun, length(idx))
-        other <- as.matrix(sub[, setdiff(xcols, cc), drop = FALSE])
-        pr <- .smc_exposure_prior(j, other, p, rho, sd_x, mu_x)
-
-        w[[cc]][idx] <- .smc_draw_truncated(
-          Y = sub$Y, A = qc$A, B = qc$B, C = qc$C, sigma_y = sig,
-          m = pr$m, s = pr$s, upper = upper[[cc]][idx], n_grid = n_grid)
+        if (x_mode == "grid") {
+          # ITEM 07's candidate: the general grid draw. Unlike "exact" it does
+          # NOT know the generator's coefficients -- it is handed the analysis
+          # FORMULA and estimates the rest, which is what a shipped version
+          # would have. V9 showed that suffices (plug-in matched oracle to 0.2 pp).
+          ll <- function(dat) stats::dnorm(
+            dat$Y, .smc_eta(dat, truth, mode, coefs, fm, xcols, zcols), sig, log = TRUE)
+          gr <- .ce_smc_x_grid(w, cc, cen = is_cens[[cc]], upper = upper[[cc]],
+                               preds = setdiff(c(xcols, zcols), cc),
+                               loglik = ll, n_grid = n_grid, margin = margin)
+          if (isTRUE(gr$ok) && length(gr$x)) w[[cc]][idx] <- gr$x
+        } else if (x_mode == "shipped") {
+          # The SHIPPED exposure draw: leftcens's linear conditional, exactly as
+          # `.ce_one_imputation()` calls it. Holding this fixed while the Z draw
+          # varies is what separates the X block's contribution from the Z
+          # block's -- V12 could not, because both differed at once.
+          preds <- setdiff(c("Y", xcols, zcols), cc)
+          preds <- intersect(preds, names(w))
+          # leftcens's convention, per `.ce_exposure_bounds()` in
+          # 00_censored_exposure.R: an OBSERVED row supplies `y` and has NA
+          # bounds; a CENSORED row supplies bounds and has y = NA. Passing
+          # filled values *and* point bounds (the intuitive reading) silently
+          # produces a different, much worse draw -- caught by a smoke test in
+          # which this arm was 5 pp off in a cell where it should have matched.
+          cen <- is_cens[[cc]]
+          yv <- w[[cc]]; yv[cen] <- NA_real_
+          lo <- rep(NA_real_, nrow(w)); hi <- rep(NA_real_, nrow(w))
+          lo[cen] <- -Inf
+          hi[cen] <- upper[[cc]][cen]
+          dr <- tryCatch(
+            leftcens::impute_censored_conditional(
+              y = yv, x = w[, preds, drop = FALSE], lower = lo, upper = hi,
+              m = 1L, margin = margin)[, 1],
+            error = function(e) NULL)
+          if (!is.null(dr)) w[[cc]][idx] <- dr[idx]
+        } else {
+          qc <- .smc_quadratic_coefs(eta_fun, length(idx))
+          other <- as.matrix(sub[, setdiff(xcols, cc), drop = FALSE])
+          pr <- .smc_exposure_prior(j, other, p, rho, sd_x, mu_x)
+          w[[cc]][idx] <- .smc_draw_truncated(
+            Y = sub$Y, A = qc$A, B = qc$B, C = qc$C, sigma_y = sig,
+            m = pr$m, s = pr$s, upper = upper[[cc]][idx], n_grid = n_grid)
+        }
       }
     }
     out[[i]] <- w
@@ -388,17 +426,21 @@ smc_impute_datasets <- function(d, truth, m = 10L, mode = c("oracle", "plugin"),
 #' Z-block sampler could achieve; it is not wired into `00_common_functions.R`.
 proc_smc_scalar <- function(bundle, m = 30L, seed = NULL, sweeps = 3L,
                             z_mode = c("exact", "gaussian"), mode = "oracle",
+                            x_mode = c("exact", "shipped", "grid"), margin = "shash",
                             rho = 0.4, sd_x = 1, mu_x = 0, sigma_y = 1,
                             label = NULL) {
-  z_mode <- match.arg(z_mode)
-  label  <- label %||% paste0("smc_z", if (z_mode == "exact") "exact" else "gauss")
+  z_mode <- match.arg(z_mode); x_mode <- match.arg(x_mode)
+  label  <- label %||% if (x_mode == "grid") "smc_xgrid" else
+    paste0("smc_z", if (z_mode == "exact") "exact" else "gauss",
+           if (x_mode == "shipped") "_xship" else "")
   if (!is.null(seed)) set.seed(seed)
   truth <- bundle$truth
 
   imputed <- tryCatch(
     smc_impute_datasets(bundle$censored, truth, m = as.integer(m), mode = mode,
                         sweeps = sweeps, rho = rho, sd_x = sd_x, mu_x = mu_x,
-                        sigma_y = sigma_y, z_mode = z_mode),
+                        sigma_y = sigma_y, z_mode = z_mode, x_mode = x_mode,
+                        margin = margin),
     error = function(e) structure(list(), err = conditionMessage(e)))
   if (!length(imputed))
     return(one_row(label, NA, NA, NA, NA,
@@ -411,8 +453,248 @@ proc_smc_scalar <- function(bundle, m = 30L, seed = NULL, sweeps = 3L,
   }
   pl <- rubin_pool(ests, vars)
   n_bad <- sum(!is.finite(ests))
-  note <- sprintf("smc-%s; z=%s; m=%d; sweeps=%d", mode, z_mode, m, sweeps)
+  note <- sprintf("smc-%s; z=%s; x=%s; m=%d; sweeps=%d", mode, z_mode, x_mode, m, sweeps)
   if (n_bad) note <- paste0(note, sprintf("; %d/%d fits failed", n_bad, length(ests)))
   one_row(label, pl["est"], pl["se"], pl["ci_lo"], pl["ci_hi"], note,
           ubar = pl["ubar"], b = pl["b"], fmi = pl["fmi"])
+}
+
+
+# =============================================================================
+# Item 07: a GENERAL substantive-model-compatible exposure draw
+# -----------------------------------------------------------------------------
+# WHAT V9 AND V13 ESTABLISHED. Replacing the X block's linear conditional with
+# the correct one restores the mixture estimands (V9: 89-100% of the gap) and
+# accounts for 3.1-3.4 pp of the ~3.9 pp non-linear-outcome penalty (V13). Both
+# used a sampler that KNEW the generator's surface. A shippable version cannot.
+#
+# WHY IMPORTANCE RESAMPLING AND NOT A GRID. The V9/V12 samplers evaluate the
+# target on a grid, which needs the exposure prior's DENSITY. `leftcens` exposes
+# draws (`impute_censored_conditional`) but no density, and its shash margin is
+# not optional -- V1 found a Gaussian conditional gives coverage 0.47 on skewed
+# exposures. Importance resampling needs only draws, so it can keep that margin:
+#
+#   1. PROPOSE  K candidates per censored cell from leftcens, conditioning on the
+#               other exposures and covariates but NOT on Y -- so the proposal is
+#               the (skew-aware, bound-respecting) exposure model alone.
+#   2. WEIGHT   each candidate by the substantive model's likelihood
+#               p(Y_i | x = cand, rest_i; theta).
+#   3. RESAMPLE one candidate per cell with probability proportional to weight.
+#
+# The result is a draw from p(x | Y, rest) that never needs that density in
+# closed form, and it is GENERAL: any analysis formula works, because the
+# likelihood is only ever EVALUATED at candidate values. Splines, mo() terms and
+# interactions all pass through untouched.
+#
+# THE FAILURE MODE IS WEIGHT DEGENERACY. If Y is very informative about x, the
+# prior is a poor proposal, one candidate takes nearly all the weight, and the
+# draw collapses to a point -- which understates between-imputation variance
+# exactly as the improper imputation of V4 did. `ess` is therefore returned, not
+# optional: it is the diagnostic that says whether K was large enough.
+# =============================================================================
+
+#' Substantive-model-compatible draw for one censored exposure, by importance
+#' resampling against a leftcens proposal.
+#'
+#' @param w Current completed data (one imputation, mid-sweep).
+#' @param cc Name of the exposure column being drawn.
+#' @param cen Logical vector: which rows are censored.
+#' @param upper Upper bound (log LOD) per row.
+#' @param preds Predictor names for the PROPOSAL. `Y` must be excluded -- the
+#'   outcome enters through the weights, not the proposal, and including it both
+#'   places would double-count it.
+#' @param loglik Function(dat) returning the per-row log-likelihood of the
+#'   outcome under the substantive model. Receives a data frame with `cc` set to
+#'   candidate values.
+#' @param K Number of proposals per censored cell.
+#' @param margin leftcens margin (`"shash"` keeps skew handling).
+#' @param propose Optional `function(n_rows, K)` returning an `n_rows x K` matrix
+#'   of candidates, used INSTEAD of leftcens. Exists so the weighting and
+#'   resampling can be tested against a proposal whose target is known in closed
+#'   form -- validating the machinery separately from the proposal model, which
+#'   is the only way to tell which of the two is at fault when a result looks
+#'   wrong.
+#' @return A list: `x` (one draw per censored row) and `ess` (mean effective
+#'   sample size, out of K -- the degeneracy diagnostic).
+.smc_x_importance <- function(w, cc, cen, upper, preds, loglik, K = 50L,
+                              margin = "shash", propose = NULL) {
+  idx <- which(cen)
+  if (!length(idx)) return(list(x = numeric(0), ess = NA_real_))
+  if (is.null(propose)) stopifnot(!("Y" %in% preds))
+
+  # 1. PROPOSE: K candidates per row, from the exposure model without Y.
+  if (!is.null(propose)) {
+    cand <- propose(length(idx), as.integer(K))
+  } else {
+    yv <- w[[cc]]; yv[cen] <- NA_real_
+    lo <- rep(NA_real_, nrow(w)); hi <- rep(NA_real_, nrow(w))
+    lo[cen] <- -Inf; hi[cen] <- upper[cen]
+    prop <- tryCatch(
+      leftcens::impute_censored_conditional(
+        y = yv, x = w[, intersect(preds, names(w)), drop = FALSE],
+        lower = lo, upper = hi, m = as.integer(K), margin = margin),
+      error = function(e) NULL)
+    if (is.null(prop)) return(list(x = rep(NA_real_, length(idx)), ess = NA_real_))
+    cand <- as.matrix(prop)[idx, , drop = FALSE]        # length(idx) x K
+  }
+
+  # 2. WEIGHT: the substantive model's likelihood at each candidate.
+  sub <- w[idx, , drop = FALSE]
+  lw <- matrix(NA_real_, nrow = length(idx), ncol = K)
+  for (k in seq_len(K)) {
+    s2 <- sub; s2[[cc]] <- cand[, k]
+    lw[, k] <- loglik(s2)
+  }
+  lw[!is.finite(lw)] <- -Inf
+  lw <- lw - apply(lw, 1, max)
+  wt <- exp(lw)
+  rs <- rowSums(wt)
+  ok <- is.finite(rs) & rs > 0
+  wt[ok, ] <- wt[ok, , drop = FALSE] / rs[ok]
+
+  # 3. RESAMPLE one candidate per row.
+  out <- numeric(length(idx))
+  for (i in seq_along(idx)) {
+    if (!ok[i]) { out[i] <- cand[i, 1L]; next }         # degenerate: keep the proposal
+    out[i] <- cand[i, sample.int(K, 1L, prob = wt[i, ])]
+  }
+  # Effective sample size: 1/sum(w^2). K means the outcome added nothing; 1 means
+  # a single candidate took all the weight and the draw is effectively a point.
+  ess <- mean(1 / rowSums(wt[ok, , drop = FALSE]^2), na.rm = TRUE)
+  list(x = out, ess = ess)
+}
+
+
+# =============================================================================
+# Item 07: the GRID exposure draw -- general, and robust where IS is not
+# -----------------------------------------------------------------------------
+# WHY NOT IMPORTANCE SAMPLING. The obvious approach -- propose from the exposure
+# model, weight by the outcome likelihood -- fails, and fails quietly. With a
+# non-linear exposure-response the equation mu(x) = Y can have a second root far
+# from the linear solution: for mu(x) = 0.1 + 0.4x + 0.15x^2 and Y = 1.5 the
+# roots are +2.0 and -4.667, and left-censoring admits only -4.667. As the
+# outcome tightens the target migrates there (exact mean -0.76 -> -3.86 -> -4.62
+# as sigma_y goes 1.0 -> 0.3 -> 0.1) while a Y-conditional proposal piles up near
+# the bound. Measured: the draw was off by 4.6 while ESS/K reported 0.999.
+# **ESS detects weight concentration, not proposal misplacement**, so it cannot
+# be relied on to catch this.
+#
+# A GRID HAS NO PROPOSAL TO MISPLACE. It covers the admissible range by
+# construction, so a distant or multimodal target is found automatically. The
+# cost is one grid per censored cell per sweep -- comparable to the K = 200
+# proposals importance sampling needed, and robust instead of fragile.
+#
+# THE PRIOR IS THE PIPELINE'S OWN EXPOSURE MODEL, not an approximation of it.
+# `leftcens::impute_censored_conditional()` fits a shash margin, transforms to a
+# standard-normal `z` scale via `x_to_z()`, fits an interval-censored Gaussian
+# AFT (`survreg`) of `z` on the predictors, and draws the censored `z` from a
+# truncated normal. This function reuses those same steps, so the only thing that
+# changes is *what the draw is conditioned on*: leftcens conditions on Y
+# linearly, and this conditions on Y through the substantive model's actual
+# likelihood.
+#
+# WORKING IN z IS WHY THIS IS SIMPLE. On the z scale the prior is a plain
+# truncated normal. Sampling z from `phi(z; mu_lin, s) * L(x(z))` and mapping
+# back through `z_to_x()` yields exactly x ~ p(x | preds) * L(x): the Jacobians
+# cancel between the two parameterisations, so no derivative of the shash
+# transform is needed anywhere.
+# =============================================================================
+
+#' Substantive-model-compatible draw for one censored exposure, by grid
+#' inverse-CDF on the shash-transformed scale.
+#'
+#' @param w Current completed data for one imputation, mid-sweep.
+#' @param cc Exposure column being drawn.
+#' @param cen Logical: which rows are censored.
+#' @param upper Upper bound (log LOD, data scale) per censored row.
+#' @param preds Predictor names for the EXPOSURE model. `Y` must be excluded --
+#'   the outcome enters through `loglik`, and including it in both places would
+#'   condition on it twice.
+#' @param loglik `function(dat)` returning the per-row log-likelihood of the
+#'   outcome under the substantive model, with `cc` set to candidate values.
+#' @param n_grid Grid points per censored row.
+#' @param margin Passed to the shash margin fit.
+#' @param proper Draw the exposure model's parameters from their posterior, as
+#'   the shipped path does. Leave TRUE: without it the imputation is improper and
+#'   between-imputation variance is understated (the V4 defect).
+#' @return list(`x` = one draw per censored row, `ok` = did the fit succeed).
+.ce_smc_x_grid <- function(w, cc, cen, upper, preds, loglik, n_grid = 512L,
+                           margin = "shash", proper = TRUE) {
+  idx <- which(cen)
+  if (!length(idx)) return(list(x = numeric(0), ok = TRUE))
+  stopifnot(!("Y" %in% preds))
+  if (!requireNamespace("survival", quietly = TRUE)) return(list(x = NULL, ok = FALSE))
+
+  n  <- nrow(w)
+  xv <- w[[cc]]; xv[cen] <- NA_real_          # pipeline convention: NA where censored
+  lo <- rep(NA_real_, n); hi <- rep(NA_real_, n)
+  lo[cen] <- -Inf; hi[cen] <- upper[cen]
+  obs <- !cen
+
+  # --- 1. the exposure model, exactly as the shipped path fits it -------------
+  mfit <- tryCatch(leftcens:::fit_shash_margin(xv[obs], lo[cen], hi[cen]),
+                   error = function(e) NULL)
+  if (is.null(mfit)) return(list(x = NULL, ok = FALSE))
+  mp <- if (isTRUE(proper)) leftcens::draw_margin(mfit)
+        else list(mu = mfit$mu, sigma = mfit$sigma, eps = mfit$eps)
+
+  z_obs <- leftcens::x_to_z(xv, mp$mu, mp$sigma, mp$eps)
+  z_lo  <- leftcens::x_to_z(lo,  mp$mu, mp$sigma, mp$eps)
+  z_hi  <- leftcens::x_to_z(hi,  mp$mu, mp$sigma, mp$eps)
+
+  pn <- intersect(preds, names(w))
+  fm <- stats::as.formula(paste(
+    "survival::Surv(.t1, .t2, type = 'interval2') ~",
+    if (length(pn)) paste(sprintf("`%s`", pn), collapse = " + ") else "1"))
+  t1 <- z_obs; t2 <- z_obs
+  t1[cen] <- ifelse(is.finite(z_lo[cen]), z_lo[cen], NA_real_)
+  t2[cen] <- ifelse(is.finite(z_hi[cen]), z_hi[cen], NA_real_)
+  dat <- cbind(data.frame(.t1 = t1, .t2 = t2), w[, pn, drop = FALSE])
+  sr <- tryCatch(survival::survreg(fm, data = dat, dist = "gaussian"),
+                 error = function(e) NULL)
+  if (is.null(sr)) return(list(x = NULL, ok = FALSE))
+
+  beta <- stats::coef(sr); k <- length(beta)
+  if (isTRUE(proper)) {
+    V <- stats::vcov(sr); par <- c(beta, log(sr$scale))
+    drawn <- tryCatch(as.numeric(par + t(chol(V)) %*% stats::rnorm(length(par))),
+                      error = function(e) par)
+    beta_i <- drawn[seq_len(k)]; s_i <- exp(drawn[k + 1L])
+  } else { beta_i <- beta; s_i <- sr$scale }
+  mu_lin <- as.vector(stats::model.matrix(sr) %*% beta_i)
+
+  # --- 2. grid over the ADMISSIBLE z range, per censored row ------------------
+  ml <- mu_lin[idx]; zh <- z_hi[idx]
+  zh[!is.finite(zh)] <- ml[!is.finite(zh)] + 8 * s_i
+  lo_z <- pmin(ml - 8 * s_i, zh - 8 * s_i)
+  u  <- seq(0, 1, length.out = n_grid)
+  Zg <- outer(lo_z, rep(1, n_grid)) + outer(zh - lo_z, u)
+
+  # --- 3. target = truncated-normal prior x substantive-model likelihood ------
+  sub <- w[idx, , drop = FALSE]
+  logL <- matrix(NA_real_, nrow = length(idx), ncol = n_grid)
+  for (g in seq_len(n_grid)) {
+    s2 <- sub
+    s2[[cc]] <- leftcens::z_to_x(Zg[, g], mp$mu, mp$sigma, mp$eps)
+    logL[, g] <- loglik(s2)
+  }
+  logp <- stats::dnorm(Zg, ml, s_i, log = TRUE) + logL
+  logp[!is.finite(logp)] <- -Inf
+  logp <- logp - apply(logp, 1, max)
+  dens <- exp(logp)
+
+  wgt <- Zg[, 2] - Zg[, 1]
+  cdf <- t(apply(dens, 1, cumsum)) - dens / 2
+  cdf <- cdf * wgt
+  tot <- cdf[, n_grid]
+  good <- is.finite(tot) & tot > 0
+  cdf <- cdf / ifelse(tot > 0, tot, 1)
+
+  zdraw <- numeric(length(idx)); target <- stats::runif(length(idx))
+  for (i in seq_along(idx)) {
+    if (!good[i]) { zdraw[i] <- ml[i]; next }
+    zdraw[i] <- stats::approx(cdf[i, ], Zg[i, ], xout = target[i],
+                              rule = 2, ties = "ordered")$y
+  }
+  list(x = leftcens::z_to_x(zdraw, mp$mu, mp$sigma, mp$eps), ok = TRUE)
 }

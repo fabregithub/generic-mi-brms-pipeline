@@ -355,10 +355,25 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   if ("pipeline_properZ_noMID" %in% which)  out$pznm  <- .ce_args(proc_pipeline_properZ_noMID)
   # Track V12 (smc_impute.R): the Z-block draw, shape versus mean. Both arms use
   # the same correct conditional mean; only the draw's shape differs.
-  .smc_args <- function(zm) proc_smc_scalar(
-    bundle, m = m, seed = seed, sweeps = ce_control$outer_sweeps %||% 3L, z_mode = zm)
-  if ("smc_zexact" %in% which)              out$sze   <- .smc_args("exact")
-  if ("smc_zgauss" %in% which)              out$szg   <- .smc_args("gaussian")
+  # A 2x2: {Z draw shape} x {X draw}. V12 could isolate the Z shape but not
+  # separate the rest, because bartMI and the smc arms differed in BOTH blocks
+  # at once. Holding X at the SHIPPED leftcens draw while Z varies -- and vice
+  # versa -- attributes each block's contribution on its own.
+  .smc_args <- function(zm, xm = "exact") proc_smc_scalar(
+    bundle, m = m, seed = seed, sweeps = ce_control$outer_sweeps %||% 3L,
+    z_mode = zm, x_mode = xm, margin = ce_control$margin %||% "shash")
+  if ("smc_zexact" %in% which)        out$sze   <- .smc_args("exact")
+  if ("smc_zgauss" %in% which)        out$szg   <- .smc_args("gaussian")
+  if ("smc_zexact_xship" %in% which)  out$szex  <- .smc_args("exact",    "shipped")
+  if ("smc_zgauss_xship" %in% which)  out$szgx  <- .smc_args("gaussian", "shipped")
+  # Item 07's candidate: the general grid exposure draw, given only the analysis
+  # FORMULA (parameters estimated per sweep and drawn from their posterior).
+  # `mode = "plugin"` is the point -- an arm that knew the true coefficients
+  # would not tell us whether a shippable version works.
+  if ("smc_xgrid" %in% which)         out$sxg   <- proc_smc_scalar(
+    bundle, m = m, seed = seed, sweeps = ce_control$outer_sweeps %||% 3L,
+    z_mode = "exact", x_mode = "grid", mode = "plugin",
+    margin = ce_control$margin %||% "shash")
   if ("brms_joint" %in% which)       out$brms   <- proc_brms_joint(bundle, control = brms_control, cache = brms_cache)
   do.call(rbind, out)
 }

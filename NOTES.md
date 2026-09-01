@@ -728,6 +728,96 @@ a bias finding (V3, V8, V11).
 
 Evidence: [`validation/phase1/FINDINGS_v11.md`](validation/phase1/FINDINGS_v11.md).
 
+### V12 — the covariate draw's shape is confirmed as *a* mechanism (2026-09-01)
+
+A mechanism result, not a code change — but the first one that points at a **bounded,
+buildable fix** rather than research.
+
+V11 found a non-linear outcome costs ≈3 pp of bias for **every** imputer, with a spread of
+only 0.44 pp. That is not what a conditional-*mean* problem looks like, since the arms
+differ enormously in how flexibly they model it. What they share is the draw: all of them
+sample a covariate as *(fitted mean) + homoscedastic Gaussian noise*. Computed exactly from
+the generator, `p(Z1 | Y, X)` has constant SD (0.894) and zero skew under a linear outcome
+— that draw is right — and runs SD 0.626 → 1.216 with skew reaching −1.338 under a
+non-linear one.
+
+**Confirmed.** Holding the conditional mean exactly right and varying only the shape:
+**+1.89 pp** at 40% MCAR covariate missingness, **+1.28 pp** at 40% MAR (both *p* < 1e-4),
++0.09 pp (n.s.) at 20%, and **exactly 0.000** where covariates are complete. Monotone in how
+much is imputed, and the last cell is an unplanned exact-zero control the design produced
+for free.
+
+**But it is 32–49% of the penalty, not all of it.** A fully exact draw eliminates the
+penalty (degradation 0.02 pp against the shipped path's −2.89 pp), so half to two-thirds
+lies in the conditional mean and/or the exposure draw, which this design conflates. An arm
+with the exact Z draw and the *shipped* exposure draw would separate them — a small harness
+addition, and worth doing before building anything.
+
+**Roadmap item 08** is therefore confirmed with a realistic payoff of **1.3–1.9 pp** where
+covariate missingness is heavy, which is the case multiple imputation exists for. It remains
+cheaper and wider-reaching than item 07 and should be done first.
+
+> ### ⚠️ Withdrawn by V13 (2026-09-01)
+>
+> **The recommendation in the paragraph above is wrong and item 08 was closed unbuilt.**
+> V12 measured the shape effect with the *exposure* draw already exact, and under that
+> condition a shape fix does help. In the configuration the pipeline actually ships — the
+> `leftcens` linear exposure draw — the same correction moves bias **away** from truth
+> (−2.19% → −3.62%), because the two errors were partly cancelling. A covariate-only fix
+> recovers 11–21% of the gap, and the exposure draw turns out to dominate at 3.1–3.4 pp of
+> ~3.9. See the V13 entry below.
+>
+> The measurement above stands; only its implication as a standalone remedy was wrong. It is
+> left in place because the reasoning that led to a wrong recommendation is part of the
+> record. One caution recorded with
+it: both exact-draw arms **over-cover** (0.982–0.984, `width/SE` 1.22–1.26) against the
+shipped arm's well-calibrated 0.955 — trading bias for conservative intervals, which is not
+obviously the right trade for every analysis.
+
+Evidence: [`validation/phase1/FINDINGS_v12.md`](validation/phase1/FINDINGS_v12.md).
+
+### V13 — the exposure draw dominates; a covariate-only fix backfires (2026-09-01)
+
+The result that stopped a planned build.
+
+V12 confirmed that covariates are drawn with the wrong *shape* under a non-linear outcome
+and measured that at 1.3–1.9 pp. Roadmap item 08 was written around fixing it — a bounded
+change to one function, cheaper and wider-reaching than the mixture work of item 07. V13
+separated the covariate draw from the exposure draw to size the remainder, and the answer
+inverted the plan.
+
+**Decomposition of the ≈3.9 pp penalty** (paired; the three steps sum exactly to the total):
+
+| step | `ynl_mcar_z40` | `ynl_mar_z40` |
+|---|---|---|
+| Z conditional **mean** | +1.85 pp | +2.14 pp |
+| Z draw **shape** | **−1.43 pp** | **−1.32 pp** |
+| **Exposure draw** | **+3.41 pp** | **+3.14 pp** |
+| total | +3.83 pp | +3.95 pp |
+
+**The shape fix is harmful on its own.** Its effect is a consistent negative shift in signed
+bias whichever exposure draw is used. With an *exact* exposure draw the bias sits positive
+(+1.69%), so the shift carries it toward zero — which is all V12 could see. With the
+*shipped* exposure draw the bias is already negative (−2.19%), so the same shift carries it
+to −3.62%. **The Gaussian covariate draw and the linear exposure draw were partly
+cancelling**, and removing one error exposed the other.
+
+**A covariate-only fix recovers 11–21%** of the gap, and only because the mean correction
+outweighs the shape correction working against it. **Item 08 is closed as scoped** — the
+cheap part is the part that does not work alone.
+
+**Item 07 is widened instead.** The `leftcens` linear conditional accounts for most of this
+penalty *and* the whole mixture failure (V3/V9). The two defects share a cause, which is the
+opposite of what V12's framing implied, and fixing it would help additive analyses with
+missing covariates rather than only mixture ones.
+
+**The methodological lesson, now seen three times** (V11's `forest`/`properBoot`, V12's
+reading of shape, V13's decomposition): **compensating errors make single components look
+better than they are.** No component of this pipeline can be evaluated with the others held
+at their shipped values without checking the starting sign.
+
+Evidence: [`validation/phase1/FINDINGS_v13.md`](validation/phase1/FINDINGS_v13.md).
+
 ### Known gap (not addressed)
 
 The four translated READMEs (`docs/README.{de,es,fr,ja}.md`) contain **zero** mentions

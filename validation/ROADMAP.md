@@ -299,6 +299,11 @@ in the focal exposure, and so imposes linearity on exactly the rows where curvat
 appear. Imputing with the wrong functional form is worse than not imputing — LOD/√2
 substitution beats the congenial engine on curvature.
 
+> **V13 widened this item.** The `leftcens` linear conditional is not only the mixture
+> defect — it accounts for **3.1–3.4 pp of the ≈3.9 pp non-linear-outcome penalty** too
+> (V13). Fixing it therefore helps *additive* analyses with missing covariates, not just
+> mixture ones, which materially raises the value of this track.
+
 **V9 has now validated that target empirically**, which removes most of the risk from this
 track. Drawing the censored exposure from the correct conditional under the same surface
 closes **89–100%** of the curvature gap and cuts the mean absolute excess over the oracle
@@ -329,7 +334,7 @@ arm is one function.
 
 ---
 
-### 08 — A shape-aware Z-block draw · **opened 2026-08-31, pending V12**
+### 08 — A shape-aware Z-block draw · ❌ **CLOSED AS SCOPED (V13, 2026-09-01)**
 
 **The defect.** Every row-level imputer in the pipeline draws a covariate as
 *(fitted conditional mean) + homoscedastic Gaussian noise*. Under an outcome linear in the
@@ -357,20 +362,45 @@ are different defects; neither fix closes the other.
 | measured cost | 57% of the curvature destroyed | ≈3 pp of bias, every imputer |
 | the fix | research: obtain the surface when it is estimated non-parametrically | bounded: sample the conditional in `run_row_level_imputation_bart()` instead of adding Gaussian noise |
 
-**Status: pending [Track V12](PLAN_pipeline_validation.md#8e-track-v12--is-the-non-linear-outcome-penalty-the-shape-of-the-z-draw).**
-V12 contrasts two Z draws sharing the same exact conditional mean and differing only in
-shape. **This item is conditional on that result** — if the shape contrast is small, the
-mechanism above is wrong, and item 08 should be **closed as "cause not established"**
-rather than quietly left open. Two earlier hypotheses were already tested and rejected
-(bimodality of the conditional; the X block being at fault), so this one is not a guess of
-last resort but it is still a hypothesis.
+> **CLOSED. Do not build this.** [V13](phase1/FINDINGS_v13.md) separated the Z draw from
+> the exposure draw and found that a Z-only fix **moves bias away from truth** in the
+> configuration the pipeline actually ships. The shape correction that V12 identified — and
+> that this item was written around — is *actively harmful* on its own.
 
-**If V12 confirms it, this should be done before 07.** It is cheaper — a different draw in
-one function against an open research question — and it reaches a far wider set of users.
-Item 07 matters only to people doing mixture work, who are currently told not to use that
-path at all.
+**What V13 measured.** Decomposing the ≈3.9 pp penalty, paired, with the three steps summing
+exactly to the total:
 
-**Sketch of the fix, if it lands.** `run_row_level_imputation_bart()` currently does
+| step | `ynl_mcar_z40` | `ynl_mar_z40` |
+|---|---|---|
+| Z conditional **mean** | +1.85 pp | +2.14 pp |
+| Z draw **shape** | **−1.43 pp** | **−1.32 pp** |
+| **Exposure draw** | **+3.41 pp** | **+3.14 pp** |
+| total | +3.83 pp | +3.95 pp |
+
+**Why the shape fix hurts.** Its effect is a consistent negative shift in signed bias
+(−1.3 to −1.9 pp) whichever exposure draw is used. With the *exact* exposure draw the bias
+sits positive (+1.69%), so that shift helps — which is all V12 could see. With the *shipped*
+exposure draw the bias is already negative (−2.19%), so the same shift carries it further
+away, to −3.62%. **The Gaussian Z draw and the linear exposure draw were partly cancelling**;
+removing one error exposes the other.
+
+**A Z-only fix recovers 11–21%** of the gap, and only because the mean correction outweighs
+the shape correction working against it.
+
+**Where this leaves the work.** The exposure draw is the priority at 3.1–3.4 pp of ~3.9 —
+and that is the *same* `leftcens` linear conditional that V3/V9 found destroys mixture
+curvature. **The two defects share a cause**, which is the opposite of what V12's framing
+suggested. Item 07 therefore absorbs this work rather than competing with it.
+
+**Superseded by item 07.** The cheap-and-wide argument for doing this first does not
+survive V13: the cheap part (the Z draw) is the part that does not work alone.
+
+**The unattributed half is the obvious next question.** An arm with the exact Z draw but
+the *shipped* exposure draw would separate the mean and X-block contributions — a small
+addition to the existing harness, and worth doing before building anything, since it says
+whether a Z-only fix is enough.
+
+**Sketch of the fix.** `run_row_level_imputation_bart()` currently does
 `yhat + rnorm(n_mis, 0, sigma)`. A shape-aware version would sample from the conditional
 implied by the fitted outcome model rather than assume it Gaussian — the machinery exists
 in `phase1/R/smc_impute.R` (`.smc_draw_z`) as a validated one-dimensional grid sampler. The
@@ -396,8 +426,8 @@ DONE
                            SMC closes 89-100% of the gap; form matters, not params
 
 REMAINING
-  [08 Shape-aware Z-block draw]                 pending V12; CHEAPER and WIDER than 07
-                                                affects any analysis with missing covariates
+  [08 Shape-aware Z-block draw]                 CLOSED as scoped (V13): harmful alone
+                                                the exposure draw dominates -> see 07
   [07 Substantive-model-compatible imputation]  research-scale; mixture path only
                                                 V3's harness re-runs against it unchanged
 
@@ -408,7 +438,7 @@ INDEPENDENT
   [04 BKMR estimands]                                   (install bkmr first)
 ```
 
-**Two build tracks remain: item 08 (shape-aware Z-block draw, pending V12) and item 07 (substantive-model-compatible imputation).** If V12 confirms the mechanism, 08 should be done first — it is cheaper and affects far more analyses. Everything else is loose ends plus the low-priority interval-overshoot refinement.
+**One build track remains: item 07 (substantive-model-compatible imputation).** V13 closed item 08 as scoped and showed the exposure draw — item 07's territory — accounts for most of the non-linear-outcome penalty as well as the whole mixture failure. The two defects turned out to share a cause. Everything else is loose ends plus the low-priority interval-overshoot refinement.
 
 ---
 
