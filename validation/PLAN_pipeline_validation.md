@@ -1000,9 +1000,13 @@ registered design, 8 cells × 1000 reps = 8,000 tasks, is **~3.9 h**.
 
 ## 8g. Track V14 — Does a *shippable* exposure draw work? (item 07's candidate)
 
-> **STATUS: BUILT, CRITERIA REGISTERED, NOT YET RUN — 2026-09-01.**
-> Files: `.ce_smc_x_grid()` and `x_mode = "grid"` in `phase1/R/smc_impute.R`,
-> `phase1/test_v14_smcx.R`, arm `smc_xgrid`.
+> **STATUS: RESOLVED — 2026-09-01.** 8,000 tasks, 1000 reps, 250 min, zero errors.
+> **The shippable draw removes 83% of the penalty and is the best-calibrated arm in the run**
+> (width/SE 1.004, coverage 0.950, against the exact sampler's over-covering 1.247/0.982).
+> It passes the ±1 pp bar in two of three valid cells and fails at −1.36 pp in `ynl_mar_z40`.
+> The control fails in the `combined` cells — the instrument has no likelihood for a row with
+> a missing outcome, which compounds when all three exposures are censored. Full reading:
+> [`phase1/FINDINGS_v14.md`](phase1/FINDINGS_v14.md).
 
 **Question.** V13 established that the exposure draw carries most of the
 non-linear-outcome penalty (3.1–3.4 pp of ~3.9) and V9 that it carries the whole mixture
@@ -1123,6 +1127,619 @@ estimand is the paired excess between them. Realised non-detect fractions verifi
 At V3's measured 5.80 s per fit, 6 cells × 100 reps ≈ **10.6 h**. Monte-Carlo error at 100
 reps is ~3.5 pp on the excess, against predicted gaps of 17–35 pp between candidate laws —
 ample.
+
+### Outcome — 2026-09-02: the prediction held (`phase1/FINDINGS_v15.md`)
+
+**Run: 670.7 min** (against 10.6 h predicted — the first cost estimate to land, 5% over),
+`n_ok` = 100 in all 12 focal cells, zero errors.
+
+| `f` | predicted | measured | miss |
+|---|---|---|---|
+| 0.10 | −3.2% | **−1.3%** | +1.9 |
+| 0.20 | −12.9% | −13.9% | −1.0 *(calibration)* |
+| 0.30 | −29.1% | **−29.6%** | −0.5 |
+| 0.40 | −51.7% | −55.6% | −3.9 *(calibration)* |
+| 0.50 | −80.9% | **−90.2%** | −9.3 |
+| 0.60 | −116.4% | **−116.5%** | −0.1 |
+
+**Test 1: 0 of 4 unmeasured cells outside ±10 pp. Test 2: log–log slope 2.47, 95% CI
+[1.98, 2.97]** — contains 2, excludes 1; a rep-level bootstrap gives [1.95, 3.67], and a
+free fit on the pp scale gives `p` = **1.90**. **Not rejected.** Calibration cells
+reproduced V3 within MC error, so the six points are one sweep.
+
+**Also measured:** past `f` ≈ 0.55 the curvature estimate **inverts** (mean −0.003 against a
+truth of 0.137 at `f` = 0.60; 40% of reps negative) while coverage stays 0.92 because the
+interval widens 2.7×. Coverage does not detect this failure.
+
+**Where the theory moved:** from *unexplained observation* to **unexplained law** — the
+exponent is now the target, not the direction. The conjecture in `THEORY.md` §4 (a product
+of two `f`-linear losses, one of them the censored share of the estimand's own evaluation
+range) is discriminable by moving `q_lo` from 0.25 to 0.40, which is the registered
+candidate for V18. Verdict arithmetic: `phase1/analyze_v15.R`.
+
+---
+
+## 8i. Track V16 — the root claim, isolated (`Y` in the imputation model)
+
+> **STATUS: REGISTERED, not yet run.** Arms and knobs built and self-tested
+> (`phase1/test_v16_noy.R`, 16 assertions). Prediction derived below *before* the run.
+
+### Why this comes before V16's original candidate (the `q_lo` test)
+
+Everything in `THEORY.md` rests on one condition: an imputation of `v` must draw from
+`p(v | Y, rest)`. Every track from V1 to V15 tests a *refinement* of that condition —
+whether the conditional has the right functional form, the right shape, the right margin.
+**None of them tests the condition itself**, because every arm in all fifteen tracks had `Y`
+in the imputation model. The foundation is the one thing that has never been varied.
+
+### What Phase 1 actually measured, and why it is not enough
+
+Phase 1's H1 is the project's cited evidence for the root claim: `leftcens_prestep`
+attenuated the focal coefficient **−5.6%** at 20% non-detects and **−14.4%** at 40%, with
+coverage falling 0.92 → 0.82, against `cens_mi_y` sitting on the oracle. The direction is
+right and the monotonicity in censoring is suggestive. But the two arms differ in **three**
+ways at once:
+
+1. the pre-step omits `Y` — the claim;
+2. it also omits the `Z` covariates entirely;
+3. it is a **different estimator** — `leftcens::gsimp_mi`, a Gaussian-copula MI of the
+   exposure matrix — not an interval-censored conditional regression.
+
+So H1 measures *no-`Y`, no-`Z`, different-method* against *`Y`-and-`Z`-aware*. Attributing
+the whole of it to `Y` is an inference, not a measurement. Two further cells in the same
+document cut the other way: on the **mixture** surface the no-`Y` pre-step (+3.8% / +4.0%)
+beat the `Y`-aware linear draw (+7.7% / **+19.6%**, coverage 0.62), and under **skew** the
+no-`Y` copula (−1.2% / −5.7%) beat the `Y`-aware Gaussian (−8.6% / **−14.2%**, coverage
+0.47). The condition is a conjunction, so those are not counterexamples to the theory as
+written — but they *are* counterexamples to the claim in the loose form "include `Y` or you
+attenuate", and they show the root claim has never been isolated from the others.
+
+### Design — one estimator, `Y` removed one block at a time
+
+|  | `Y` in X block | `Y` in Z block |
+|---|---|---|
+| `pipeline_bartMI` | yes | yes | ← the shipped default, the reference |
+| `pipeline_noYx` | **no** | yes | ← H1's claim, isolated |
+| `pipeline_noYz` | yes | **no** | ← **never measured, in any track** |
+| `pipeline_noYboth` | **no** | **no** | ← the total, and an additivity test |
+
+Both knobs are config-level, not harness overrides: `ce$predictors` for the X block, the
+dictionary's `use_in_model` for the Z block. `Y` stays an imputation *target* throughout
+(MID needs it), so the asymmetry is one-way — Z predicts Y, Y no longer predicts Z.
+`test_v16_noy.R` asserts the predictor sets directly rather than inferring them from the
+results, and asserts the analysis model does not move.
+
+**Scenarios: 4 cells, chosen so the Z half can both fail and bite.**
+`mcar_z40` and `combined` have `Z ⊥ X` (measured cor(Z1, logX1) = **+0.002**) — `Z` is a
+pure precision covariate there. `nl_mcar_z40` and `nl_combined` use `z_form = "nonlinear"`,
+where `Z1` is a function of the non-focal exposures and cor(Z1, logX1) = **+0.114** — `Z` is
+a confounder. **The theory predicts different answers in the two halves**, which is what
+makes the Z arm informative rather than decorative.
+
+### The DAG — and what it rules out
+
+```mermaid
+flowchart LR
+  subgraph EXP["log-exposures — exchangeable, rho = 0.4"]
+    X1["logX1<br/>estimand: beta1 = 0.40"]
+    X2["logX2"]
+    X3["logX3"]
+  end
+  Z1["Z1 continuous"]
+  Z2["Z2 binary"]
+  Y["Y"]
+
+  X1 --> Y
+  X2 --> Y
+  X3 --> Y
+  Z1 --> Y
+  Z2 --> Y
+
+  X2 -. "non-linear cells only" .-> Z1
+  X3 -. "non-linear cells only" .-> Z1
+  Z2 -. "non-linear cells only" .-> Z1
+```
+
+`Y = 0.40·logX₁ + 0.20·logX₂ + 0.10·logX₃ + 0.50·Z₁ − 0.30·Z₂ + ε`, `ε ~ N(0, 1)`.
+Missingness: `logX₁` below its own LOD (value-dependent, but the bound is known); `Z₁`/`Z₂`
+MCAR; `Y` MCAR in the two `combined` cells. In `combined` and `nl_combined` all three
+exposures are censored, not just the focal one.
+
+**What the DAG rules out, and it costs this design something.** Read the arrows: **no
+covariate ever causes an exposure**, in either variant. In the linear cells `Z₁` is
+generated independently; in the non-linear cells `Z₁` is generated *from* `logX₂`, `logX₃`
+and `Z₂` — the exposures cause `Z₁`, never the reverse. So `Z` is a **precision covariate or
+a descendant of the exposures, never a confounder of β₁**, and the marginal cor(Z₁, logX₁)
+= +0.114 in the non-linear cells is entirely mediated by `logX₂`/`logX₃`, which the analysis
+model adjusts for: the **partial** correlation given (logX₂, logX₃, Z₂) is **+0.005**.
+
+**Consequence: V16 cannot establish the scope qualifier it was designed to establish.** The
+`nl_*` cells were included so a `Y`-less `Z` draw would under-adjust a confounder and push
+β₁ away from zero. There is no confounder to under-adjust. That prediction is therefore
+**withdrawn before the run** rather than tested and explained away afterwards — see the
+revised table below. Establishing the qualifier needs a DGP in which `Z → X`, which no
+scenario in this harness currently provides.
+
+### The blocks are **not** independent — and the design has to say so
+
+The 2×2 above reads as if each row removed `Y` from one block in isolation. It does not,
+because `00_censored_exposure.R` **alternates**:
+
+```
+for (t in 1..sweeps) {
+  Z block:  draw Z (and Y) given the CURRENT X, Y
+  X block:  draw X        given the CURRENT Z, Y
+}
+```
+
+In `noYx` the Z block still sees `Y`, produces a `Y`-informed `Z̃`, and `Z̃` is then a
+**predictor in the X draw** — so `Y` reaches the exposure block through the covariate block.
+The same leak runs the other way in `noYz`. The single-block arms therefore measure a
+**direct effect plus whatever the other block carries back**, not a clean marginal effect.
+
+**This changes what is primary.** In a real analysis X and Z are imputed together, and an
+analyst who omits `Y` omits it everywhere — so **`noYboth` vs `bartMI` is the realistic
+contrast and the headline**. `noYx` and `noYz` are mechanism decomposition beneath it.
+
+**And it changes what the additivity gap means.** `noYboth − (noYx + noYz)` is not a failure
+condition — it *is* the leak, and with alternation it should be non-zero. It is registered
+below as a **quantity to predict**, not a bar to clear.
+
+### The registered prediction — derived, not fitted
+
+The derivation ([`phase1/predict_v16.R`](phase1/predict_v16.R)) mirrors the engine: three
+sweeps, both blocks active, `Z` missing on every path, correctly-specified conditionals
+(`survreg` for the censored exposure, `lm` for the covariate), 300 reps, n = 800, m = 20,
+40% non-detects, 40% `Z` missing. The only remaining difference from the shipped engine is
+BART-versus-linear in the Z block, which is not a difference in kind where the true
+conditional is linear.
+
+| arm | derived prediction | MC se |
+|---|---|---|
+| **`noYboth`** (the realistic configuration) | **−14.9 pp** | 0.24 |
+| `noYx` | **−15.9 pp** | 0.16 |
+| `noYz` | **−0.4 pp (zero)** | 0.20 |
+| **the leak**, `noYboth − (noYx + noYz)` | **+1.4 pp** | 0.15 |
+
+**Three things to notice.**
+
+*The X-block figure sits near Phase 1's −14.4%*, so H1's number — confounded design and all
+— really was dominated by the `Y` omission.
+
+*The Z-block figure is zero, and that is the content, not a null result.* With `Z ⊥ X`
+(measured cor(Z1, logX1) = **+0.002**) there is no confounding path to under-adjust, so
+omitting `Y` from the covariate draw cannot bias the focal coefficient. It should cost
+**precision** instead.
+
+*The leak is positive, which means `noYx` is **worse** than `noYboth`* (−15.9 against
+−14.9). Removing `Y` from the exposure block while leaving it in the covariate block is
+worse than removing it from both. The mechanism: a `Y`-informed `Z̃` partly absorbs `Y`, and
+adjusting for it alongside a `Y`-blind `X̃` over-adjusts. **Partial compliance with the rule
+is worse than none** — which is a practical claim, and one that squares with V13's finding
+that a Z-only fix moved bias away from truth.
+
+**In the `nl_*` cells, the prediction is the same as in the linear ones — and that is the
+revision.** An earlier version of this section registered a *positive* `noYz` there, on the
+reasoning that `Z₁` is associated with the focal exposure (cor = +0.114) and with `Y`
+(γ₁ = +0.50), so a `Y`-less `Z` draw would under-adjust a confounder. **The DAG says
+otherwise**: `Z₁` is a *descendant* of `logX₂`/`logX₃`, not a cause of any exposure, and its
+partial correlation with `logX₁` given the other adjusted covariates is **+0.005**. With no
+confounding path, `noYz` should be **≈ zero in the `nl_*` cells too**, with a precision cost
+— the same as in the linear cells. No magnitude is derived for those cells regardless: the
+true `Z₁` conditional is non-linear, so a linear stand-in would conflate the `Y` omission
+with V12's shape effect.
+
+### Falsification, pre-declared
+
+| test | rejects the prediction if |
+|---|---|
+| **PRIMARY — the realistic configuration** | `noYboth` differs from **−14.9 pp** by more than **3 pp** in the linear cells |
+| **X block** | `noYx` differs from **−15.9 pp** by more than **3 pp** in the linear cells |
+| **Z block, linear cells** | \|`noYz`\| exceeds **1.5 pp** — i.e. the Z draw *does* bias the focal coefficient where no confounding path exists |
+| **Z block, `nl_*` cells** | \|`noYz`\| exceeds **1.5 pp** — same bar as the linear cells. *(This replaces a withdrawn prediction of a positive shift, which assumed a confounding path the DAG shows does not exist.)* |
+| **The leak** | `noYboth − (noYx + noYz)` is **not positive** at 2 × MC se in the linear cells — i.e. the mixed configuration is *not* worse than omitting `Y` from both, contradicting the over-adjustment account |
+| **Precision claim** | `noYz`'s width/SE ratio or `b` is **not** above the reference's in the linear cells — if omitting `Y` from the Z draw costs neither bias nor precision, it costs nothing, and the condition does not apply to the Z block at all |
+
+Note what is *not* here: an additivity bar. An earlier version of this section registered
+"`noYboth` differs from `noYx + noYz` by more than 2 pp" as a failure condition. That was
+reading the instrument backwards — with alternation the gap is the leak, and a non-zero gap
+is the expected result, not a refutation.
+
+**Cost — measured.** V16 is now stage 1 of `phase1/run_v16_v17.sh` (six cells, MCAR and
+MAR), and the whole three-stage sequence is **~3.1 h**: a full-wave pilot — 22 reps, one task
+per worker per cell, 352 tasks, zero errors — gives 103 min for V16, 67 for V17a, 12 for
+V17b. Two cells are 38% of it: `combined` and `nl_combined` cost ~93 s per task against ~22 s
+elsewhere, because they censor all three exposures. Monte-Carlo error at 500 reps is well
+under the tightest gate (±1.5 pp).
+
+**What each outcome buys.** If the primary figure lands, the root claim is validated inside a
+single estimator for the first time, in the configuration a real analysis would produce, and
+H1's confound stops mattering. If the Z results
+land, they establish the **weaker half** of a scope qualifier the theory does not currently
+have: that a covariate's draw is not bound by the condition when the covariate has no
+confounding path to the exposure. The **stronger half** — that it *is* bound when such a
+path exists — cannot be tested here, because no cell in this harness has `Z → X`. If the Z
+results *don't* land, the theory is missing a path, and the run says which cells it is
+missing it in.
+
+---
+
+### Outcome — 2026-09-03: the root claim holds; the leak prediction fails (`phase1/FINDINGS_v16.md`)
+
+**Run: 106.0 min** (stage 1 of `run_v16_v17.sh`), `n_ok` = 500 in all 6 cells, zero errors.
+
+| cell | `noYx` | `noYz` | `noYboth` | leak |
+|---|---|---|---|---|
+| **`mcar_z40`** *(the derived cell)* | **−14.39** | +1.17 | **−13.14** | +0.09 |
+| `mar_z40` | −14.09 | +0.93 | −13.05 | +0.11 |
+| `combined` | −10.53 | +0.52 | −10.15 | −0.14 |
+| *predicted* | *−15.8* | *≈0* | *−14.6* | *+1.6* |
+
+**PASSED**: `noYboth` and `noYx` within ±3 pp, and `|noYz|` ≤ 1.5 pp, in `mcar_z40` — so the
+root claim is confirmed at **−13.1 pp** inside one estimator, with `Y`'s contribution
+separated from the covariate set and the estimator change that confounded Phase 1's H1.
+
+**FAILED — the leak.** Predicted +1.6 pp and positive; measured **+0.09 ± 0.13**. The blocks
+are additive here and *"partial compliance is worse than none"* is **false** in this
+structure. The stand-in's linear `Z` draw does not reproduce BART's `Y`-loading — the first
+time it has been caught wrong about a **sign**. The leak is real and **negative** in V17's
+on-path cells (−2.9 to −6.4), so the claim survives only in corrected form: the blocks
+interact when the covariate block has a route to the estimand.
+
+**MY REGISTRATION ERROR, not a theory failure.** `combined`/`nl_combined` missed the `noYx`
+and `noYboth` bars (−10.5, −10.2). The prediction was derived at focal-only censoring with
+40% covariate missingness — `mcar_z40`'s design. `combined` censors **all three** exposures
+at 20% covariate and 20% outcome missingness, a cell shape the derivation never modelled. One
+number was registered for six cells when it was computed for one. Derive per cell shape, or
+scope the bar to the cells it covers.
+
+**MAR makes no difference** (`mar_z40` within MC error of `mcar_z40`), consistent with V10 and
+now with the no-`Y` arms V10 lacked.
+
+---
+
+## 8j. Track V17 — the covariate's causal role (fork · pipe · collider · mixed)
+
+> **STATUS: DGP built and self-tested** (`phase1/test_v17_zrole.R`, 21 assertions);
+> predictions not yet derived, run not yet designed in detail.
+
+### Why this exists
+
+Drawing V16's DAG exposed something wider than V16. In **every scenario this harness has
+ever run**, `Z` is either independent of the exposures (`z_form = "linear"`) or generated
+**from** them (`z_form = "nonlinear"`). Nothing has `Z → X`. So across seventeen tracks:
+
+- **no track has ever adjusted for a covariate that had to be adjusted for** — there has
+  never been a confounder;
+- **no track has ever adjusted for one that must not be** — there has never been a collider;
+- **no track has ever faced the total-versus-direct-effect question** — there has never been
+  a mediator.
+
+Every covariate result on record — V4's variance attribution, V5/V6/V7's imputer comparison,
+V10's MAR cells, V12's draw-shape isolation, V13's "a Z-only fix moves bias away from truth"
+— was measured in the one structure where the covariate's role is statistically real but
+causally inert. That is not a small caveat, and it is the reason this track exists.
+
+### The four structures
+
+| role | arrows | correct analysis | what it tests |
+|---|---|---|---|
+| **fork** | `Z₁ → logX₁`, `Z₁ → Y` | **adjust** for `Z₁` | a genuine confounder — the missing half of V16's scope qualifier |
+| **pipe** | `logX₁ → Z₁ → Y` | adjust → the **direct** effect | the estimand splits: direct `b₁ = 0.40`, total `0.70` |
+| **collider** | `logX₁ → Z₁ ← Y` | **omit** `Z₁` | adjusting is fatal *before* any imputation question arises |
+| **mixed** | `Z₁` fork **and** `Z₂` pipe | adjust for both | no single adjustment set is right for both roles at once |
+
+`b₁ = 0.40` stays the estimand in all four; the exposures keep their exchangeable
+correlation and the outcome stays linear in `(logX, Z)`, so `dgp_formula()` is correctly
+specified in each role — the only thing that varies is which arrows exist and, for the
+collider, which covariate the formula includes.
+
+**Each role is verified by its consequences**, not by inspection (`test_v17_zrole.R`,
+n = 400,000):
+
+| role | correct model | the *wrong* model |
+|---|---|---|
+| fork | 0.402 | omit `Z₁` → **0.667** |
+| collider | 0.403 | include `Z₁` → **−0.101** *(sign flips)* |
+| pipe | 0.401 (direct) | omit `Z₁` → 0.702 (total, matches `b₁ + δγ₁` = 0.70) |
+| mixed | 0.399 | omit the fork → 0.665; omit the pipe → 0.333 |
+
+A role that cannot be caught getting this wrong is not a role — V16 registered a prediction
+on a confounder that turned out not to be one precisely because nobody checked the
+consequence.
+
+**The collider number is the one to sit with.** Adjusting for `Z₁` there does not attenuate
+`b₁`, it **reverses its sign**: +0.40 becomes −0.10, on complete data, with no missingness
+anywhere. No imputation method can repair that, and it is a specification error the pipeline
+will commit by default — `use_in_model = TRUE` on every covariate is the shipped convention.
+
+### A shipped defect this turned up: `use_as_auxiliary` is half-honoured
+
+The "keep it out of the model, keep it in the imputation" configuration is a documented
+dictionary row — `docs/variable-dictionary.md` calls `use_as_auxiliary` *"used in imputation
+but excluded from the final analysis model"*, with `FALSE / FALSE / TRUE` listed as **"use as
+imputation predictor only"**. In the censored-exposure strategy that promise is kept in only
+one of the two blocks:
+
+| block | predictor set is selected by | auxiliary included? |
+|---|---|---|
+| **Z block** (`make_row_level_imputation_spec()`) | `use_in_model \| use_as_auxiliary \| impute_target` | **yes** |
+| **X block** (`00_censored_exposure.R`, `auto_preds`) | `use_in_model` only | **no** |
+
+Verified directly rather than inferred — with a `FALSE / FALSE / TRUE` row, the auxiliary
+appears in the Z block's predictors (`Y, logX2, logX3, Z1`) and is absent from `auto_preds`
+(`Y, X1, logX2, logX3, Z2`).
+
+**So an analyst who marks a collider auxiliary gets their intent honoured for the covariates
+and silently dropped for the censored exposure** — the one draw the whole strategy exists to
+get right. The `auto_preds` comment justifies a *reduced* set ("avoid conditioning on all
+~300 Z"), which is sound, but an auxiliary is precisely the short hand-picked list a user has
+already said is worth conditioning on.
+
+**Compounding it: no track has ever run that code path.** Every pipeline arm since V1 passes
+an explicit `ce$predictors`, so the `auto_preds` branch — what an actual user config hits —
+is unvalidated. `proc_pipeline_auxZ_shipped` is the first arm to exercise it.
+
+The A/B is registered and changes no shipped code: `pipeline_auxZ_shipped` runs the real auto
+path; `pipeline_auxZ_asdoc` passes the same set plus `Z1`, which is what the fix would
+produce. If they differ, the defect has a size; if they do not, the fix is not worth making.
+
+### The open question this raises about the pipeline
+
+For a collider, the correct analysis omits `Z₁`. **Should the imputation omit it too?**
+There are two defensible positions and they disagree:
+
+- **Standard MI theory says no.** Imputations should be drawn given *all* observed data;
+  conditioning on an observed collider is legitimate use of information, and if the
+  conditional is correctly specified the completed data still has the right joint
+  distribution. The collider hazard lives in the *analysis* model.
+- **The practical argument says yes**, and it is specific to this pipeline: `use_in_model`
+  drives **both** the analysis formula *and* (through
+  `make_row_level_imputation_spec()` and `.ce_default_inner_iter()`'s `auto_preds`) the
+  imputation predictor sets. An analyst who correctly drops a collider from the model drops
+  it from the imputation too — not as a considered choice, but as a side effect. And the
+  imputation conditionals here are *estimated*, not correct, so the theoretical guarantee
+  does not straightforwardly apply.
+
+**This is a real disagreement with a cheap experiment behind it**: run the collider cell with
+`Z₁` in the imputation predictor set and again with it out, holding the analysis fixed. It
+should be registered as a prediction before the run, like everything else since V15.
+
+### The registered predictions — derived 2026-09-03 (`phase1/predict_roles.R`)
+
+Paired shift against `pipeline_bartMI`, percentage points of `b₁ = 0.40`. Derived by
+mirroring the engine's alternation (3 sweeps, both covariates imputed, correctly-specified
+conditionals), 200 reps, n = 800, **m = 10**. MC error 0.16–0.64 pp per cell.
+
+**MCAR covariates** (`zr_*` cells):
+
+| role | `noYx` | `noYz` | `noYboth` | leak |
+|---|---|---|---|---|
+| precision | −15.8 | **−0.5** | −14.6 | +1.6 |
+| fork | −18.7 | **+26.7** | +6.6 | −1.5 |
+| pipe | −18.6 | **+30.4** | +9.1 | −2.7 |
+| collider | +3.3 | **−0.7** | −4.1 | **−6.6** |
+| mixed | −20.8 | **+19.5** | −1.7 | −0.4 |
+
+**MAR-on-`Y` covariates** (`zrmar_*` cells — `inject_mar_covariates()` drives missingness
+off `Y` and `logX₂`):
+
+| role | `noYx` | `noYz` | `noYboth` | leak | `noYz` vs MCAR |
+|---|---|---|---|---|---|
+| precision | −16.2 | **+0.1** | −13.3 | +2.9 | +0.5 |
+| fork | −20.2 | **+32.4** | +11.7 | −0.4 | **+5.7** |
+| pipe | −21.6 | **+36.1** | +13.5 | −1.0 | **+5.7** |
+| collider | +3.3 | **+3.1** | −1.5 | **−7.8** | **+3.8** |
+| mixed | −23.0 | **+23.8** | +2.3 | +1.4 | **+4.4** |
+
+### Two results, and they are separable
+
+**1. The structural 2×2, and it holds under both mechanisms.** The Z block's `Y`-omission
+penalty on the focal estimand is large exactly when `Z` is **adjusted for *and* on an open
+X–Y path** — confounding (fork) or mediating (pipe) alike — and ≈ zero when `Z` is adjusted
+for but off any path (precision), or on a path the analysis correctly omits (collider,
+MCAR).
+
+This is **sharper than the qualifier this plan proposed before the derivation**, which keyed
+on the covariate's *association with the exposure*. That would have got the pipe wrong: a
+mediator has no confounding path yet produces the **largest** penalty of any role.
+Association is not the criterion; adjusted-for-and-on-a-path is.
+
+**2. MAR adds a second, additive cost — except where the first one is zero.** Under MCAR,
+omitting `Y` from the Z block costs *information*: a congeniality penalty. Under MAR-on-`Y`
+it also drops the variable the **mechanism** depends on, so the `Z` imputation is no longer
+valid, not merely inefficient. Those are different failures, and the numbers behave like it:
+MAR adds **+4 to +6 pp** in every on-path cell.
+
+**The precision row is the informative null.** Missingness there depends on `Y`, so omitting
+`Y` genuinely invalidates the `Z` imputation — and `β₁` still does not move (−0.5 → +0.1). A
+biased covariate distribution cannot reach the focal estimand when the covariate is off any
+X–Y path. **The path structure dominates the missingness mechanism**, which is a stronger
+claim than either result alone.
+
+**The collider is the one cell where the mechanism changes the verdict**: −0.7 under MCAR,
+**+3.1** under MAR. `Z₁` is largely a function of `Y` there, so a `Y`-less draw is badly
+wrong, and although the analysis omits `Z₁`, the X block still conditions on it. Its leak is
+also the largest of any role under either mechanism (−6.6 / −7.8) — the strongest single
+case for these blocks not being separable.
+
+**The pipe's mechanism, stated so it can be checked:** adjusting for `Z₁` is what makes the
+`logX₁` coefficient the *direct* effect (0.40) rather than the total (0.70). A `Y`-less `Z`
+draw attenuates the `Z₁`–`Y` association, weakening that adjustment, so part of the indirect
+path leaks back — bounded above by `(0.70 − 0.40)/0.40` = **+75 pp**. Both derived values
+sit inside it, at 40% and 48%.
+
+### Falsification, pre-declared
+
+| test | rejects if |
+|---|---|
+| **STRUCTURAL (the headline)** | `\|noYz\|` is not **> 10 pp** in fork/pipe/mixed, or not **< 3 pp** in precision — **under both mechanisms**. Independent of any single magnitude |
+| **MECHANISM** | MAR − MCAR on `noYz` is not **positive** in all four on-path cells (fork, pipe, mixed, collider) at 2 × MC se, or exceeds **+12 pp** in any of them |
+| **precision null** | `\|noYz\|` exceeds 3 pp under MAR — which would mean the mechanism failure *does* reach `β₁` off-path |
+| fork | `noYz` differs from **+26.7** (MCAR) / **+32.4** (MAR) by more than **5 pp** |
+| pipe | `noYz` differs from **+30.4** / **+36.1** by more than **5 pp**; separately, must not exceed **+75 pp** |
+| collider | `\|noYz\|` exceeds **1.5 pp** under MCAR, or differs from **+3.1** by more than **3 pp** under MAR; leak negative under both |
+| mixed | `noYz` differs from **+19.5** / **+23.8** by more than **5 pp** |
+
+**One known mismatch, declared rather than discovered afterwards:** the derivation runs at
+**m = 10** and the track at **m = 30**. `m` moves the between-imputation variance far more
+than the point estimate, so the paired shifts should carry over — but that is not guaranteed,
+and the ±5 pp bars are wider than the derivation's own ≤0.64 pp MC error partly to absorb it.
+A miss inside that margin is a miss of the *prediction*, not of the theory, and gets recorded
+as such.
+
+### What this would revise
+
+V12, V13 and V16 all concluded something about the Z block's contribution **in the precision
+structure**, where its effect on the focal estimand is −0.5 pp. If these numbers hold, that
+was the one structure in which the Z block barely matters, and V13's headline — that a
+Z-only fix moves bias *away* from truth — is a statement about an inert covariate that may
+not survive a confounder or a mediator.
+
+### Not yet decided
+
+- **Which arms.** At minimum `bartMI` and `noYz`; the fork cell arguably needs the full V16
+  2×2 repeated under a structure where the Z block matters. The collider cell adds
+  `auxZ_shipped` / `auxZ_asdoc`.
+- **Whether to fix `auto_preds`.** Adding `use_as_auxiliary` to it is a two-line change to
+  shipped code. Per this project's convention it gets measured first and adopted second —
+  the arms above are the measurement.
+- **Whether V16 waits.** V16 answers the root-claim question in the configuration the
+  pipeline ships and is ready to run in ~1.3 h. It can run now on the weaker half of the
+  scope qualifier, with V17 completing it, or wait and be folded in.
+
+---
+
+### Outcome — 2026-09-03: structure confirmed, mechanism refuted, and a new shipped defect (`phase1/FINDINGS_v17.md`)
+
+**Run: 82.6 min** (stages 2–3), `n_ok` = 500 in all 10 cells, zero errors. Sequence total
+**188.6 min against 3.1 h predicted** — the cost estimate landed.
+
+**1. The structural 2×2 PASSED, 4 of 4 gates.** `noYz`, in pp:
+
+| role | adjusted? | on-path? | MCAR | MAR | predicted |
+|---|---|---|---|---|---|
+| precision | yes | no | **+1.17** | +0.93 | ≈0 |
+| fork | yes | yes | **+25.47** | +26.18 | +26.7 |
+| pipe | yes | yes | **+28.17** | +28.90 | +30.4 |
+| collider | **no** | yes | **−0.23** | +2.08 | −0.7 |
+| mixed | yes | yes | **+22.58** | +22.01 | +19.5 |
+
+The Z block's `Y`-omission penalty is large exactly when the covariate is **adjusted for and
+on an open X–Y path**, confounding or mediating alike — a factor of ~22 in the same arm
+between the precision structure and one arrow away. The pipe is the discriminating case that
+kills the pre-run "association with the exposure" wording, and its +28.2 sits inside the
+registered +75 pp direct-to-total bound.
+
+**2. The mechanism prediction FAILED.** MAR − MCAR on `noYz`: **+0.70, +0.73, −0.58, +2.31**
+against +5.7/+5.7/+4.4/+3.8 predicted. Three of four within ±1 pp of zero, `mixed` the wrong
+sign; `zrmar_fork` and `zrmar_pipe` missed their magnitude bars as a direct consequence.
+Conjecture (untested): the Z block recovers most `Y`-relevant information from the exposures
+and the other covariate, which a flexible draw can exploit and the linear stand-in cannot —
+discriminable with a `mice pmm` Z block. **What survives is the stronger claim: the path
+structure dominates the mechanism, which is within noise of zero except in the collider.**
+
+**3. UNREGISTERED AND THE MOST USEFUL RESULT.** Every gate above is paired, so the reference
+arm's own bias cancels — and that hid this. `pipeline_bartMI`, **the shipped configuration**,
+carries **+4.96% (fork), +5.39% (pipe), +8.52% (MAR fork), +10.40% (MAR pipe)** against ≤2.3%
+in every precision cell. The oracle is unbiased in all four, so it is the imputation's bias,
+not the design's. **Coverage does not detect it — the fourth independent instance (V3, V8,
+V15, V17):** coverage 0.93–0.97 with honestly-sized intervals (width/SE 0.98–1.13), because
+at `n` = 800 the bias is only **0.35–0.67 empirical SE**. Relative bias is roughly constant in
+`n` while the SE falls as `1/√n`, so on `zrmar_pipe`'s numbers `n` = 8,000 would put it at
+~2.1 SE and coverage near 50%. **That last step is arithmetic on one cell, not a
+measurement** — and it makes "the same cells at larger `n`" the obvious next run.
+
+**4. V17b: the auxiliary defect is real but immaterial.** `auxZ_asdoc` − `auxZ_shipped` =
+**−0.30 ± 0.10 pp** (MCAR) and **+0.60 ± 0.10 pp** (MAR): detectable at 500 reps, under 1 pp,
+and **opposite in sign between mechanisms**. Fix `auto_preds` for documentation consistency,
+not for accuracy, and do not sell it as the latter. `00_censored_exposure.R`'s `auto_preds`
+path ran for the first time in any track, without error, over 1,000 tasks.
+
+**What it scope-limits.** V12's Z-draw shape attribution and V13's "a Z-only fix moves bias
+away from truth" were both measured where this arm moves 1.2 pp; here it moves 25. Neither is
+wrong; both are narrower than they read.
+
+---
+
+## 8k. Track V18 — does the concealment break at larger `n`?
+
+> **STATUS: RESOLVED — 2026-09-03.** 5 `n` levels × 6 cells × 300 reps, 9,000 tasks,
+> 164.6 min against 2.6 h predicted, zero errors. **Both registered hypotheses rejected:
+> the bias decays as n^−0.335, CI [−0.378, −0.291].** Full reading:
+> [`phase1/FINDINGS_v18.md`](phase1/FINDINGS_v18.md).
+
+### The question, and why it was worth a run
+
+V17 found the shipped default biased +5% to +10.4% under a confounder or a mediator with
+coverage still 0.93–0.97, and I explained the concealment as a sample-size accident:
+relative bias constant, SE falling as `1/√n`, so coverage must collapse — projected
+**0.32–0.73 at n = 12,800**. That was arithmetic on one cell and flagged as such. The
+competing account was that the bias is a **finite-sample artefact** decaying as `1/√n`, in
+which case coverage holds at every `n`. Opposite predictions, so a run decides it.
+
+### Design
+
+Five levels — `n` ∈ {800, 1,600, 3,200, 6,400, 12,800} — not two, so the **exponent** is
+estimable rather than merely testable: regress log|relative bias| on log `n`, where constant
+bias predicts slope **0** and finite-sample predicts **−0.5**. Arms deliberately minimal
+(`oracle` + `pipeline_bartMI`): the question is the shipped default's own bias. Six cells —
+the four biased ones plus `zr_collider` and `mcar_z40` as controls. An `N_OBS` override was
+added to `run_v4_variance.R` so one definition of each cell varies only in `n`, rather than
+duplicating cells per (cell, `n`) pair.
+
+**Per PLAN §10b, V17's n = 800 figures are not the baseline** — a different arm set means a
+different RNG stream — so `n` = 800 was re-run inside this track and every comparison is
+within it.
+
+### Outcome
+
+| cell | 800 | 1,600 | 3,200 | 6,400 | 12,800 | slope [95% CI] |
+|---|---|---|---|---|---|---|
+| `zr_fork` | 4.62% | 4.28% | 3.50% | 2.43% | **2.07%** | −0.313 [−0.434, −0.192] |
+| `zr_pipe` | 4.78% | 3.01% | 2.70% | 2.03% | **2.00%** | −0.309 [−0.499, −0.120] |
+| `zrmar_fork` | 7.71% | 7.24% | 5.70% | 4.02% | **2.90%** | −0.367 [−0.520, −0.214] |
+| `zrmar_pipe` | 9.51% | 7.21% | 6.15% | 4.55% | **3.56%** | −0.350 [−0.402, −0.298] |
+| **pooled** | | | | | | **−0.335 [−0.378, −0.291]** |
+
+**Constant bias rejected (CI excludes 0); finite-sample rejected (CI excludes −0.5).** The
+four per-cell bars at n = 12,800 all miss in the same direction: 2.0–3.6% measured against
+5.0–10.4% (constant) and 1.2–2.6% (finite-sample). The truth sits between, where neither
+account predicts anything.
+
+**My V17 warning was overstated.** Coverage at n = 12,800 is **0.867–0.923**, not the
+0.32–0.73 projected. The coverage *model* was fine — fed measured bias and width/SE it
+reproduces all 20 points to within **0.024** — it was the constant-bias premise that failed.
+
+**The defect is nonetheless permanent.** Bias falls as n^−0.335 while the SE falls as
+n^−0.50, so bias/SE grows as **n^0.17** (measured +0.10 to +0.17 per cell). Coverage is
+unbounded below; extrapolating on the fitted exponent it is ≈0.81–0.89 at n = 100,000 and
+reaches 0.80 between n ≈ 130,000 and 1.6 million. **Real and permanent, but 3× slower in the
+exponent than claimed.**
+
+**Controls.** The oracle is unbiased at every `n` (worst 1.75%, a single-cell fluctuation at
+n = 800; all others ≤0.75%). `zr_collider` stays flat. `mcar_z40` runs −2.01% → −0.74%,
+slope −0.418 [−0.685, −0.151] — a CI containing both −0.5 and the pooled −0.335, so this run
+**cannot** say whether the inert cell's small bias shares an origin with the large one. That
+was pre-flagged as a possible finding; the honest answer is that it is underpowered.
+
+### The conjecture this opens, and its test
+
+**n^−1/3 is the classical nonparametric rate** for a Lipschitz function in one dimension, and
+the Z block is BART. Conjecture: **the bias is the Z-block imputer's own convergence rate
+appearing in the estimand.** It is testable because in the `fork` and `pipe` cells the true
+`Z₁` conditional is **linear-Gaussian**, so a parametric imputer is correctly specified:
+
+| Z-block imputer | predicted slope |
+|---|---|
+| `bartMI` (nonparametric) | ≈ −1/3 ✓ measured |
+| `micePmm` (parametric, correct here) | ≈ −1/2 |
+| a misspecified parametric imputer | ≈ 0 |
+
+Three visibly different curves; both arms exist; the run is this driver with a different
+`ARMS` and no new code, ~2.6 h. **Registered as the V19 candidate.** The rate coincidence is
+suggestive and nothing more — `−1/3` sits near several plausible rates and one DGP cannot
+separate them.
 
 ---
 

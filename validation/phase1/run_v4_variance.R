@@ -86,7 +86,12 @@ V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              "pipeline_noMID", "pipeline_properZ_noMID",
              # V12: Z-block draw shape (harness instruments, not pipeline code)
              "smc_zexact", "smc_zgauss", "smc_zexact_xship", "smc_zgauss_xship",
-             "smc_xgrid")
+             "smc_xgrid",
+             # V16: the root claim -- Y dropped from one imputation block at a
+             # time, against pipeline_bartMI as the both-blocks reference.
+             "pipeline_noYx", "pipeline_noYz", "pipeline_noYboth",
+             # V17: auxiliary covariate, shipped vs documented behaviour.
+             "pipeline_auxZ_shipped", "pipeline_auxZ_asdoc")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 
@@ -171,7 +176,8 @@ print_v4 <- function(s) {
   res <- tryCatch({
     # y_form defaults to "linear", so every pre-V11 scenario is unchanged.
     truth  <- make_truth(p = 3L, erf_form = sc$erf_form,
-                         y_form = sc$y_form %||% "linear")
+                         y_form = sc$y_form %||% "linear",
+                         z_role = sc$z_role %||% "precision")
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(
@@ -204,7 +210,7 @@ print_v4 <- function(s) {
 run_v4 <- function(n_rep = 150L, m = 30L, base_seed = 20260825L, n_cores = NULL,
                    which_scenarios = V4_SCENARIOS, arms = V4_ARMS,
                    sweeps = 3L, margin = "shash", project_root = NULL,
-                   resume = FALSE, verbose = TRUE) {
+                   resume = FALSE, verbose = TRUE, n_obs = NULL) {
 
   n_cores <- n_cores %||% max(1L, parallel::detectCores() - 2L)
   if (.Platform$OS.type == "windows") n_cores <- 1L
@@ -220,6 +226,20 @@ run_v4 <- function(n_rep = 150L, m = 30L, base_seed = 20260825L, n_cores = NULL,
   keep <- canon_names %in% which_scenarios
   if (!any(keep)) stop("No scenarios matched.", call. = FALSE)
   scs <- scs_all[keep]
+
+  # V18: override every selected scenario's n. The scenarios' own `n` is 800
+  # everywhere, so an n-scaling track would otherwise need a duplicate cell per
+  # (cell, n) pair -- and duplicates drift. Overriding keeps ONE definition of
+  # each cell and varies only n.
+  #
+  # Off unless asked for, so no earlier run is affected. When on it is announced
+  # loudly, because results at a different n must never be mistaken for the
+  # n = 800 ones they will sit next to in results/.
+  if (!is.null(n_obs)) {
+    for (i in seq_along(scs)) scs[[i]]$n <- as.integer(n_obs)
+    if (verbose) cat(sprintf("*** N_OBS OVERRIDE: every cell runs at n = %d (default 800) ***\n",
+                             as.integer(n_obs)))
+  }
 
   # Load BOTH pipeline environments (shipped + proper-Z) once in the parent, so
   # forks inherit them copy-on-write rather than re-sourcing per task.
@@ -360,6 +380,7 @@ if (sys.nframe() == 0L) {
   ncores <- as.integer(getenv("NCORES", max(1L, parallel::detectCores() - 2L)))
   sweeps <- as.integer(getenv("SWEEPS", 3L))
   margin <- getenv("MARGIN", "shash")
+  n_obs  <- if (nzchar(Sys.getenv("N_OBS"))) as.integer(Sys.getenv("N_OBS")) else NULL
   scs    <- if (nzchar(Sys.getenv("SCENARIOS"))) split_csv(Sys.getenv("SCENARIOS")) else V4_SCENARIOS
   arms   <- if (nzchar(Sys.getenv("ARMS")))      split_csv(Sys.getenv("ARMS"))      else V4_ARMS
   proot  <- if (nzchar(Sys.getenv("PIPELINE_ROOT"))) Sys.getenv("PIPELINE_ROOT") else NULL
@@ -378,7 +399,7 @@ if (sys.nframe() == 0L) {
 
   res <- run_v4(n_rep = n_rep, m = m, base_seed = seed, n_cores = ncores,
                 which_scenarios = scs, arms = arms, sweeps = sweeps,
-                margin = margin, project_root = proot)
+                margin = margin, project_root = proot, n_obs = n_obs)
 
   cat("\n================ V4 variance attribution (estimand b_logX1) ================\n")
   print_v4(res$summary)

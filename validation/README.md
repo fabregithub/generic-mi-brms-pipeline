@@ -24,7 +24,7 @@ Keep this file current: the validation study is the evidence base for the claims
 README makes about bias, coverage and scope, so a stale entry here silently becomes a
 wrong claim in the documentation.
 
-Last updated: **2026-09-01** · after V13 — the exposure draw dominates; item 08 closed, item 07 widened
+Last updated: **2026-09-03** · after V18 — the shipped default's bias under a confounder or mediator decays as **n^−1/3**, rejecting both registered accounts. My V17 alarm was overstated (coverage 0.87–0.92 at n = 12,800, not 0.32–0.73) but **the defect is permanent**: 2–10% bias at every `n` tested, invisible to coverage
 
 ---
 
@@ -44,7 +44,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V13
+### Validation plan — Tracks V0–V18
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -65,6 +65,11 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V11 | Does the imputer choice survive a **non-linear outcome**? | ✅ resolved | **Yes** — `bartMI` never significantly beaten. But **every** arm loses ≈3 pp of bias: a pipeline-wide scope limit, not an imputer question |
 | V12 | Is that penalty the **shape** of the Z-block draw? | ✅ resolved | **Partly** — shape costs 1.3–1.9 pp at heavy covariate missingness (*p* < 1e-4), but only **32–49%** of the penalty. The rest is the conditional mean and/or the exposure draw |
 | V13 | Which block causes the rest of that penalty? | ✅ resolved | **The exposure draw** (3.1–3.4 pp of ~3.9). A **Z-only fix moves bias away from truth** — item 08 closed as scoped, item 07 widened |
+| V14 | Does a **shippable** exposure draw (formula only) match the exact one? | ✅ resolved | **Mostly** — removes **83%** of the penalty and is the **best-calibrated arm** (width/SE 1.004). Fails ±1 pp in 1 of 3 cells; needs a missing-`Y` path |
+| V15 | **Prediction:** curvature attenuation = `−323.4·f²`. Right? | ✅ **held** | **Yes** — 4 of 4 unmeasured cells inside ±10 pp, one to 0.1 pp; free exponent **1.90**, slope CI [1.98, 2.97]. Past `f` ≈ 0.55 the surface **inverts** while coverage stays 0.92 |
+| V16 | **The root claim:** does omitting `Y` from the imputation attenuate — and in which block? | ✅ resolved | **Yes, −13.1 pp**, isolated inside one estimator for the first time (derived −14.6). The **exposure** block carries all of it; the covariate block **+1.2 pp**. The registered *leak* prediction **failed** — the blocks are additive here |
+| V17 | Does the covariate's **causal role** change any of this? fork · pipe · collider · mixed | ✅ resolved | **It decides it.** The covariate block's penalty is **+1.2 pp** when `Z` is inert and **+25 to +28** when `Z` is adjusted for *and* on an X–Y path. MAR-vs-MCAR adds ≈0. **New: the shipped default is +5% to +10.4% biased there, coverage 0.93–0.97** |
+| V18 | Does that bias wash out at larger `n`? | ✅ resolved | **No — and neither registered account survives.** Bias decays as **n^−0.335** (CI [−0.378, −0.291]), not 0 (constant) and not −0.5 (finite-sample). Coverage 0.87–0.92 at n = 12,800 against my projected 0.32–0.73 — **the V17 alarm was overstated**, the defect is permanent |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -90,7 +95,7 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 Plus loose ends — the unexplained `resume` failure, stale translated READMEs, unswept MAR
 covariate missingness, external testers — all listed in [`ROADMAP.md`](ROADMAP.md).
 
-### ✅ Last completed run — V8, 2026-08-28 07:35 → 09:50 (135 min)
+### Earlier run, kept for its still-open follow-ups — V8, 2026-08-28 (135 min)
 
 `bash validation/phase1/run_inner_iter_check.sh` — 4 scenarios × 1000 reps × 3 arms,
 `results/inneriter_latest.rds`. Written up in [`phase1/FINDINGS_v8.md`](phase1/FINDINGS_v8.md).
@@ -117,43 +122,45 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed run — V13, 2026-09-01 (153 min)
+### ✅ Last completed run — V18, 2026-09-03 (165 min)
 
-8,000 tasks, 1000 reps in all 48 cells, zero errors.
-[`phase1/FINDINGS_v13.md`](phase1/FINDINGS_v13.md)
+Five `n` levels × 6 cells × 300 reps = 9,000 tasks, zero errors.
+[`phase1/FINDINGS_v18.md`](phase1/FINDINGS_v18.md) · verdict arithmetic:
+[`phase1/analyze_v18.R`](phase1/analyze_v18.R)
 
-V12 confirmed the Z-draw shape mechanism but could not separate it from the exposure draw.
-V13 did, with a 2×2 whose three steps sum **exactly** to the measured total:
+**V17 found the shipped default biased +5% to +10.4% under a confounder or mediator with
+coverage still 0.93–0.97.** The explanation offered — a sample-size accident, bias constant
+while the SE shrinks — projected coverage collapsing to **0.32–0.73 at n = 12,800**. V18
+measured it against the competing account, that the bias is a finite-sample artefact washing
+out as `1/√n`.
 
-| step | `ynl_mcar_z40` | `ynl_mar_z40` |
-|---|---|---|
-| Z conditional **mean** | +1.85 pp | +2.14 pp |
-| Z draw **shape** | **−1.43 pp** | **−1.32 pp** |
-| **Exposure draw** | **+3.41 pp** | **+3.14 pp** |
-| total | +3.83 pp | +3.95 pp |
+**Both are wrong.** Relative bias of `pipeline_bartMI`:
 
-**The exposure draw dominates**, and **the shape fix is harmful on its own.** Its effect is a
-consistent negative shift in signed bias whichever exposure draw is used; with the *exact*
-exposure draw the bias sits positive so that shift helps — all V12 could see — but with the
-*shipped* draw the bias is already negative, so the same shift carries it from −2.19% to
-−3.62%. The Gaussian Z draw and the linear exposure draw were partly cancelling.
+| cell | 800 | 1,600 | 3,200 | 6,400 | 12,800 |
+|---|---|---|---|---|---|
+| `zr_fork` | 4.62% | 4.28% | 3.50% | 2.43% | **2.07%** |
+| `zr_pipe` | 4.78% | 3.01% | 2.70% | 2.03% | **2.00%** |
+| `zrmar_fork` | 7.71% | 7.24% | 5.70% | 4.02% | **2.90%** |
+| `zrmar_pipe` | 9.51% | 7.21% | 6.15% | 4.55% | **3.56%** |
 
-**A Z-only fix recovers 11–21%** of the gap, and only because the mean correction outweighs
-the shape correction pulling the other way. **Roadmap item 08 is therefore closed as
-scoped** — the cheap part is the part that does not work alone.
+Pooled slope **−0.335, 95% CI [−0.378, −0.291]** — excludes 0 *and* −0.5.
 
-**Item 07 is widened instead.** The `leftcens` linear conditional accounts for most of this
-penalty *and* the whole mixture failure (V3/V9), so the two defects share a cause. Fixing it
-would help additive analyses with missing covariates, not only mixture ones.
+**The V17 alarm was overstated.** Coverage at n = 12,800 is **0.867–0.923**, not 0.32–0.73.
+The coverage model was sound (it reproduces all 20 measured points to within 0.024 from
+measured inputs); the constant-bias premise fed into it was not.
 
-CONTROL 2 passed. CONTROL 1 failed in the two missing-outcome cells — the SMC instrument
-does not impute `Y` as the pipeline does, so `leftcens` received `NA` predictors there. The
-analysis is bounded to the two complete-outcome cells, where the control holds at
-0.10–0.13 pp.
+**The defect is permanent all the same.** Bias falls as n^−0.335 while the SE falls as
+n^−0.50, so bias/SE grows as n^0.17 and coverage is unbounded below — 3× slower in the
+exponent than claimed, reaching 0.80 somewhere between n ≈ 130,000 and 1.6 million. **At
+every sample size tested the shipped default carries 2–10% bias that coverage does not
+reveal.**
 
----
+**A conjecture with a cheap test.** n^−1/3 is the classical nonparametric convergence rate
+and the Z block is BART. In the `fork`/`pipe` cells the true `Z₁` conditional is
+linear-Gaussian, so a *parametric* imputer is correctly specified and should give −1/2
+instead. Same driver, different `ARMS`, ~2.6 h — registered as the V19 candidate.
 
----
+*(Cost: 165 min against 2.6 h predicted.)*
 
 ## Document map
 
@@ -179,6 +186,11 @@ analysis is bounded to the two complete-outcome cells, where the control holds a
 | [`phase1/FINDINGS_v11.md`](phase1/FINDINGS_v11.md) | V11: the imputer default tested against a non-linear outcome; the ≈3 pp scope limit | Before quoting additive-path bias figures, or revisiting `z_imputer` |
 | [`phase1/FINDINGS_v12.md`](phase1/FINDINGS_v12.md) | V12: the Z-draw shape isolated — confirmed, and quantified at ~40% of the penalty | Before building the shape fix, or citing what it would buy |
 | [`phase1/FINDINGS_v13.md`](phase1/FINDINGS_v13.md) | V13: the three-way decomposition — the exposure draw dominates and a Z-only fix backfires | Before building any single-component fix |
+| [`phase1/FINDINGS_v14.md`](phase1/FINDINGS_v14.md) | V14: the shippable grid draw — 83% recovery, best calibration, and the missing-`Y` gap | Before building item 07 |
+| [`phase1/FINDINGS_v15.md`](phase1/FINDINGS_v15.md) | V15: the attenuation law — quadratic in `f`, confirmed by prediction; sign inversion at high censoring | Before quoting how bad censoring is, or advising on a censored mixture analysis |
+| [`phase1/FINDINGS_v16.md`](phase1/FINDINGS_v16.md) | V16: the root claim isolated — `−13.1 pp`, and the leak prediction refuted | Before citing Phase 1's H1, or claiming the blocks are separable |
+| [`phase1/FINDINGS_v17.md`](phase1/FINDINGS_v17.md) | V17: the covariate's causal role decides the covariate block, and the shipped default is +5% to +10.4% biased under a confounder or mediator | **Before quoting any covariate-block result (V4, V5–V7, V10, V12, V13)** — all were measured with an inert covariate |
+| [`phase1/FINDINGS_v18.md`](phase1/FINDINGS_v18.md) | V18: that bias decays as `n^−1/3` — permanent, but slower than V17 warned | Before quoting V17's coverage projection, or advising on large-`n` use |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),
 `run_v2_robustness.sh` (V2), `run_v4_variance.sh` (V4, V5, V6, V7 and V8 — the arm/scenario

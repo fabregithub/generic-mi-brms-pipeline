@@ -353,6 +353,14 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   if ("pipeline_bartHarness" %in% which)    out$bmh   <- .ce_args(proc_pipeline_bartHarness)
   if ("pipeline_noMID" %in% which)          out$nomid <- .ce_args(proc_pipeline_noMID)
   if ("pipeline_properZ_noMID" %in% which)  out$pznm  <- .ce_args(proc_pipeline_properZ_noMID)
+  # Track V16: the root claim -- Y removed from one block at a time (see the
+  # header block above proc_pipeline_noYx in procedures_pipeline.R).
+  if ("pipeline_noYx" %in% which)           out$nyx   <- .ce_args(proc_pipeline_noYx)
+  if ("pipeline_noYz" %in% which)           out$nyz   <- .ce_args(proc_pipeline_noYz)
+  if ("pipeline_noYboth" %in% which)        out$nyb   <- .ce_args(proc_pipeline_noYboth)
+  # Track V17: an auxiliary covariate, as shipped versus as documented.
+  if ("pipeline_auxZ_shipped" %in% which)   out$axs   <- .ce_args(proc_pipeline_auxZ_shipped)
+  if ("pipeline_auxZ_asdoc" %in% which)     out$axd   <- .ce_args(proc_pipeline_auxZ_asdoc)
   # Track V12 (smc_impute.R): the Z-block draw, shape versus mean. Both arms use
   # the same correct conditional mean; only the draw's shape differs.
   # A 2x2: {Z draw shape} x {X draw}. V12 could isolate the Z shape but not

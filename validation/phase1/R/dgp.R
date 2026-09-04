@@ -53,7 +53,7 @@ if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
 #'   recoverable, so any bias is attributable to the imputation model and never
 #'   to analysis misspecification.
 make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
-                       y_form = "linear") {
+                       y_form = "linear", z_role = "precision") {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -69,9 +69,50 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
   # to gamma[1] = 0.5 so it is a real feature of the surface rather than a nudge.
   b_zq <- if (identical(y_form, "nonlinear")) 0.40 else 0.0
 
+  # ---- V17: the covariate's CAUSAL ROLE ---------------------------------------
+  # Tracks V0-V16 all ran with one covariate structure, in which Z is either
+  # independent of the exposures ("precision") or generated FROM them
+  # ("descendant", i.e. z_form = "nonlinear"). NEITHER is a confounder, so no
+  # track has ever adjusted for a covariate that had to be adjusted for. Drawing
+  # V16's DAG is what made that visible. The roles below are the missing ones:
+  #
+  #   precision   Z1 -> Y only                  (the original design)
+  #   descendant  X2, X3 -> Z1 -> Y             (z_form = "nonlinear")
+  #   fork        Z1 -> X1,  Z1 -> Y            CONFOUNDER: must be adjusted for
+  #   pipe        X1 -> Z1 -> Y                 MEDIATOR: adjusting gives the
+  #                                             DIRECT effect, which is b[1]
+  #   collider    X1 -> Z1 <- Y                 adjusting INDUCES bias; the
+  #                                             correct analysis omits Z1
+  #   mixed       Z1 fork AND Z2 pipe           no single covariate is both
+  #
+  # TWO STRUCTURAL CONSEQUENCES, both handled here rather than left to the
+  # caller. Under "collider" Z1 must NOT cause Y (or it would be a fork as well),
+  # so gamma[1] is zeroed; and the correctly-specified analysis model must DROP
+  # Z1, which is what `z_in_model` tells dgp_formula(). Everywhere else
+  # `z_in_model` is the full set and the formula is unchanged.
+  if (!z_role %in% c("precision", "descendant", "fork", "pipe", "collider", "mixed")) {
+    stop("unknown z_role: ", z_role, call. = FALSE)
+  }
+  z_in_model <- c("Z1", "Z2")[seq_len(q)]
+  if (identical(z_role, "collider")) {
+    gamma[1] <- 0.0                       # Z1 is an effect of Y, never a cause
+    z_in_model <- setdiff(z_in_model, "Z1")
+  }
+
   list(
     intercept = 0.0,
     b = b, gamma = gamma,
+    z_role = z_role, z_in_model = z_in_model,
+    # Strengths of the new structural arrows. Sized against gamma[1] = 0.50 and
+    # b[1] = 0.40 so each role is a real feature of the DGP, not a nudge.
+    delta_zx = 0.60,        # fork/mixed:     Z1 -> X1
+    delta_xz = 0.60,        # pipe/collider:  X1 -> Z1
+    delta_yz = 0.60,        # collider:        Y -> Z1
+    delta_xz2 = 1.20,       # mixed:          X1 -> Z2 on the logit scale
+    # Under "pipe" the adjusted analysis estimates the DIRECT effect, which is
+    # b[1]. Recorded here so the distinction is in the object rather than only in
+    # a comment -- it is not the estimand, and must never be swapped in as one.
+    total_effect = if (identical(z_role, "pipe")) b[1] + 0.60 * gamma[1] else b[1],
     b_int = b_int, b_quad = b_quad,
     erf_form = erf_form,
     y_form = y_form, b_zq = b_zq,
@@ -115,9 +156,22 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
 #'   still recovered without bias by every procedure. Only the imputation model
 #'   for Z1 becomes hard.
 simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
-                              skew = 0.0, sigma_y = 1.0, z_form = "linear") {
+                              skew = 0.0, sigma_y = 1.0, z_form = "linear",
+                              z_role = NULL) {
   p <- length(truth$b)
   q <- length(truth$gamma)
+
+  # ---- V17: causal roles for the covariate -----------------------------------
+  # These need a DIFFERENT GENERATION ORDER from the original design (a fork
+  # draws Z1 before the exposures; a collider draws it after Y), so they live in
+  # their own branch. The default path below is byte-identical to the pre-V17
+  # code -- same calls, same order, same RNG stream -- which is what keeps every
+  # earlier track's results reproducible from their recorded seeds.
+  z_role <- z_role %||% truth$z_role %||% "precision"
+  if (z_role %in% c("fork", "pipe", "collider", "mixed")) {
+    return(.simulate_causal_z(n, truth, rho = rho, sd_x = sd_x, mu_x = mu_x,
+                              skew = skew, sigma_y = sigma_y, z_role = z_role))
+  }
 
   # --- log-exposures: exchangeable-correlation MVN, optional skew --------------
   Sigma <- matrix(rho, p, p); diag(Sigma) <- 1
@@ -169,6 +223,80 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
   list(data = data, truth = truth)
 }
 
+#' Simulate a complete dataset in which the covariate has a CAUSAL ROLE (V17).
+#'
+#' Separate from `simulate_complete()`'s main body because these designs need a
+#' different generation order -- a confounder is drawn before the exposures, a
+#' collider after the outcome -- and mixing the orders into one code path would
+#' change the RNG stream of every pre-V17 scenario.
+#'
+#' The exposures keep their exchangeable correlation and the outcome keeps its
+#' linear form, so `dgp_formula()` stays correctly specified and `b[1]` stays the
+#' estimand in every role. What changes is only which arrows exist:
+#'
+#'   fork      Z1 -> logX1 (delta_zx),  Z1 -> Y (gamma[1])
+#'             Adjusting for Z1 is REQUIRED; omitting it biases b[1].
+#'   pipe      logX1 -> Z1 (delta_xz),  Z1 -> Y (gamma[1])
+#'             Adjusting for Z1 blocks the indirect path, so the `logX1`
+#'             coefficient is the DIRECT effect -- which is exactly b[1]. The
+#'             total effect, b[1] + delta_xz * gamma[1], is reported in `truth`
+#'             as `total_effect` but is NOT the estimand.
+#'   collider  logX1 -> Z1 <- Y (delta_xz, delta_yz), gamma[1] forced to 0.
+#'             Adjusting for Z1 induces bias; make_truth() therefore drops Z1
+#'             from `z_in_model` and the analysis model omits it.
+#'   mixed     Z1 is a fork and Z2 is a pipe (binary, on the logit scale), so a
+#'             single adjustment set cannot be right for both roles at once.
+.simulate_causal_z <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
+                               skew = 0.0, sigma_y = 1.0, z_role = "fork") {
+  p <- length(truth$b); q <- length(truth$gamma)
+  Sigma <- matrix(rho, p, p); diag(Sigma) <- 1
+
+  draw_x <- function(shift1) {
+    Z0 <- MASS::mvrnorm(n, mu = rep(0, p), Sigma = Sigma)
+    if (!is.matrix(Z0)) Z0 <- matrix(Z0, ncol = p)
+    if (skew != 0) Z0 <- sinh(asinh(Z0) + skew)
+    lx <- mu_x + sd_x * Z0
+    lx[, 1] <- lx[, 1] + shift1
+    colnames(lx) <- paste0("logX", seq_len(p))
+    lx
+  }
+  eta_x <- function(lx) truth$intercept + as.vector(lx %*% truth$b)
+
+  if (z_role == "fork") {
+    z1   <- stats::rnorm(n)                                   # Z1 first
+    z2   <- stats::rbinom(n, 1, 0.5)
+    logX <- draw_x(truth$delta_zx * z1)                       # Z1 -> logX1
+    Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
+    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+
+  } else if (z_role == "pipe") {
+    z2   <- stats::rbinom(n, 1, 0.5)
+    logX <- draw_x(0)
+    z1   <- truth$delta_xz * logX[, 1] + stats::rnorm(n, 0, 0.8)   # logX1 -> Z1
+    Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
+    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+
+  } else if (z_role == "collider") {
+    z2   <- stats::rbinom(n, 1, 0.5)
+    logX <- draw_x(0)
+    # gamma[1] is 0 here (make_truth enforces it), so Z1 is absent from Y.
+    Zm0  <- cbind(Z1 = 0, Z2 = z2)[, seq_len(q), drop = FALSE]
+    Y    <- eta_x(logX) + as.vector(Zm0 %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+    z1   <- truth$delta_xz * logX[, 1] + truth$delta_yz * Y +      # X1 -> Z1 <- Y
+            stats::rnorm(n, 0, 0.8)
+
+  } else {                                                    # mixed: fork + pipe
+    z1   <- stats::rnorm(n)                                   # fork, drawn first
+    logX <- draw_x(truth$delta_zx * z1)
+    z2   <- stats::rbinom(n, 1, stats::plogis(truth$delta_xz2 * logX[, 1]))  # pipe
+    Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
+    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+  }
+
+  data <- data.frame(Y = Y, logX, Z1 = z1, Z2 = z2, check.names = FALSE)
+  list(data = data, truth = truth)
+}
+
 #' The matched analysis-model formula for a given ERF form.
 #'
 #' Every procedure fits *this* model, so all differences are attributable to how
@@ -176,7 +304,10 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
 dgp_formula <- function(truth) {
   p <- length(truth$b); q <- length(truth$gamma)
   xterms <- paste0("logX", seq_len(p))
-  zterms <- c("Z1", "Z2")[seq_len(q)]
+  # V17: a collider must be left OUT of the analysis model -- adjusting for it
+  # induces bias that no imputation method can undo. `z_in_model` defaults to the
+  # full set, so every pre-V17 truth object produces the same formula as before.
+  zterms <- truth$z_in_model %||% c("Z1", "Z2")[seq_len(q)]
   rhs <- c(xterms, zterms)
   if (truth$erf_form == "mixture") {
     if (p >= 2L) rhs <- c(rhs, "logX1:logX2")
@@ -185,7 +316,8 @@ dgp_formula <- function(truth) {
   # V11: keep the ANALYSIS model correctly specified when the outcome is
   # non-linear in Z1, so the focal estimand stays recoverable and any bias is
   # attributable to the imputation model alone.
-  if (identical(truth$y_form %||% "linear", "nonlinear") && q >= 1L) {
+  if (identical(truth$y_form %||% "linear", "nonlinear") && q >= 1L &&
+      "Z1" %in% zterms) {
     rhs <- c(rhs, "I(Z1^2)")
   }
   stats::as.formula(paste("Y ~", paste(rhs, collapse = " + ")))

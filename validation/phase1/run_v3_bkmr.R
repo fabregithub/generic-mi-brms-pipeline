@@ -129,10 +129,32 @@ v3_scenarios <- function() list(
   # surface to act on -- `int_X1X2` and `curv_X1` in particular depend on X1 and
   # X2 jointly, and here both are imputed rather than one. It is also the most
   # expensive: the X block loops over three exposures per sweep instead of one.
-  .v3_scenario("nd40_all",   0.40, censor_all = TRUE)
+  .v3_scenario("nd40_all",   0.40, censor_all = TRUE),
+
+  # ---- V15: the f-sweep, for the attenuation SHAPE -------------------------
+  # THEORY -> PREDICTION -> TEST. Curvature attenuation grows FASTER than the
+  # censored fraction (V3: 20% -> 11.7%, 40% -> 56.7%, a 4.85x rise for 2x the
+  # censoring) and nothing explains why. No mechanistically motivated law
+  # reproduces that ratio; `f^2` is the least-bad at 4.00 and is frank
+  # curve-fitting to two points. These four cells are the UNMEASURED points that
+  # let the shape be pinned rather than guessed.
+  #
+  # APPENDED, never inserted: nd20/nd40/nd40_all keep canonical indices 1/2/3, so
+  # V3's published results still reproduce bit-for-bit from the same seeds. Those
+  # two cells double as calibration checks on this run.
+  #
+  # Focal exposure only -- `curv_X1` depends on X1 alone, which V3 confirmed
+  # (nd40 -56.7% against nd40_all -58.4%: censoring the others adds ~2 pp).
+  .v3_scenario("mixf10",     0.10),
+  .v3_scenario("mixf30",     0.30),
+  .v3_scenario("mixf50",     0.50),
+  .v3_scenario("mixf60",     0.60)
 )
 
 V3_SCENARIOS <- c("nd20", "nd40", "nd40_all")
+
+# The V15 sweep: the two measured points plus the four unmeasured ones.
+V15_SCENARIOS <- c("mixf10", "nd20", "mixf30", "nd40", "mixf50", "mixf60")
 
 .v3_make_bundle <- function(sc, truth, n_obs) {
   s <- simulate_complete(n = n_obs, truth = truth, rho = sc$rho, sd_x = 1,

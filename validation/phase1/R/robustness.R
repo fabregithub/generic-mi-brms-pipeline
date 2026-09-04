@@ -130,12 +130,14 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          n = 800L, m = 30L, n_rep = NULL, rho = 0.4, skew = 0.0,
                          censor_all = FALSE, mcar_frac = 0.0, y_frac = 0.0,
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
-                         y_form = "linear", seed_as = NULL) {
+                         y_form = "linear", z_role = "precision", seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
        skew = skew, censor_all = censor_all, mcar_frac = mcar_frac,
        y_frac = y_frac, z_form = z_form,
        mar_frac = mar_frac, mar_strength = mar_strength, y_form = y_form,
+       # V17: the covariate's causal role -- see make_truth() in dgp.R.
+       z_role = z_role,
        # `seed_as` makes this cell draw its data with ANOTHER cell's seed, so the
        # two see byte-identical exposures, covariates and outcome noise and differ
        # only in the feature under test. That turns a cell-vs-cell contrast from
@@ -224,20 +226,41 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("ynl_combined",    "y_nonlinear", censor_all = TRUE, mcar_frac = 0.2,
                  y_frac = 0.2, y_form = "nonlinear", seed_as = "combined"),
     .v2_scenario("ynl_mar_z40",     "y_nonlinear", mar_frac = 0.4,  y_form = "nonlinear", seed_as = "mar_z40"),
-    # ---- Axis 8 (V15): the f-sweep, for the attenuation SHAPE ----------------
-    # THEORY -> PREDICTION -> TEST. V3 measured curvature attenuation at two
-    # non-detect fractions only (20% -> 11.7%, 40% -> 56.7%; a 4.85x rise for 2x
-    # the censoring). No mechanistically motivated law reproduces that ratio;
-    # `f^2` is the least-bad at 4.00 and is frank curve-fitting. These cells add
-    # four UNMEASURED points so the shape can be pinned rather than guessed.
-    # Mixture ERF, focal exposure only -- curv_X1 depends on X1 alone, which V3
-    # confirmed (nd40 -56.7% vs nd40_all -58.4%: censoring the others adds ~2 pp).
-    .v2_scenario("mixf10", "fsweep", erf_form = "mixture", nd_frac = 0.10),
-    .v2_scenario("mixf20", "fsweep", erf_form = "mixture", nd_frac = 0.20),
-    .v2_scenario("mixf30", "fsweep", erf_form = "mixture", nd_frac = 0.30),
-    .v2_scenario("mixf40", "fsweep", erf_form = "mixture", nd_frac = 0.40),
-    .v2_scenario("mixf50", "fsweep", erf_form = "mixture", nd_frac = 0.50),
-    .v2_scenario("mixf60", "fsweep", erf_form = "mixture", nd_frac = 0.60)
+
+    # ---- V17: the covariate's CAUSAL ROLE --------------------------------------
+    # APPENDED, never inserted: task seeds key on a scenario's position in this
+    # list, so adding cells at the end leaves every earlier cell's data
+    # bit-identical and every published result reproducible.
+    #
+    # Tracks V0-V16 all ran with Z as a precision covariate or a descendant of
+    # the exposures -- never a cause of one. So no track has ever adjusted for a
+    # covariate that HAD to be adjusted for, and none has ever adjusted for one
+    # that must NOT be. These four cells supply the missing structures; the roles
+    # themselves, and the arithmetic that verifies them, are in dgp.R and
+    # test_v17_zrole.R.
+    #
+    # Missingness is held at mcar_z40's (40% non-detects on X1, 40% MCAR on the
+    # covariates) so the four differ ONLY in the causal role of Z.
+    .v2_scenario("zr_fork",     "z_role", mcar_frac = 0.4, z_role = "fork"),
+    .v2_scenario("zr_pipe",     "z_role", mcar_frac = 0.4, z_role = "pipe"),
+    .v2_scenario("zr_collider", "z_role", mcar_frac = 0.4, z_role = "collider"),
+    .v2_scenario("zr_mixed",    "z_role", mcar_frac = 0.4, z_role = "mixed"),
+
+    # The same four roles under MAR instead of MCAR. NOT redundant with the pair
+    # above: `inject_mar_covariates()` drives missingness off **Y** (and logX2),
+    # so omitting Y from the Z block does not merely cost information there -- it
+    # drops the variable the mechanism depends on, which is the condition MAR
+    # validity rests on. Under MCAR the no-Y penalty is a congeniality cost;
+    # under MAR-on-Y it should also be a mechanism failure, and the two should
+    # therefore differ.
+    #
+    # `seed_as` pairs each with its MCAR twin: the complete data and the exposure
+    # censoring are drawn identically and only the covariate mechanism differs,
+    # so MCAR-vs-MAR is a paired contrast rather than an unpaired one.
+    .v2_scenario("zrmar_fork",     "z_role", mar_frac = 0.4, z_role = "fork",     seed_as = "zr_fork"),
+    .v2_scenario("zrmar_pipe",     "z_role", mar_frac = 0.4, z_role = "pipe",     seed_as = "zr_pipe"),
+    .v2_scenario("zrmar_collider", "z_role", mar_frac = 0.4, z_role = "collider", seed_as = "zr_collider"),
+    .v2_scenario("zrmar_mixed",    "z_role", mar_frac = 0.4, z_role = "mixed",    seed_as = "zr_mixed")
   )
 }
 

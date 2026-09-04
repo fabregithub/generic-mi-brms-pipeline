@@ -120,6 +120,133 @@ about congeniality guarantees that a partial fix is an improvement.
 
 ---
 
+## 3b. What is *not yet validated* — the condition itself
+
+**Added 2026-09-03.** Sections 1–3 state the congeniality condition and prove its safe
+boundary; §5 catalogues thirteen tracks as instances of it. Every one of those tracks tests
+a **refinement** — whether the conditional has the right functional form (V3, V9, V11), the
+right shape (V12), the right margin (Phase 1 §7.5), the right block (V13, V14). **None of
+them varies the condition's own antecedent**: every arm in every track had `Y` in the
+imputation model. The foundation is the one thing that has never been moved.
+
+The project's cited evidence is Phase 1's **H1** — `leftcens_prestep` attenuating the focal
+coefficient −5.6% at 20% non-detects and −14.4% at 40%, coverage 0.92 → 0.82. That is real
+and its direction and monotonicity support the claim, but the arm it compares against
+differs in **three** ways at once: no `Y`, **no `Z` covariates either**, and a **different
+estimator** (`leftcens::gsimp_mi`, a copula MI of the exposure matrix, not an
+interval-censored conditional regression). Attributing the effect to `Y` is an inference
+from that design, not a measurement.
+
+Two cells in the same document cut the other way. On the **mixture** surface the no-`Y`
+pre-step (+3.8% / +4.0%) **beat** the `Y`-aware linear draw (+7.7% / +19.6%, coverage 0.62);
+under **skew 0.75** the no-`Y` copula (−1.2% / −5.7%) beat the `Y`-aware Gaussian (−8.6% /
+−14.2%, coverage 0.47). Neither refutes the condition as stated here — it is a
+**conjunction**, and in both cells a different clause is the one being broken. But both
+refute the claim in its loose form, *"include `Y` or you attenuate"*, and that loose form is
+how the condition tends to get quoted. **Including `Y` with the wrong functional form or the
+wrong margin is worse than omitting it.**
+
+> **TESTED, 2026-09-03.** V16 measured it: removing `Y` from both blocks of the shipped
+> engine costs **−13.1 pp** (derived −14.6), from the exposure block alone **−14.4**
+> (derived −15.8). **The antecedent holds**, isolated inside one estimator for the first
+> time, so Phase 1's H1 number was indeed dominated by the `Y` omission — which could only
+> be known by separating it. Two things did not survive: the **positive leak** (predicted
+> +1.6 pp, measured +0.09 ± 0.13 — the blocks are additive here), and the loose form
+> *"include `Y` or you attenuate"*, which now stands only for the **exposure** block.
+> `phase1/FINDINGS_v16.md`.
+
+**V16 tests the antecedent directly** (`PLAN_pipeline_validation.md` §8i): one estimator, `Y`
+removed from one block at a time. Its prediction is *derived* rather than fitted — **−14.9
+pp** when `Y` is omitted everywhere (the configuration a real analysis produces), and
+**zero** for the covariate block alone in cells where `Z ⊥ X`, because with no confounding
+path there is nothing to under-adjust. If that second figure lands, it establishes the
+**weaker half** of a scope qualifier the condition does not currently carry. The stronger
+half needed a DGP in which a covariate causes an exposure, which this harness did not have —
+drawing the DAG is what surfaced that, at the cost of a registered prediction withdrawn
+before the run. **V17 built the missing structures, and the derivation (2026-09-03,
+`phase1/predict_roles.R`) states the qualifier sharply:**
+
+**MEASURED, 2026-09-03** (500 reps; the derived predictions are in brackets):
+
+| covariate `Z` | adjusted for? | on an X–Y path? | penalty, MCAR | penalty, MAR-on-`Y` |
+|---|---|---|---|---|
+| precision | yes | no | **+1.2 pp** *(≈0)* | **+0.9 pp** *(+0.1)* |
+| fork (confounder) | yes | yes | **+25.5 pp** *(+26.7)* | **+26.2 pp** *(+32.4)* |
+| pipe (mediator) | yes | yes | **+28.2 pp** *(+30.4)* | **+28.9 pp** *(+36.1)* |
+| collider | **no** | yes | **−0.2 pp** *(−0.7)* | **+2.1 pp** *(+3.1)* |
+| mixed | yes | yes | **+22.6 pp** *(+19.5)* | **+22.0 pp** *(+23.8)* |
+
+**The condition binds a covariate's draw exactly when that covariate is adjusted for *and*
+lies on an open X–Y path** — whether the path is confounding or mediating. Both other cells
+are near zero: a covariate off any path contributes nothing to `β₁` however badly it is
+imputed, and a covariate on a path that the analysis correctly omits never reaches `β₁` at
+all.
+
+**The missingness mechanism turns out to be almost nothing.** The derivation predicted
+MAR-on-`Y` would add **+4 to +6 pp** on-path — omitting `Y` there drops the variable the
+mechanism depends on, so the covariate imputation is invalid and not merely inefficient.
+**Measured, MAR − MCAR is +0.70, +0.73, −0.58 and +2.31 pp** (fork, pipe, mixed, collider):
+three of four within ±1 pp of zero, one with the wrong sign, and only the collider clearly
+positive. That prediction is **refuted**.
+
+The conjecture for why — untested, and discriminable with a `mice pmm` Z block — is that the
+covariate draw recovers most of the `Y`-relevant information from the exposures and the other
+covariate, which a flexible imputer can exploit and the linear stand-in could not.
+
+**So the qualitative claim survives in its stronger form: the path structure dominates the
+mechanism.** Not merely by a margin — the mechanism term is within noise of zero. In the
+precision row the `Z` imputation is genuinely invalid under MAR and `β₁` still does not move.
+A biased covariate distribution cannot reach the focal estimand along a path that is not
+there, and whether the covariate is MCAR or MAR barely registers next to whether the path
+exists.
+
+This is **not** the qualifier §8i proposed before the derivation. That version keyed on the
+covariate's *association with the exposure*, and it would have got the pipe wrong: a mediator
+has no confounding path, yet produces the largest penalty of any role. Association is not the
+criterion; adjusted-for-and-on-a-path is.
+
+**What it costs the *pipeline*, not just the record.** The paired design cancels the
+reference arm's own bias — which is what makes those contrasts clean, and what hid this until
+a gate was added for it. `pipeline_bartMI` is the **shipped configuration**, `Y` in both
+blocks, and under a causally active covariate it is biased **+5.0% (fork), +5.4% (pipe),
++8.5% and +10.4% under MAR**, against ≤2.3% in every precision cell. The oracle is unbiased in
+all four, so this is the imputation's bias and not the design's. Coverage sits at 0.93–0.97
+with honestly-sized intervals — the **fourth** independent instance of coverage failing to
+detect a large bias (V3, V8, V15, V17) — and it covers only because at `n` = 800 the bias is
+0.35–0.67 empirical SE. Relative bias is roughly constant in `n` while the SE falls as
+`1/√n`, so that concealment looked like a sample-size accident.
+
+> **MEASURED, 2026-09-03 (V18) — and the projection was wrong.** Over five `n` levels to
+> 12,800, the bias decays as **n^−0.335** (CI [−0.378, −0.291]), rejecting both registered
+> accounts: constant bias (slope 0) and a finite-sample artefact (slope −0.5). Coverage at
+> n = 12,800 is **0.867–0.923**, not the 0.32–0.73 projected here. The coverage *model* was
+> sound — fed measured inputs it reproduces all 20 points to within 0.024 — the
+> constant-relative-bias premise was not.
+>
+> **The defect is still permanent.** Bias falls as n^−0.335 while the SE falls as n^−0.50, so
+> bias/SE grows as **n^0.17** and coverage is unbounded below — just 3× more slowly in the
+> exponent than claimed. At every sample size tested the shipped default carries 2–10% bias
+> that coverage does not reveal. `phase1/FINDINGS_v18.md`.
+
+**What it costs the record.** V12, V13 and V16 all reason about the Z block's contribution,
+and all of them measured it in the precision structure — the one row of that table where the
+Z block barely matters (+1.2 pp measured). V13's headline, that a Z-only fix moves bias *away* from
+truth, is a statement about an inert covariate and may not survive a confounder or a
+mediator. None of it is wrong; all of it is narrower than it reads.
+
+**The blocks are not separable, and the derivation says by how much.** Because block-FCS
+alternates, `Y` reaches the exposure block through a `Y`-informed covariate draw even when it
+is removed from the exposure block's own predictor set. The predicted leak is **+1.4 pp**,
+and its sign is the interesting part: removing `Y` from the exposure block *while leaving it
+in the covariate block* is predicted to be **worse** (−15.9 pp) than removing it from both
+(−14.9 pp) — a `Y`-informed `Z̃` partly absorbs `Y`, and adjusting for it alongside a
+`Y`-blind `X̃` over-adjusts. If that holds, **partial compliance with the condition is worse
+than none**, which is a stronger and more useful statement than the condition alone makes,
+and belongs in §5's taxonomy as a general property of block-wise imputation rather than a
+quirk of this engine.
+
+---
+
 ## 4. What is *not* derived
 
 **No closed form for the magnitudes when (A) fails.** Under a non-linear outcome the
@@ -134,8 +261,59 @@ approximate them were tested against the Monte-Carlo values and **both failed**:
 A third tempting prediction also fails: that curvature attenuation should be roughly
 **proportional to the censored fraction**, since imputed rows carry no curvature by
 construction. V3 measured 20% non-detects → 11.7% excess and 40% → 56.7% — markedly
-superlinear. **The mechanism by which attenuation grows faster than the imputed fraction is
-not understood.**
+superlinear.
+
+**V15 (2026-09-02) replaced that gap with a law.** A six-point sweep in `f` confirmed the
+registered prediction `excess% = −323.4·f²` in all four previously unmeasured cells (worst
+miss 9.3 pp against a ±10 pp gate), and a freely fitted exponent gives **1.90**, with the
+log–log slope CI **[1.98, 2.97]** — excluding 1, containing 2. So the exponent is now
+evidence, not a guess:
+
+| `f` | 0.10 | 0.20 | 0.30 | 0.40 | 0.50 | 0.60 |
+|---|---|---|---|---|---|---|
+| excess | −1.3% | −13.9% | −29.6% | −55.6% | −90.2% | −116.5% |
+
+**A second measured rate joined it on 2026-09-03.** V18 found the shipped default's bias
+under a causally active covariate decaying as **n^−1/3** — also measured, also underived.
+The theory now carries **two exponents it cannot produce**: `f²` for curvature attenuation in
+the censored fraction, and `n^−1/3` for imputation bias in the sample size. The V18 one has a
+conjecture attached with a cheap discriminating test — `n^−1/3` is the classical
+nonparametric convergence rate, the Z block is BART, and the `fork`/`pipe` cells have a
+linear-Gaussian `Z₁` conditional, so a *parametric* imputer there should converge at −1/2
+instead. If the exponent tracks the imputer, this document gains its first mechanism for a
+**rate** rather than a magnitude (`PLAN_pipeline_validation.md` §8k).
+
+**What is still not derived is the exponent itself, and the constant.** The status improved
+from *unexplained observation* to **unexplained law**, which is a sharper target: a
+derivation must now produce a power, not merely a direction. The leading conjecture is a
+product of two `f`-linear losses — (i) the fraction of rows whose exposure is a draw from a
+conditional linear in its own predictors, hence carrying no curvature by clause (A), and
+(ii) the fraction of the *estimand's evaluation range* that lies below the detection limit,
+since `curv_X1` is a contrast at fixed quantiles of X1 and the LOD climbs that distribution
+as `f` grows. Their product is `f²`. **This is a conjecture with a discriminating test**:
+factor (ii) depends on where the contrast is evaluated and factor (i) does not, so moving
+`q_lo` from 0.25 to 0.40 should move the curve under the conjecture and leave it alone
+otherwise. See FINDINGS_v15.md; that comparison is the natural next prediction.
+
+V15 also found that the damage is not confined to attenuation: at `f` = 0.60 the fitted
+surface **inverts**, curving the wrong way in 40% of replications, while nominal coverage
+stays at 0.92 because the interval widens to 2.7× its `f` = 0.10 width. **Coverage is not a
+guard against this failure mode** — a point worth carrying into any guidance about
+censored mixtures.
+
+### Revised by V14 (2026-09-01)
+
+V9 found that supplying the *form* of the outcome model and **estimating** its coefficients
+matched an oracle that knew them, to 0.2 pp — the basis for saying "the functional form is
+what matters, not the parameters". **V14 qualifies that.** In the scalar non-linear-outcome
+setting the same substitution costs **0.53 pp on average and 1.36 pp at worst** — an order of
+magnitude more.
+
+The two measurements are not in conflict (V9: BKMR mixture estimands; V14: a scalar
+coefficient), but the general claim is **setting-dependent** and should not be carried
+forward unqualified. What survives is the weaker, still-useful statement: getting the form
+right recovers most of the penalty (83% here, 89–100% in V9), and getting the parameters
+right recovers the rest.
 
 **Not addressed at all:** why the shape effect has a fixed *sign* (V13's −1.3 to −1.9 pp
 regardless of the exposure draw); the +15–17% BKMR oracle floor on `curv_X1` (V3), shown not
@@ -172,11 +350,17 @@ block.
 from here — state the mechanism, derive a number for a cell nobody has measured, run, and
 revise the theory against the result. The first such track is
 [V15](PLAN_pipeline_validation.md#8h-track-v15--the-attenuation-shape-first-prediction-led-track),
-which registers `excess% = 323.4·f²` and the conditions that would refute it.
+which registered `excess% = 323.4·f²` and the conditions that would refute it.
 
-That law is **frank curve-fitting to the two points in §4** — the mechanistically motivated
-candidates all fit worse. It is registered anyway, labelled as such, because a
+That law was **frank curve-fitting to the two points in §4** — the mechanistically motivated
+candidates all fit worse. It was registered anyway, labelled as such, because a
 weak-but-falsifiable prediction moves the theory and a post-hoc description does not.
+
+**Outcome: it survived** (FINDINGS_v15.md, 2026-09-02) — four for four inside the gate, one
+cell to within 0.1 pp. The cycle's first pass therefore worked in the less useful of the two
+directions: the theory was not corrected, it was promoted, and the open question moved from
+*what shape?* to *why that exponent?*. The value of registering the prediction was not that
+it was right; it was that a wrong number would have been visible as such.
 
 **Predictions that fail stay in this document** with the superseding result beside them, on
 the same principle by which findings are corrected rather than overwritten.
