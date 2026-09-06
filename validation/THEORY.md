@@ -276,12 +276,18 @@ evidence, not a guess:
 **A second measured rate joined it on 2026-09-03.** V18 found the shipped default's bias
 under a causally active covariate decaying as **n^−1/3** — also measured, also underived.
 The theory now carries **two exponents it cannot produce**: `f²` for curvature attenuation in
-the censored fraction, and `n^−1/3` for imputation bias in the sample size. The V18 one has a
-conjecture attached with a cheap discriminating test — `n^−1/3` is the classical
-nonparametric convergence rate, the Z block is BART, and the `fork`/`pipe` cells have a
-linear-Gaussian `Z₁` conditional, so a *parametric* imputer there should converge at −1/2
-instead. If the exponent tracks the imputer, this document gains its first mechanism for a
-**rate** rather than a magnitude (`PLAN_pipeline_validation.md` §8k).
+the censored fraction, and `n^−1/3` for imputation bias in the sample size. The V18 one carried a
+conjecture — that `n^−1/3` is the Z-block imputer's own nonparametric convergence rate
+showing up in the estimand — and **V19 refuted it** (2026-09-07). A second nonparametric
+imputer (`properBoot`) shows **no decay at all** (slope −0.029 [−0.087, +0.028]), and two
+*correctly specified* parametric imputers sit at **≈0** rather than the predicted −1/2. Family
+membership predicts nothing; **the split is BART versus everything else**. So both exponents
+remain measured and underived, and this document still has no mechanism for a rate.
+
+What V19 established instead is not theoretical but it is the more useful half: **BART is the
+only Z-block imputer whose bias decays with `n`**, and the only one whose coverage survives to
+n = 12,800 under a causally active covariate (0.87–0.92, against 0.78–0.84 for `micePmm`,
+0.61–0.62 for `properZ`, and **0.00** for `properBoot`). `phase1/FINDINGS_v19.md`.
 
 **What is still not derived is the exponent itself, and the constant.** The status improved
 from *unexplained observation* to **unexplained law**, which is a sharper target: a

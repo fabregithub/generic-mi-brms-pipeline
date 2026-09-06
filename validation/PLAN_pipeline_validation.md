@@ -1743,6 +1743,80 @@ separate them.
 
 ---
 
+## 8l. Track V19 — does the bias exponent track the Z-block imputer?
+
+> **STATUS: RESOLVED — 2026-09-07.** 5 `n` levels × 3 cells × 4 arms × 300 reps, 4,500 tasks,
+> **64.2 h against ~63 h projected**, zero errors. **The conjecture is refuted; BART is the
+> only Z-block imputer whose bias decays with `n`.** Full reading:
+> [`phase1/FINDINGS_v19.md`](phase1/FINDINGS_v19.md).
+
+**Registration.** The prediction and falsification criteria were written into
+`phase1/run_v19_imputer_rate.sh`'s header and committed before the run.
+
+### The conjecture and the design
+
+V18's n^−1/3 is the classical nonparametric convergence rate and the Z block is BART, so the
+bias might simply be the imputer's own rate. Testable cheaply because the `fork` and `pipe`
+cells have a **linear-Gaussian** `Z₁` conditional, making a parametric imputer correctly
+specified there: nonparametric arms should give ≈ −1/3, parametric ones ≈ −1/2. Two arms per
+family, so any split is a property of the family rather than an implementation.
+
+A null was registered as informative: the `leftcens` X block is common to all four arms, so
+one shared exponent would say the bias is not the Z imputer's and the next step is a
+decomposition rather than more imputers.
+
+### Outcome — pooled slopes over both on-path cells
+
+| arm | family | predicted | measured | |
+|---|---|---|---|---|
+| `bartMI` | nonparametric | −1/3 | **−0.311 [−0.389, −0.234]** | **decays** |
+| `properBoot` | nonparametric | −1/3 | **−0.029 [−0.087, +0.028]** | asymptotic |
+| `micePmm` | parametric, correct | −1/2 | **+0.097 [−0.031, +0.225]** | asymptotic |
+| `properZ` | parametric, correct | −1/2 | **+0.044 [−0.003, +0.091]** | asymptotic |
+
+**Every gate on the conjecture failed.** The families are not separated (the nonparametric
+pair spans 0.282 internally), the parametric arms sit above zero rather than at −1/2, and only
+`bartMI` lands near its family's predicted rate. **The split is BART versus everything else**,
+not nonparametric versus parametric.
+
+`bartMI`'s −0.311 **replicates V18's −0.335** under a different arm set and RNG stream
+(§10b) — the check that V18's exponent was not an artefact of its configuration.
+
+### The result that matters
+
+| arm | bias @ 12,800 | coverage @ 800 | coverage @ 12,800 |
+|---|---|---|---|
+| **`bartMI`** | **+2.1 / +2.0%** | 0.933 / 0.953 | **0.867 / 0.923** |
+| `micePmm` | +3.5 / +3.9% | 0.953 / 0.960 | 0.780 / 0.837 |
+| `properZ` | +5.0 / +6.3% | 0.943 / 0.950 | 0.623 / 0.607 |
+| **`properBoot`** | **−22.0 / −23.3%** | 0.557 / 0.577 | **0.000 / 0.003** |
+
+**R8's BART default is vindicated on a question it was never tested against.** It was adopted
+for calibration under a causally *inert* covariate; under a confounder or mediator it is the
+only imputer here whose bias shrinks and whose coverage survives scale.
+
+**`properBoot` — the v1.4.0 default and the `dbarts`-missing fallback — carries −23%
+asymptotic bias with coverage reaching zero.** It is reachable today via a v1.4.0-era
+`proper_draw = TRUE`, or when `z_imputer = "bart"` cannot load `dbarts`. That path warns
+loudly (`immediate. = TRUE`) and logs the imputer, so it is not silent, and it is the one
+failure mode coverage catches. **The recommendation is documentation, not a code change** —
+completing with a warning beats aborting, and this is one DGP.
+
+**Controls.** The oracle is unbiased at every `n` and cell (worst 0.59%). `mcar_z40`, the
+causally inert cell, shows the same arm ordering at a twentieth of the magnitude — which is
+why fifteen tracks measured the imputer choice there and found little.
+
+### What it leaves open
+
+The bias is **still not attributed to a block**: all four arms share the X block, yet three
+are flat and one decays, so a common X-block floor does not explain the pattern alone. And
+the original design wanted a *misspecified* parametric arm as the ≈0 contrast — both
+parametric arms turned out to be ≈0 while **correctly specified**, which makes that contrast
+more interesting and needs a cell with a non-linear `Z₁` conditional on an X–Y path. No
+scenario provides one.
+
+---
+
 ## 9. Track V4 — Variance attribution (and pilot `m`)
 
 > **STATUS: RESOLVED — 2026-08-25.** 5 scenarios × 4 arms × 300 reps, 1500 tasks, 5.25 h,

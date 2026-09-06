@@ -24,7 +24,7 @@ Keep this file current: the validation study is the evidence base for the claims
 README makes about bias, coverage and scope, so a stale entry here silently becomes a
 wrong claim in the documentation.
 
-Last updated: **2026-09-03** · after V18 — the shipped default's bias under a confounder or mediator decays as **n^−1/3**, rejecting both registered accounts. My V17 alarm was overstated (coverage 0.87–0.92 at n = 12,800, not 0.32–0.73) but **the defect is permanent**: 2–10% bias at every `n` tested, invisible to coverage
+Last updated: **2026-09-07** · after V19 — the imputer-rate conjecture is refuted, but **BART is the only Z-block imputer whose bias decays with `n`**. `forest_boot` (the v1.4.0 default, and the `dbarts`-missing fallback) carries **−23% asymptotic bias** under a confounder, coverage → 0
 
 ---
 
@@ -44,7 +44,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V18
+### Validation plan — Tracks V0–V19
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -70,6 +70,7 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V16 | **The root claim:** does omitting `Y` from the imputation attenuate — and in which block? | ✅ resolved | **Yes, −13.1 pp**, isolated inside one estimator for the first time (derived −14.6). The **exposure** block carries all of it; the covariate block **+1.2 pp**. The registered *leak* prediction **failed** — the blocks are additive here |
 | V17 | Does the covariate's **causal role** change any of this? fork · pipe · collider · mixed | ✅ resolved | **It decides it.** The covariate block's penalty is **+1.2 pp** when `Z` is inert and **+25 to +28** when `Z` is adjusted for *and* on an X–Y path. MAR-vs-MCAR adds ≈0. **New: the shipped default is +5% to +10.4% biased there, coverage 0.93–0.97** |
 | V18 | Does that bias wash out at larger `n`? | ✅ resolved | **No — and neither registered account survives.** Bias decays as **n^−0.335** (CI [−0.378, −0.291]), not 0 (constant) and not −0.5 (finite-sample). Coverage 0.87–0.92 at n = 12,800 against my projected 0.32–0.73 — **the V17 alarm was overstated**, the defect is permanent |
+| V19 | Does that decay rate track the Z-block **imputer**? | ✅ resolved | **No — family predicts nothing**, but only `bartMI` decays at all (−0.311). `properBoot` **−23% asymptotic, coverage → 0**; `properZ` and `micePmm` flat at +4 to +6%. **The v1.5.0 BART default is vindicated on a question it was never tested against** |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -122,45 +123,46 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed run — V18, 2026-09-03 (165 min)
+### ✅ Last completed run — V19, 2026-09-04 → 09-07 (64.2 h)
 
-Five `n` levels × 6 cells × 300 reps = 9,000 tasks, zero errors.
-[`phase1/FINDINGS_v18.md`](phase1/FINDINGS_v18.md) · verdict arithmetic:
-[`phase1/analyze_v18.R`](phase1/analyze_v18.R)
+5 `n` levels × 3 cells × 4 arms × 300 reps = 4,500 tasks, zero errors.
+[`phase1/FINDINGS_v19.md`](phase1/FINDINGS_v19.md) · verdict arithmetic:
+[`phase1/analyze_v19.R`](phase1/analyze_v19.R)
 
-**V17 found the shipped default biased +5% to +10.4% under a confounder or mediator with
-coverage still 0.93–0.97.** The explanation offered — a sample-size accident, bias constant
-while the SE shrinks — projected coverage collapsing to **0.32–0.73 at n = 12,800**. V18
-measured it against the competing account, that the bias is a finite-sample artefact washing
-out as `1/√n`.
+**The conjecture.** V18's n^−1/3 is the classical nonparametric convergence rate and the Z
+block is BART, so the bias might be the imputer's own rate. The `fork`/`pipe` cells have a
+linear-Gaussian `Z₁` conditional, so parametric imputers are correctly specified there and
+should reach −1/2. Two arms per family.
 
-**Both are wrong.** Relative bias of `pipeline_bartMI`:
+**Refuted — family membership predicts nothing:**
 
-| cell | 800 | 1,600 | 3,200 | 6,400 | 12,800 |
-|---|---|---|---|---|---|
-| `zr_fork` | 4.62% | 4.28% | 3.50% | 2.43% | **2.07%** |
-| `zr_pipe` | 4.78% | 3.01% | 2.70% | 2.03% | **2.00%** |
-| `zrmar_fork` | 7.71% | 7.24% | 5.70% | 4.02% | **2.90%** |
-| `zrmar_pipe` | 9.51% | 7.21% | 6.15% | 4.55% | **3.56%** |
+| arm | family | predicted | measured slope |
+|---|---|---|---|
+| `bartMI` | nonparametric | −1/3 | **−0.311 [−0.389, −0.234]** |
+| `properBoot` | nonparametric | −1/3 | −0.029 [−0.087, +0.028] |
+| `micePmm` | parametric, correct | −1/2 | +0.097 [−0.031, +0.225] |
+| `properZ` | parametric, correct | −1/2 | +0.044 [−0.003, +0.091] |
 
-Pooled slope **−0.335, 95% CI [−0.378, −0.291]** — excludes 0 *and* −0.5.
+**The split is BART versus everything else.** `bartMI` is the only arm whose CI excludes zero
+— the only imputer whose bias shrinks with data — and its −0.311 replicates V18's −0.335
+under a different arm set.
 
-**The V17 alarm was overstated.** Coverage at n = 12,800 is **0.867–0.923**, not 0.32–0.73.
-The coverage model was sound (it reproduces all 20 measured points to within 0.024 from
-measured inputs); the constant-bias premise fed into it was not.
+**What that means at scale**, coverage in `zr_fork` / `zr_pipe`:
 
-**The defect is permanent all the same.** Bias falls as n^−0.335 while the SE falls as
-n^−0.50, so bias/SE grows as n^0.17 and coverage is unbounded below — 3× slower in the
-exponent than claimed, reaching 0.80 somewhere between n ≈ 130,000 and 1.6 million. **At
-every sample size tested the shipped default carries 2–10% bias that coverage does not
-reveal.**
+| arm | bias @ 12,800 | coverage @ 800 | coverage @ 12,800 |
+|---|---|---|---|
+| **`bartMI`** | **+2.1 / +2.0%** | 0.933 / 0.953 | **0.867 / 0.923** |
+| `micePmm` | +3.5 / +3.9% | 0.953 / 0.960 | 0.780 / 0.837 |
+| `properZ` | +5.0 / +6.3% | 0.943 / 0.950 | 0.623 / 0.607 |
+| **`properBoot`** | **−22.0 / −23.3%** | 0.557 / 0.577 | **0.000 / 0.003** |
 
-**A conjecture with a cheap test.** n^−1/3 is the classical nonparametric convergence rate
-and the Z block is BART. In the `fork`/`pipe` cells the true `Z₁` conditional is
-linear-Gaussian, so a *parametric* imputer is correctly specified and should give −1/2
-instead. Same driver, different `ARMS`, ~2.6 h — registered as the V19 candidate.
+**R8's BART default is vindicated on a question it was never tested against** — it was
+adopted for calibration under a causally *inert* covariate. **And `forest_boot` carries −23%
+asymptotic bias under a confounder**: reachable today from a v1.4.0-era `proper_draw = TRUE`,
+or when `z_imputer = "bart"` cannot load `dbarts`. That path warns loudly and coverage
+catches it, so the recommendation is documentation, not a code change.
 
-*(Cost: 165 min against 2.6 h predicted.)*
+*(Cost: 64.2 h against ~63 h projected.)*
 
 ## Document map
 
@@ -191,6 +193,7 @@ instead. Same driver, different `ARMS`, ~2.6 h — registered as the V19 candida
 | [`phase1/FINDINGS_v16.md`](phase1/FINDINGS_v16.md) | V16: the root claim isolated — `−13.1 pp`, and the leak prediction refuted | Before citing Phase 1's H1, or claiming the blocks are separable |
 | [`phase1/FINDINGS_v17.md`](phase1/FINDINGS_v17.md) | V17: the covariate's causal role decides the covariate block, and the shipped default is +5% to +10.4% biased under a confounder or mediator | **Before quoting any covariate-block result (V4, V5–V7, V10, V12, V13)** — all were measured with an inert covariate |
 | [`phase1/FINDINGS_v18.md`](phase1/FINDINGS_v18.md) | V18: that bias decays as `n^−1/3` — permanent, but slower than V17 warned | Before quoting V17's coverage projection, or advising on large-`n` use |
+| [`phase1/FINDINGS_v19.md`](phase1/FINDINGS_v19.md) | V19: only BART's bias decays; `forest_boot` is −23% asymptotic with coverage → 0 | **Before changing `z_imputer`, or when `dbarts` is missing** |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),
 `run_v2_robustness.sh` (V2), `run_v4_variance.sh` (V4, V5, V6, V7 and V8 — the arm/scenario
