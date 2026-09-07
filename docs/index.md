@@ -29,6 +29,7 @@ Two files normally need editing for a new analysis — `00_config.R` and
 
 | Guide | What it covers |
 |---|---|
+| [Which covariates to adjust for](covariate-roles.md) | Confounder, mediator, collider or precision — the role decides whether adjusting is correct, **and how much bias the imputation adds** |
 | [Censored (below-detection-limit) exposures](censored-exposures.md) | Imputing exposures reported only as "below the LOD", what has been validated, **and the restriction against mixture/BKMR analyses** |
 | [Repeated measures](repeated-measures.md) | Several rows per subject: subject-wide versus row-wise imputation |
 

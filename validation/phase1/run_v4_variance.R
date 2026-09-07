@@ -70,7 +70,7 @@ if (is.null(.here) || !nzchar(.here)) {
 }
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
             "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
-            "bart_impute.R", "smc_impute.R")) {
+            "bart_impute.R", "smc_impute.R", "exact_fork.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -91,7 +91,9 @@ V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              # time, against pipeline_bartMI as the both-blocks reference.
              "pipeline_noYx", "pipeline_noYz", "pipeline_noYboth",
              # V17: auxiliary covariate, shipped vs documented behaviour.
-             "pipeline_auxZ_shipped", "pipeline_auxZ_asdoc")
+             "pipeline_auxZ_shipped", "pipeline_auxZ_asdoc",
+             # V20: block attribution under a fork/pipe (exact_fork.R).
+             "ef_bart_ship", "ef_exact_ship", "ef_bart_exact", "ef_exact_exact")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 

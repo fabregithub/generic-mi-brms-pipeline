@@ -46,6 +46,15 @@ Recommended values:
 | `binary_outcome` | Binary outcome for Bernoulli/logistic models | `low` |
 | `exposure` | Main exposure or predictor of scientific interest | treatment group, air pollution |
 | `covariate` | Adjustment variable / confounder / predictor | age, sex, income |
+
+> ⚠️ **`covariate` controls handling, not identification.** One value covers confounders,
+> mediators, colliders and precision covariates, and the pipeline cannot tell them apart.
+> Whether adjusting for a variable is *correct* is your judgement, and it matters: adjusting
+> for a **collider** (a variable caused by both the exposure and the outcome) moved a measured
+> exposure coefficient from **+0.40 to −0.10** on complete data, before imputation entered.
+> Missingness in a **confounder or mediator** also costs the exposure estimate +5% to +10%
+> bias that coverage does not reveal. See
+> [Which covariates to adjust for](covariate-roles.md).
 | `auxiliary` | Used for imputation only, not included in final model | extra baseline score |
 | `id` | Subject, cluster or row identifier | `ID`, `row_id` |
 | `time` | Measurement occasion, wave, visit or follow-up time | `time`, `wave` |
@@ -195,6 +204,15 @@ Important notes:
 `use_as_auxiliary` controls whether a variable is used in imputation but excluded from the final analysis model.
 
 This is useful for variables that help predict missingness or missing values, but are not part of the scientific model.
+
+> ⚠️ **Not honoured by the censored-exposure draw.** With the
+> `censored_exposure_block_fcs` strategy, `00_censored_exposure.R` builds the exposure draw's
+> predictor set from `use_in_model` alone, so an auxiliary variable informs the **covariate**
+> imputation and is silently left out of the **exposure** imputation. The measured effect is
+> under 1 percentage point, so this is a documentation gap rather than a numerical problem —
+> but if you are relying on an auxiliary specifically to inform a censored exposure, name it
+> explicitly in `analysis_spec$imputation$censored_exposure$predictors`, which overrides the
+> automatic set and is honoured in full.
 
 Examples:
 

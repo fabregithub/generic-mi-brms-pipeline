@@ -93,6 +93,7 @@ website:
           - docs/choosing-m.md
       - section: "Data situations"
         contents:
+          - docs/covariate-roles.md
           - docs/censored-exposures.md
           - docs/repeated-measures.md
       - section: "Running and reporting"

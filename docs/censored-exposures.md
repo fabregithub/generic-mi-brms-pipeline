@@ -147,10 +147,22 @@ study design, as noted above.
 > (parameters drawn from a posterior) *and* flexible enough for non-linear covariates.
 > Across 7 scenarios × 300 replications this gave the best bias of any variant tested
 > (≤1.3% everywhere) with **coverage 0.937–0.963**, and it costs ~4% of pipeline runtime.
-> Requires the `dbarts` package; if absent the pipeline warns and falls back to the v1.4.0
-> imputer. Set `z_imputer = "forest_boot"` or `"forest"` to reproduce a v1.4.0 or
-> pre-v1.4.0 analysis exactly — this is a **behaviour change**, so cite the pipeline
-> version used.
+>
+> **Scope, added 2026-09-07.** Every one of those 7 scenarios had a *causally inert*
+> covariate — independent of the exposures, or generated from them. Where a covariate is a
+> **confounder or a mediator** with substantial missingness, the same default carries **+5%
+> to +10% bias** at n = 800 (falling to ~2–4% at n = 12,800) and **coverage does not reveal
+> it**. The ≤1.3% figure does not transfer to that case. See
+> [Which covariates to adjust for](covariate-roles.md).
+>
+> **BART is nonetheless the right default, and more clearly than before**: it is the only
+> Z-block imputer measured whose bias *shrinks* with sample size. Requires the `dbarts`
+> package; **if absent the pipeline warns and falls back to `forest_boot`**, which under a
+> confounder carries **−23% bias that does not decay, with coverage reaching zero**. Install
+> `dbarts` before a real analysis and check the log's `Z-block imputer:` line to confirm
+> which imputer ran. Setting `z_imputer = "forest_boot"` or `"forest"` reproduces a v1.4.0 or
+> pre-v1.4.0 analysis exactly — a **behaviour change**, so cite the pipeline version used,
+> and do not expect the covariate path to be unbiased while you do.
 >
 > **What is and is not established.** Coverage is 0.937–0.963 across every tested
 > condition. Interval *width* readings ran 0–8% above the ideal, but those deviations are

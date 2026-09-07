@@ -361,6 +361,17 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   # Track V17: an auxiliary covariate, as shipped versus as documented.
   if ("pipeline_auxZ_shipped" %in% which)   out$axs   <- .ce_args(proc_pipeline_auxZ_shipped)
   if ("pipeline_auxZ_asdoc" %in% which)     out$axd   <- .ce_args(proc_pipeline_auxZ_asdoc)
+  # Track V20 (exact_fork.R): block attribution under a causally active
+  # covariate. A 2x2 of {Z block: shipped BART | exact} x {X block: shipped
+  # leftcens | exact}. `ef_bart_ship` is the CONTROL -- it must reproduce
+  # pipeline_bartMI, or the instrument is not the pipeline.
+  .ef_args <- function(f) f(bundle, m = m, seed = seed,
+                            sweeps = ce_control$outer_sweeps %||% 3L,
+                            margin = ce_control$margin %||% "shash")
+  if ("ef_bart_ship" %in% which)            out$efbs  <- .ef_args(proc_ef_bart_ship)
+  if ("ef_exact_ship" %in% which)           out$efes  <- .ef_args(proc_ef_exact_ship)
+  if ("ef_bart_exact" %in% which)           out$efbe  <- .ef_args(proc_ef_bart_exact)
+  if ("ef_exact_exact" %in% which)          out$efee  <- .ef_args(proc_ef_exact_exact)
   # Track V12 (smc_impute.R): the Z-block draw, shape versus mean. Both arms use
   # the same correct conditional mean; only the draw's shape differs.
   # A 2x2: {Z draw shape} x {X draw}. V12 could isolate the Z shape but not

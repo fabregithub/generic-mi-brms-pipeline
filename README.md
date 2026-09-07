@@ -59,6 +59,7 @@ repository.
 | [`docs/operations.md`](docs/operations.md) | Restarting an interrupted run, monitoring, CmdStan cache, debugging a fit |
 | [`docs/config-reference.md`](docs/config-reference.md) | Option-by-option reference for `00_config.R` |
 | [`docs/choosing-m.md`](docs/choosing-m.md) | How many imputations, the auto m-increment loop, and the three run modes |
+| [`docs/covariate-roles.md`](docs/covariate-roles.md) | Which covariates to adjust for — confounder, mediator, collider or precision — and how much bias the imputation adds when one is causally active |
 | [`docs/censored-exposures.md`](docs/censored-exposures.md) | Below-detection-limit exposures: the engine, its validation, and its scope limit |
 | [`docs/repeated-measures.md`](docs/repeated-measures.md) | Several rows per subject: subject-wide vs row-wise imputation |
 | [`docs/reporting.md`](docs/reporting.md) | Publication outputs, and Methods/Results text templates |
@@ -87,6 +88,19 @@ The multiple-imputation steps are intended for variables where a standard MICE-s
 If a variable has non-standard missingness, such as left-censored values below a detection limit, skip-pattern missingness or values missing for design reasons, process or model that missingness appropriately before using this pipeline. Do not simply code such values as ordinary `NA` and rely on the default MICE workflow unless that is justified for the study.
 
 Some models can be computationally expensive. In particular, large mixed logistic models, spline terms, monotonic ordinal terms and many imputations can take substantial time. Always start with a small quick test before a production run.
+
+**The covariate list is a modelling decision, and coverage will not check it for you.** The
+variable dictionary has one `role` value, `covariate`, for confounders, mediators, colliders
+and precision covariates alike — it controls handling, not identification. Validation measured
+what that costs: adjusting for a **collider** moved an exposure coefficient from **+0.40 to
+−0.10** on complete data, and missingness in a **confounder or mediator** adds **+5% to +10%**
+bias that the credible interval's coverage does not reveal (0.93–0.95). Neither is repaired by
+imputation. **→ [`docs/covariate-roles.md`](docs/covariate-roles.md)**
+
+**Install `dbarts` before a real analysis.** With it absent, `z_imputer = "bart"` warns and
+falls back to `forest_boot`, which under a confounder carries **−23% bias that does not shrink
+with sample size**. Confirm which imputer ran:
+`grep "Z-block imputer" run_all_stdout.log`.
 
 ---
 
