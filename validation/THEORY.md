@@ -44,6 +44,48 @@ three, and no amount of flexibility in modelling the *mean* recovers it.
 
 ---
 
+## 1b. When a violation reaches the estimand
+
+**Added 2026-09-09.** Clauses (A) and (B) say when the *draw* is right. They say nothing about
+when a wrong draw *matters*, and for seventeen tracks that gap was invisible because every
+scenario happened to sit on the same side of it. V17 measured it, and it belongs beside the
+condition rather than in the findings catalogue.
+
+> **Propagation.** A violation of the condition for variable `v` biases estimand `θ` only if
+> `v` is (i) **conditioned on by the analysis model**, and (ii) **on an open path between the
+> exposure and the outcome** in the data-generating process.
+
+Measured (V17, the Z-block `Y`-omission penalty on the focal exposure coefficient):
+
+| `v` | adjusted for? | on an open X–Y path? | penalty |
+|---|---|---|---|
+| precision covariate | yes | **no** | **+1.2 pp** |
+| confounder (fork) | yes | yes | **+25.5 pp** |
+| mediator (pipe) | yes | yes | **+28.2 pp** |
+| collider | **no** *(correctly omitted)* | yes | **−0.2 pp** |
+
+A factor of ~22 in the same arm, one arrow apart. **This is why fifteen tracks measured the
+covariate block and found small numbers** — they were all in the first row.
+
+**Note what the criterion is not.** An earlier version of this section keyed on the
+covariate's *association with the exposure*. The mediator refutes that: a pipe has no
+confounding path, yet produces the largest penalty of any role. Association is not the
+criterion; **adjusted-for-and-on-a-path** is.
+
+**And (i)–(ii) are necessary, not sufficient.** V22 found a covariate that satisfies both —
+adjusted for, on a pipe — where a *misspecified* imputation draw is nonetheless unbiased for
+the focal coefficient (−0.14%), because the misspecification lies in a direction the analysis
+absorbs: the error in approximating `g(logX1)` is taken up by `logX1`'s own coefficient. So a
+third question follows the first two: **is the violation orthogonal to what the analysis
+already adjusts for?** If it is, it does not reach that estimand — though it would reach an
+estimand depending on `v`'s own coefficient, for which no such absorption exists.
+
+**Consequence for reading this document.** Every magnitude in §§2–4 is an estimand-specific
+number. The condition is a property of the imputation; whether violating it costs anything is
+a property of the imputation *and* the DAG *and* the estimand. All three have to be named.
+
+---
+
 ## 2. The boundary, derived and verified
 
 ### Covariate block
@@ -166,7 +208,9 @@ drawing the DAG is what surfaced that, at the cost of a registered prediction wi
 before the run. **V17 built the missing structures, and the derivation (2026-09-03,
 `phase1/predict_roles.R`) states the qualifier sharply:**
 
-**MEASURED, 2026-09-03** (500 reps; the derived predictions are in brackets):
+**MEASURED, 2026-09-03** (500 reps; the derived predictions are in brackets). The
+propagation rule these numbers established has since been promoted to **§1b**, beside the
+condition itself, because it governs how every other magnitude in this document is read:
 
 | covariate `Z` | adjusted for? | on an X–Y path? | penalty, MCAR | penalty, MAR-on-`Y` |
 |---|---|---|---|---|
@@ -378,6 +422,65 @@ to be chain length or the GPP approximation; and why MAR is *easier* than MCAR (
 
 ---
 
+## 4b. Two rates, not one — and why the currency of a claim matters
+
+**Added 2026-09-09.** Everything this document measures is a *bias*. Every decision made from
+it compares that bias to a *standard error*. Those two move at different rates in `n`, so a
+claim stated in one currency can be silently wrong in the other — and for seventeen tracks
+this project stated all of its bars in the wrong one.
+
+> bias decays as **n^−1/3** (V18, replicated in V19, V20, V21)
+> the standard error decays as **n^−1/2**
+> therefore **bias / SE grows as n^(1/6)** — measured at n^0.10 to n^0.17
+
+**A relative-bias bar therefore gets easier to pass exactly as the bias becomes more
+consequential.** What the old 10% bar permitted, using each run's own measured `emp_se`:
+
+| `n` | emp. SE | 10% of `b₁` | in SE units | share of a 2.8-SE detectable effect |
+|---|---|---|---|---|
+| 800 | 0.054 | 0.040 | 0.74 | 26% |
+| 3,200 | 0.028 | 0.040 | 1.45 | 52% |
+| 12,800 | 0.015 | 0.040 | 2.67 | **95%** |
+
+At `n` = 12,800 a result passing the old bar could carry a bias nearly as large as the effect
+the study is powered to find. **The convention changed on 2026-09-08**
+(`PLAN_pipeline_validation.md` §11): report `bias/SE`, gate at ≤ 0.3, and leave the
+conversion to a share of the detectable effect to the reader — **because the target effect is
+a choice, not a constant.** A 5% change is a common epidemiological convention; a
+no-threshold setting, such as ionising radiation and cancer risk, has no such floor and the
+same absolute bias consumes a much larger share of whatever is being detected.
+
+**This is a theoretical point, not only an administrative one.** It says that a defect's
+*consequence* has a different exponent from its *magnitude*, so any account that predicts one
+without the other is incomplete. §4's `f²` and `n^−1/3` are magnitude laws; the decision-
+relevant quantity is their ratio against `n^−1/2`, and nothing here derives that ratio from
+first principles.
+
+### Direction, and why it is not a detail
+
+A magnitude cannot be acted on without a sign. The three cases differ in kind:
+
+| direction | meaning | how it can be handled |
+|---|---|---|
+| **toward the null** | conservative — risks missing a real effect | disclosable; a stated attenuation can be lived with |
+| **away from the null** | anti-conservative — inflates or invents an exposure–response | **dangerous**, especially where any positive finding drives policy |
+| **sign flips** with a design parameter | neither | **no single correction and no single caveat covers it** |
+
+The third is not hypothetical: V15 found the curvature estimate **inverting** past `f` ≈ 0.55,
+so the same pipeline both attenuates and reverses depending on the non-detect rate.
+
+**And the record has an asymmetry worth stating plainly.** Across 118 shipped-arm cells in
+V16–V23, 75 are away from the null and 43 toward it — and the split is not random. **The
+defects this project has closed were the conservative ones** (an omitted `Y`, −13%; the
+improper Z block; `forest_boot`, −23%). **Both defects still open are anti-conservative**:
+the covariate-block defect at +4.4% to +10.4%, and the censored-exposure defect at ~+20%
+asymptotic. The full ledger is `PLAN_pipeline_validation.md` §11b.
+
+That ordering should drive what gets fixed next. A conservative defect can be documented; an
+anti-conservative one manufactures findings.
+
+---
+
 ## 5. What the condition is good for
 
 Even without magnitudes, (A) and (B) are **decision-useful**, because they are checkable
@@ -421,6 +524,12 @@ it was right; it was that a wrong number would have been visible as such.
 
 **Predictions that fail stay in this document** with the superseding result beside them, on
 the same principle by which findings are corrected rather than overwritten.
+
+**Three things must be named for any magnitude quoted from here**, and §1b and §4b are why:
+the **estimand** (a violation reaches some and not others), the **currency** (`bias/SE`, not
+relative bias — they move at different rates in `n`), and the **direction** (conservative,
+anti-conservative, or sign-flipping). A number without all three is not actionable, and every
+figure in this document registered before 2026-09-08 was quoted without the second.
 
 ---
 

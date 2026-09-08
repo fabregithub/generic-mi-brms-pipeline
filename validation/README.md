@@ -185,7 +185,7 @@ defect.**
 | Document | What it is | Read it when |
 |---|---|---|
 | [`INTEGRATION_SUMMARY.md`](INTEGRATION_SUMMARY.md) | **Start here.** Requirement → design → implementation → evidence traceability; open blocks with theoretical resolutions; the claims ledger | Orienting, writing methods text, or checking what may be claimed |
-| [`THEORY.md`](THEORY.md) | **Why the pipeline fails where it fails.** One congeniality condition, derived and numerically exact, that explains all thirteen tracks — plus an explicit list of what is *not* derived | Before designing a fix, or when a new result looks surprising |
+| [`THEORY.md`](THEORY.md) | **Why the pipeline fails where it fails.** One congeniality condition (§1), when a violation of it actually reaches an estimand (§1b), the derived mechanism behind the censored-exposure defect and the reason its law is quadratic (§3c), the two rates that make `bias/SE` the right currency and direction a first-class quantity (§4b), and an explicit list of what is *not* derived (§4) | Before designing a fix, quoting any magnitude, or when a new result looks surprising |
 | [`ROADMAP.md`](ROADMAP.md) | What is left to do, in dependency order | Deciding what to work on next |
 | [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposure_integration.md) | The design/theory document: congeniality argument, two-engine block-FCS, estimand gates | Understanding *why* the feature is built the way it is |
 | [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md) | The validation plan: tracks, pre-registered acceptance criteria, gates | Before running a validation track, to see its criteria |
