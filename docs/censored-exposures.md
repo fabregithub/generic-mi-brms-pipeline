@@ -148,6 +148,15 @@ study design, as noted above.
 > Across 7 scenarios × 300 replications this gave the best bias of any variant tested
 > (≤1.3% everywhere) with **coverage 0.937–0.963**, and it costs ~4% of pipeline runtime.
 >
+> **⚠️ Added 2026-09-08 — a separate and larger limit.** `leftcens` draws each below-LOD
+> value from a conditional **linear in its predictors** (the skew-aware part is the *margin*,
+> not the mean). If a covariate has a genuinely **non-linear** relationship with a censored
+> exposure, that cannot be represented: measured at **~20% bias in the exposure coefficient,
+> flat from n = 800 to 12,800** — asymptotic, and not coverage-detectable. Check for curved or
+> saturating covariate–exposure relationships before trusting this path, and pass linearising
+> terms explicitly via `censored_exposure$predictors` if you find one. Detail and remedies:
+> [Which covariates to adjust for](covariate-roles.md#a-non-linear-covariateexposure-relationship-breaks-the-censored-exposure-draw).
+>
 > **Scope, added 2026-09-07.** Every one of those 7 scenarios had a *causally inert*
 > covariate — independent of the exposures, or generated from them. Where a covariate is a
 > **confounder or a mediator** with substantial missingness, the same default carries **+5%

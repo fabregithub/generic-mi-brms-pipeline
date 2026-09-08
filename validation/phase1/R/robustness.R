@@ -130,7 +130,8 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          n = 800L, m = 30L, n_rep = NULL, rho = 0.4, skew = 0.0,
                          censor_all = FALSE, mcar_frac = 0.0, y_frac = 0.0,
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
-                         y_form = "linear", z_role = "precision", seed_as = NULL) {
+                         y_form = "linear", z_role = "precision",
+                         nl_a = NULL, nl_c = NULL, seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
        skew = skew, censor_all = censor_all, mcar_frac = mcar_frac,
@@ -138,6 +139,8 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
        mar_frac = mar_frac, mar_strength = mar_strength, y_form = y_form,
        # V17: the covariate's causal role -- see make_truth() in dgp.R.
        z_role = z_role,
+       # V23: the non-linear arrow's shape, swept to test bias ~ u^2.
+       nl_a = nl_a, nl_c = nl_c,
        # `seed_as` makes this cell draw its data with ANOTHER cell's seed, so the
        # two see byte-identical exposures, covariates and outcome noise and differ
        # only in the feature under test. That turns a cell-vs-cell contrast from
@@ -289,7 +292,26 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("zr_pipenl",      "z_role", nd_frac = 0.0, mcar_frac = 0.4, z_role = "pipe_nl",
                  seed_as = "zr_pipe_nc"),
     .v2_scenario("zr_pipenl_cens", "z_role", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl",
-                 seed_as = "zr_pipe")
+                 seed_as = "zr_pipe"),
+
+    # ---- V23: the curvature sweep, testing bias ~ u^2 --------------------------
+    # DERIVATION-LED, unlike V22 which found the ~20% defect by surprise. The
+    # damage is not "how big is g" but how much of g a LINEAR conditional cannot
+    # express where the censored mass sits -- `ef_unrep_curvature()`, written u.
+    # And it should enter SQUARED, because that residual is orthogonal to the
+    # span of the linear predictors, so the first-order term in the bias
+    # expansion vanishes. See ef_unrep_curvature()'s docs in dgp.R.
+    #
+    # `cv262` is the calibration point (V22's own arrow, u = 0.262). Everything
+    # else is a prediction. `cv000` is the null: g == 0 means the arrow is gone
+    # and there is nothing for a linear draw to miss.
+    .v2_scenario("cv000", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.0, nl_c = 0.00),
+    .v2_scenario("cv040", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.4, nl_c = 0.00),
+    .v2_scenario("cv119", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.8, nl_c = 0.10),
+    .v2_scenario("cv153", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.0, nl_c = 0.35),
+    .v2_scenario("cv182", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.8, nl_c = 0.25),
+    .v2_scenario("cv262", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 1.2, nl_c = 0.35),
+    .v2_scenario("cv364", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 1.6, nl_c = 0.50)
   )
 }
 

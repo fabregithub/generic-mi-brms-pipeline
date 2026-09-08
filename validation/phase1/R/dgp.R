@@ -53,7 +53,8 @@ if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
 #'   recoverable, so any bias is attributable to the imputation model and never
 #'   to analysis misspecification.
 make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
-                       y_form = "linear", z_role = "precision") {
+                       y_form = "linear", z_role = "precision",
+                       nl_a = NULL, nl_c = NULL) {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -132,7 +133,8 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     # pipe_nl: Z1 = a*tanh(b*logX1) + c*(logX1^2 - 1) + noise. `tanh` gives
     # saturation and the square gives curvature -- neither representable by a
     # linear conditional, both learnable by BART.
-    nl_a = 1.20, nl_b = 1.80, nl_c = 0.35, nl_sd = 0.80,
+    # V23 sweeps these, so a scenario may override them; NULL keeps V22's values.
+    nl_a = nl_a %||% 1.20, nl_b = 1.80, nl_c = nl_c %||% 0.35, nl_sd = 0.80,
     # Under "pipe" the adjusted analysis estimates the DIRECT effect, which is
     # b[1]. Recorded here so the distinction is in the object rather than only in
     # a comment -- it is not the estimand, and must never be swapped in as one.
@@ -156,6 +158,35 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
 #' and would still return believable numbers.
 ef_nl_g <- function(x, truth) {
   truth$nl_a * tanh(truth$nl_b * x) + truth$nl_c * (x^2 - 1)
+}
+
+#' The part of the non-linear arrow `g()` that a LINEAR conditional cannot
+#' represent over the censored region -- V23's derived predictor.
+#'
+#' WHY THIS QUANTITY. `leftcens` draws a censored exposure from a conditional
+#' LINEAR in its predictors. The true conditional for a censored logX1 contains
+#' `p(Z1 | logX1) = N(Z1; g(logX1), s^2)`, whose log contributes
+#' `-(Z1 - g(logX1))^2 / 2s^2` -- non-linear in logX1 wherever `g` is curved. So
+#' the damage is not "how big is g" but **how much of g a straight line cannot
+#' express, where the censored mass actually is**: the density-weighted residual
+#' SD of `g` after its best linear fit below the LOD.
+#'
+#' WHY IT SHOULD ENTER SQUARED. That residual is by construction ORTHOGONAL (in
+#' the density-weighted L2 sense) to the span of the linear predictors. A
+#' first-order expansion of the bias functional pairs the misspecification with
+#' the score, and orthogonality kills that term -- so the leading contribution is
+#' second order. Hence `bias ~ u^2` rather than `~ u`. This is a heuristic
+#' argument, not a proof, and V23 is its test.
+#'
+#' @param truth A list from `make_truth()` with `nl_a`, `nl_b`, `nl_c`.
+#' @param nd_frac The censored fraction, which sets where the LOD falls.
+ef_unrep_curvature <- function(truth, nd_frac = 0.40, n_grid = 4000L) {
+  L  <- stats::qnorm(nd_frac)
+  xs <- seq(L - 5, L, length.out = n_grid)
+  wt <- stats::dnorm(xs); wt <- wt / sum(wt)
+  g  <- truth$nl_a * tanh(truth$nl_b * xs) + truth$nl_c * (xs^2 - 1)
+  if (stats::sd(g) == 0) return(0)
+  sqrt(sum(wt * stats::residuals(stats::lm(g ~ xs, weights = wt))^2))
 }
 
 #' Simulate one complete (uncensored, fully observed) dataset from the ERF.

@@ -184,7 +184,8 @@ print_v4 <- function(s) {
     # y_form defaults to "linear", so every pre-V11 scenario is unchanged.
     truth  <- make_truth(p = 3L, erf_form = sc$erf_form,
                          y_form = sc$y_form %||% "linear",
-                         z_role = sc$z_role %||% "precision")
+                         z_role = sc$z_role %||% "precision",
+                         nl_a = sc$nl_a, nl_c = sc$nl_c)
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(

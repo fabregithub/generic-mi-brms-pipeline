@@ -24,7 +24,7 @@ Keep this file current: the validation study is the evidence base for the claims
 README makes about bias, coverage and scope, so a stale entry here silently becomes a
 wrong claim in the documentation.
 
-Last updated: **2026-09-07** · after V21 — the bias is **BART's smoothing, 100% of it**: a correctly specified *estimated* covariate draw is unbiased (+0.3 / +0.6%). So a fix exists in principle — but it is a **trade** (flexibility for correct specification) and this run tests only the side where parametric wins. User guidance in [`docs/covariate-roles.md`](../docs/covariate-roles.md)
+Last updated: **2026-09-08** · after V22 — **there is no trade**: a parametric covariate draw wins on both sides (−0.14% against BART's +2.84% where the covariate conditional is non-linear), so a fix is real. **And a larger separate defect: ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** — now the biggest open item
 
 ---
 
@@ -44,7 +44,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V21
+### Validation plan — Tracks V0–V22 (V23 registered)
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -73,6 +73,8 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V19 | Does that decay rate track the Z-block **imputer**? | ✅ resolved | **No — family predicts nothing**, but only `bartMI` decays at all (−0.311). `properBoot` **−23% asymptotic, coverage → 0**; `properZ` and `micePmm` flat at +4 to +6%. **The v1.5.0 BART default is vindicated on a question it was never tested against** |
 | V20 | **Which block** carries that bias? | ✅ resolved | **The covariate draw.** Fixing the Z block removes **85–104%**; fixing the exposure draw **0.1–11.7%**; interaction ≤0.40 pp. **All registered gates passed** — the first since V15. So **item 07 is not the fix for this**, and a shippable Z-block fix is the open question |
 | V21 | **Which property** of the covariate draw has to be right? | ✅ resolved | **Flexibility, and nothing else.** BART's smoothing carries **100%**; a correctly specified estimated draw is **+0.3 / +0.6%**, and so are improper and donor-matched versions. Properness moves the *interval* (`b` −12–16%), not the bias. **A fix exists in principle — but it is a trade, and the deciding cell (non-linear covariate conditional, on-path) does not exist yet** |
+| V22 | Is a parametric covariate draw a **fix**, or a different bug? | ✅ resolved | **A fix — there is no trade.** It is unbiased (−0.14%) even where the covariate conditional is non-linear and it is *misspecified*, because the analysis absorbs the error; BART is +2.84% there. **Separately: the censored-exposure draw carries ~20% ASYMPTOTIC bias under a non-linear covariate arrow** |
+| V23 | The censored-exposure defect, **derived first** | 📋 registered | Mechanism derived rather than measured: `leftcens` is linear in its predictors, so the damage is `u` = the part of a non-linear covariate arrow a line cannot express below the LOD — and it should enter **squared**, because `u` is an L²-projection residual. Registered law **bias% = 300·u²**. `phase1/run_v23_curvature.sh`, ~4.8 h |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -125,48 +127,48 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed run — V21, 2026-09-07 (316 min)
+### ✅ Last completed run — V22, 2026-09-08 (435 min)
 
-3 `n` levels × 2 cells × 6 arms × 500 reps = 3,000 tasks, zero errors.
-[`phase1/FINDINGS_v21.md`](phase1/FINDINGS_v21.md) · verdict arithmetic:
-[`phase1/analyze_v21.R`](phase1/analyze_v21.R)
+3 `n` levels × 3 cells × 7 arms × 500 reps = 4,500 tasks, zero errors.
+[`phase1/FINDINGS_v22.md`](phase1/FINDINGS_v22.md) · verdict arithmetic:
+[`phase1/analyze_v22.R`](phase1/analyze_v22.R)
 
-**V20 located the bias in the covariate draw; V21 asked which *property* of that draw has to
-be right.** A ladder from V20's known-unbiased exact anchor to BART, changing one property at
-a time.
+**V21 left one objection standing.** It found a correctly specified estimated covariate draw
+unbiased — but both its cells had a *linear-Gaussian* covariate conditional, so every
+parametric arm was correct by construction. R8 adopted BART precisely because a parametric Z
+block is misspecified when that conditional is non-linear (V6: −4.70%). Trading a 5% bias
+under linearity for a 5% bias under non-linearity would not be a fix.
 
-| arm | `zr_fork` @ 800 → 12,800 | `zr_pipe` | share of the span |
-|---|---|---|---|
-| `exact` *(anchor)* | −0.05% → −0.01% | +0.31% → +0.21% | 0% |
-| `fit_proper` | **+0.26%** → −0.03% | **+0.58%** → +0.24% | 6.6% / 5.8% |
-| `fit_improper` | +0.01% → −0.02% | +0.41% → +0.26% | 1.3% / 2.1% |
-| `pmm` | +0.07% → −0.04% | +0.64% → +0.23% | 2.5% / 7.0% |
-| **`bart`** | **+4.73%** → +1.31% | **+5.11%** → +1.64% | **100%** |
+**There is no trade.** In the non-linear cell:
 
-**It is the flexibility, and nothing else.** A correctly specified *estimated* linear draw is
-unbiased; so is an improper one, and so is a donor-matched one. Properness behaves exactly as
-V4 predicted — it moves the **interval** (`b` down 12–16%, coverage 0.95 → 0.94), not the
-point estimate. The inner-FCS loop contributes nothing. Every registered gate passed, and
-V21's BART arm matches V20's to ≤0.10 pp.
+| arm | `zr_pipe_nc` (linear) | `zr_pipenl` (**non-linear**) |
+|---|---|---|
+| `exact` *(anchor)* | −0.34% | −0.59% |
+| **`fit_proper`** | **−0.22%** | **−0.14%** |
+| **`bart`** | **+4.44%** | **+2.84%** |
 
-**A fix exists in principle** — that was the consequential registered outcome, and it went
-the useful way: had a correct estimated draw exceeded 2 pp, there would be no fix at all.
+The parametric draw wins in *both* cells, by 4.66 pp and 2.98 pp — **unbiased even where it is
+misspecified**, by the mechanism registered in advance: the analysis conditions on `logX1`, so
+a linear draw's error in approximating `g(logX1)` is absorbed by `logX1`'s own coefficient.
+**Estimand-specific** — for an estimand depending on `Z1`'s own coefficient there is no such
+absorption.
 
-**But it is a trade, and this run tests one side of it.** Both cells have a linear-Gaussian
-covariate conditional, so every parametric arm is correct *by construction*. R8 adopted BART
-precisely because a parametric Z block is misspecified when that conditional is non-linear —
-V6 measured `mice pmm` at −4.70% there. Trading a 5% bias under linearity for a 5% bias under
-non-linearity is not a fix. **The deciding cell — a non-linear covariate conditional on an
-X–Y path — does not exist in the harness** and has to be built before anything is shipped.
+**One gate missed and its pre-written reading is withdrawn.** `bart` came in at +2.84% under a
+≥3% bar whose registered interpretation was "nothing to fix". The neighbouring numbers refute
+it: BART's penalty shrinks (4.44 → 2.84%) but does not vanish, and `fit_proper` still beats it
+by 2.98 pp. The registered *arm comparison* was the right instrument and it passed.
 
-**One discrepancy, located rather than explained away.** V19 measured `micePmm` and `properZ`
-at +2.4 to +6.3% asymptotic, both parametric; here every parametric arm is ±0.6%. The driver
-registered that boundary in advance: `z21_pmm` draws `Z1` alone on the correct formula, while
-`micePmm` imputes `Z1`, `Z2` **and `Y`** together with mice's own predictor matrix. So the
-*property* suffices and the *implementations* fail for some other reason — now the narrowed
-open question.
+**And a larger defect the track was not built to find.** With the exposure censored under the
+same non-linear arrow, the exact-`Z` anchor sits at **+20.8 / +20.3 / +20.3%** — flat in `n`.
+**The X block alone carries ~20%, asymptotically**, 2–4× the covariate-draw defect this line
+of work has been chasing, and it lands on the censored-exposure draw itself. `leftcens`'s
+conditional is linear in its predictors by construction, so a covariate with a non-linear
+relationship to the censored exposure is outside what it can represent — and no cell before
+V22 had one. That cell has no anchor and no shipped baseline, so it is a signal to
+investigate, not a decomposed result. **It needs its own track and is now the largest open
+defect.**
 
-*(Cost: 316 min against 4.9 h predicted.)*
+*(Cost: 435 min against 7.0 h predicted.)*
 
 ## Document map
 
@@ -200,6 +202,8 @@ open question.
 | [`phase1/FINDINGS_v19.md`](phase1/FINDINGS_v19.md) | V19: only BART's bias decays; `forest_boot` is −23% asymptotic with coverage → 0 | **Before changing `z_imputer`, or when `dbarts` is missing** |
 | [`phase1/FINDINGS_v20.md`](phase1/FINDINGS_v20.md) | V20: the bias is the **covariate draw** — 85–104% of it — not the exposure draw | **Before treating item 07 as the fix for the confounder bias** |
 | [`phase1/FINDINGS_v21.md`](phase1/FINDINGS_v21.md) | V21: it is BART's **smoothing**; a correctly specified estimated draw is unbiased — but the fix is a trade, untested on the side that matters | **Before proposing a parametric Z block as the fix** |
+| [`THEORY.md` §3c](THEORY.md) | The first derived mechanism with a **reason for the quadratic form** — and a candidate explanation for V15's `f²` | Before treating the measured exponents as unexplained |
+| [`phase1/FINDINGS_v22.md`](phase1/FINDINGS_v22.md) | V22: the trade does not exist — the parametric draw wins on both sides. **And ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** | Before proposing the Z-block fix, and **before trusting the censored-exposure draw with a non-linear covariate** |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),
 `run_v2_robustness.sh` (V2), `run_v4_variance.sh` (V4, V5, V6, V7 and V8 — the arm/scenario

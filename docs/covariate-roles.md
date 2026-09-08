@@ -98,13 +98,22 @@ correct conditional — leaving the exposure imputation exactly as it is — bri
 within ±0.5% of zero at every sample size tested. The two blocks turn out to act
 independently here: their combined effect is their sum, to within 0.4 percentage points.
 
-**What that means for you as a user, today:** the exposure side of this pipeline is not the
-problem when your covariate is causally active. The imputation of the *covariate* is, and
-there is no drop-in replacement for it yet — the correct conditional is only available when
-the data-generating process is known, which it is in a simulation and is not in your study.
-Two parametric imputers that *are* correctly specified for the covariate were also tested and
-carried +4% to +6% bias that does not shrink with sample size, so simply switching to a
-parametric covariate imputer is **not** a workaround.
+**What that means for you as a user, today:** the imputation of the *covariate* is where this
+bias comes from, and there is no drop-in replacement yet.
+
+Later validation narrowed it further: the bias is specifically the **flexibility** of the
+default covariate imputer. A draw from a correctly specified *parametric* conditional is
+unbiased — and, perhaps surprisingly, stays unbiased even when that conditional is
+**misspecified**, because the analysis model already adjusts for the variable carrying the
+misspecification and absorbs it. So a parametric covariate draw is a genuine candidate fix,
+not a different bug.
+
+**But it is not something you can switch on.** It needs a conditional *form* supplied for
+every covariate, which is exactly the burden the flexible default removes. And the two
+parametric imputers already in the pipeline were measured at +4% to +6% bias that does not
+shrink with sample size — for reasons still not understood, and not shared by the property
+itself. **So do not switch `z_imputer` hoping to avoid this.** Keep the default and use the
+guidance below.
 
 So the guidance below is what the evidence currently supports. It is deliberately
 conservative: reduce the exposure to the problem rather than try to correct it.
@@ -173,6 +182,39 @@ just do not expect the covariate path to be unbiased while you do.
 
 ---
 
+## ⚠️ A non-linear covariate–exposure relationship breaks the censored-exposure draw
+
+Everything above is about imputing the *covariate*. There is a separate and larger problem on
+the *exposure* side, and it applies only to the `censored_exposure_block_fcs` strategy.
+
+`leftcens` draws each below-LOD exposure value from a conditional that is **linear in its
+predictors**. That is a deliberate design choice — the skew-aware part of it is the *margin*,
+not the mean. So if one of your covariates has a genuinely **non-linear** relationship with a
+censored exposure, that relationship cannot be represented, and the exposure imputation is
+misspecified in a way no amount of data fixes.
+
+Measured: with a covariate related to the censored exposure through
+`tanh` plus a quadratic, the exposure coefficient carried **~20% bias, flat across
+n = 800 to 12,800** — asymptotic, not a small-sample artefact, and 2–4× the covariate-draw
+bias described above.
+
+**What to do:**
+
+- **Check for it.** Plot each censored exposure against your covariates on the scale you
+  model them. A visibly curved or saturating relationship is the warning sign.
+- **Linearise it if you can.** A transform of the covariate that straightens the relationship
+  (log, spline basis expanded into the predictor set) puts it back inside what the draw can
+  represent. Passing the expanded terms explicitly via
+  `analysis_spec$imputation$censored_exposure$predictors` is the mechanism.
+- **If you cannot, treat the exposure–response estimate as biased** and say so. This is not
+  a coverage-detectable failure.
+
+This was found in the same run that resolved the covariate-draw question, and it is the
+largest open defect in the censored-exposure path. It has not yet been decomposed — see
+[`validation/phase1/FINDINGS_v22.md`](../validation/phase1/FINDINGS_v22.md).
+
+---
+
 ## `use_as_auxiliary` does not reach the censored-exposure draw
 
 If you mark a variable `impute_target = FALSE`, `use_in_model = FALSE`,
@@ -206,10 +248,13 @@ That overrides the automatic set and is honoured in full.
 | The imputer comparison, and `forest_boot`'s −23% | [`validation/phase1/FINDINGS_v19.md`](../validation/phase1/FINDINGS_v19.md) |
 | Why `Y` belongs in every imputation block | [`validation/phase1/FINDINGS_v16.md`](../validation/phase1/FINDINGS_v16.md) |
 | That the bias is the **covariate** draw, not the exposure draw | [`validation/phase1/FINDINGS_v20.md`](../validation/phase1/FINDINGS_v20.md) |
+| That it is the imputer's **flexibility**, and a parametric draw is a real candidate fix | [`validation/phase1/FINDINGS_v21.md`](../validation/phase1/FINDINGS_v21.md), [`FINDINGS_v22.md`](../validation/phase1/FINDINGS_v22.md) |
+| The ~20% asymptotic bias when a covariate relates non-linearly to a censored exposure | [`validation/phase1/FINDINGS_v22.md`](../validation/phase1/FINDINGS_v22.md) |
 
 **What is not yet known:** what a shippable replacement for the covariate draw would be. The
-bias is now located — it is the covariate imputation — but the correct conditional used to
-demonstrate that relies on knowing the data-generating process, and the obvious substitutes
-were already ruled out: two parametric imputers correctly specified for the covariate still
-carried +4% to +6% non-shrinking bias. Until that is solved the guidance above is the whole
-of the remedy.
+bias is located (the covariate imputation) and its cause identified (the imputer's
+flexibility), and a parametric draw is now known to work on both sides of the trade that
+stood against it. What is missing is a way to get a conditional form for every covariate
+without asking the analyst for it — and an explanation of why the two parametric imputers
+already present carry +4% to +6% bias when the *property* does not. Until both are settled the
+guidance above is the whole of the remedy.

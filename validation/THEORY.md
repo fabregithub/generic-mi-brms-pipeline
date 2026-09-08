@@ -247,6 +247,54 @@ quirk of this engine.
 
 ---
 
+## 3c. A derived mechanism, and a reason for the quadratic form
+
+**Added 2026-09-08.** Until now this document recorded two measured exponents it could not
+produce (§4). V22's ~20% censored-exposure defect looked like a third. It is not — it is
+derivable, and the derivation supplies something the earlier laws never had: a **reason for
+the square**.
+
+**Why the defect must exist.** `leftcens` draws a censored exposure from a conditional
+**linear in its predictors**. Where a covariate satisfies `Z = g(X)` with `g` non-linear, the
+true conditional for a censored `X` contains
+
+> `p(Z | X) = N(Z; g(X), s²)`, whose log contributes `−(Z − g(X))² / 2s²`
+
+— non-linear in `X` wherever `g` is curved, and therefore outside what a linear-Gaussian draw
+can represent. This follows from reading the conditional `leftcens` fits; it needs no
+simulation.
+
+**Why it is asymptotic.** The fitted coefficients converge to the best *linear* approximation
+of a non-linear target. That approximation stays wrong at every `n`, so the bias does not
+decay — which is what V22 measured (+20.8 / +20.3 / +20.3% across a 16× range of `n`).
+
+**What governs its size.** Not the amplitude of `g` but **how much of `g` a straight line
+cannot express where the censored mass sits**: the density-weighted residual SD of `g` after
+its best linear fit below the LOD. Write it `u` (`ef_unrep_curvature()` in
+`phase1/R/dgp.R`). A 5-setting probe separates the two: a `tanh`-only arrow with `sd(g)` =
+1.20 — as large as V22's — gives **+0.09%** bias, because `tanh` saturates and is nearly
+linear-fittable over the censored region, while V22's arrow at `u` = 0.262 gives **+22.3%**.
+
+**Why `u` enters SQUARED.** `u` is by construction orthogonal, in the density-weighted L²
+sense, to the span of the linear predictors — it is the residual of that projection. A
+first-order expansion of the bias functional pairs the misspecification with the score, and
+orthogonality annihilates that term. The leading contribution is therefore **second order**:
+
+> **bias ≈ k · u²**
+
+This is a heuristic argument rather than a proof, and V23
+(`PLAN_pipeline_validation.md` §8p) is its test — with the log–log slope's CI excluding 2 as
+the condition that would kill it.
+
+**What it may explain beyond itself.** §4's `f²` law for curvature attenuation has been frank
+curve-fitting since V15. If the orthogonality argument is right, any misspecification
+expressible as an L²-projection residual should enter the bias quadratically — and the censored
+fraction's effect may be one. That would turn `f²` from a fitted shape into a consequence.
+**Not claimed here**; recorded as the first candidate mechanism this document has had for a
+rate rather than a magnitude.
+
+---
+
 ## 4. What is *not* derived
 
 **No closed form for the magnitudes when (A) fails.** Under a non-linear outcome the
@@ -272,6 +320,9 @@ evidence, not a guess:
 | `f` | 0.10 | 0.20 | 0.30 | 0.40 | 0.50 | 0.60 |
 |---|---|---|---|---|---|---|
 | excess | −1.3% | −13.9% | −29.6% | −55.6% | −90.2% | −116.5% |
+
+*(§3c now supplies a candidate mechanism for the quadratic form, which may reach `f²`
+as well. Read it before treating the exponents below as wholly unexplained.)*
 
 **A second measured rate joined it on 2026-09-03.** V18 found the shipped default's bias
 under a causally active covariate decaying as **n^−1/3** — also measured, also underived.

@@ -1961,6 +1961,153 @@ exposures, which V17 showed is off-path. **That cell has to be built** — a for
 
 ---
 
+## 8o. Track V22 — the deciding cell: is a parametric covariate draw a fix, or a different bug?
+
+> **STATUS: RESOLVED — 2026-09-08.** 3 `n` levels × 3 cells × 7 arms × 500 reps, 4,500 tasks,
+> **435.3 min against 7.0 h predicted**, zero errors. **There is no trade: the parametric
+> draw wins on both sides** (−0.14% against BART's +2.84% where the covariate conditional is
+> non-linear). One gate missed and its pre-registered reading is withdrawn. **And the run
+> found a larger, separate defect: ~20% asymptotic bias in the censored-exposure draw under a
+> non-linear covariate arrow.** Full reading:
+> [`phase1/FINDINGS_v22.md`](phase1/FINDINGS_v22.md).
+
+**Registration.** Prediction and criteria written into
+`phase1/run_v22_deciding_cell.sh`'s header and committed before the run.
+
+### The cell, and why the exposure is observed in it
+
+`z_role = "pipe_nl"`: a pipe whose `X1 → Z1` arrow is non-linear
+(`1.2·tanh(1.8·logX1) + 0.35·(logX1² − 1)`), so `Z1` is on an X–Y path **and** its conditional
+has a non-linear mean — a linear imputation model is genuinely misspecified (residual SD 21%
+worse) while BART can learn the shape. Verified before adoption: `b₁` still recovered
+(0.3990), partial cor(Z1, logX1 | rest) = +0.600, and the exact `Z1` conditional stays
+**Gaussian** (skew 0.012, kurtosis 2.995) so the anchor remains closed form.
+
+**The exposure is fully observed in the two primary cells, by measurement not convenience.**
+The first build censored it and the exact-`Z` anchor sat at **+17%**, because `leftcens` draws
+`logX1` from a conditional linear in `Z1` while the truth has `Z1 = g(logX1)`. With the
+exposure observed the same anchor is +1.39% ± 0.89. Reading the anchor first is what caught
+it; the censored version is kept as a secondary cell with no valid anchor.
+
+### Outcome
+
+| arm | `zr_pipe_nc` (linear) | `zr_pipenl` (**non-linear**) |
+|---|---|---|
+| `exact` *(anchor)* | −0.34 / +0.07 / +0.14% | −0.59 / +0.03 / +0.14% |
+| **`fit_proper`** | **−0.22 / +0.27 / +0.16%** | **−0.14 / +0.29 / +0.17%** |
+| `fit_improper` | −0.61 / +0.20 / +0.15% | −0.63 / +0.21 / +0.15% |
+| `pmm` | −0.20 / +0.30 / +0.17% | −0.75 / +0.22 / +0.04% |
+| **`bart`** | **+4.44 / +2.85 / +1.64%** | **+2.84 / +2.43 / +1.51%** |
+
+**The parametric draw is unbiased even though it is now misspecified**, exactly by the
+mechanism registered in advance: the analysis conditions on `logX1`, so a linear draw's error
+in approximating `g(logX1)` is absorbed by `logX1`'s own coefficient, while `Y` enters the
+exact conditional linearly and a linear fit gets that exactly. **This is estimand-specific** —
+for an estimand depending on `Z1`'s own coefficient there is no such absorption.
+
+**A GATE MISSED AND ITS READING IS WITHDRAWN.** `bart` came in at +2.84%, under the registered
+≥3% bar, whose pre-written interpretation was *"flexibility stops costing anything once the
+truth is non-linear, so there is nothing to fix."* The neighbouring numbers refute it: BART's
+penalty **shrinks** (+4.44% → +2.84%) but does not vanish, and `fit_proper` still beats it by
+**2.98 pp** in that cell. A binary threshold on one arm was the wrong instrument; the
+registered **arm comparison** was the right one and it passed in both cells. `analyze_v22.R`
+prints the comparison rather than the sentence its own numbers contradict.
+
+**V19's discrepancy is not the `Z2` draw**: drawing `Z2` by the same method as `Z1` moves the
+estimate ≤0.17 pp. One of three candidates eliminated; `Y` as a target and mice's predictor
+matrix remain.
+
+**Properness reproduces V4 weakly** — bias ≤0.49 pp, coverage 0.962 → 0.958 and 0.946 →
+0.944. Coverage in `zr_pipenl` runs 0.912–0.946 for *every* arm including the anchor, below
+nominal and unexplained.
+
+### The larger finding, which this track was not built to look for
+
+| `zr_pipenl_cens` (secondary, no anchor) | 800 | 3,200 | 12,800 |
+|---|---|---|---|
+| **`exact`** (exact Z, shipped X) | **+20.79%** | **+20.29%** | **+20.31%** |
+| `bart` | +29.21% | +25.92% | +24.60% |
+
+**With the exposure censored under a non-linear covariate arrow, the X block alone carries
+~20%, flat in `n`.** Asymptotic, 2–4× the covariate-draw defect this line of work has been
+chasing, and it lands on the censored-exposure draw — the strategy's entire purpose.
+`leftcens`'s conditional is linear in its predictors by construction (Phase 1 §7.5 chose the
+shash *margin* for skew, not a non-linear mean), so this is outside what it can represent, and
+no cell before V22 had such a covariate. **No anchor and no shipped baseline in this cell**, so
+it is a signal to investigate rather than a decomposed result — and it needs its own track.
+
+---
+
+## 8p. Track V23 — the censored-exposure defect, derived first
+
+> **STATUS: REGISTERED, not yet run.** Cells, plumbing and the derived predictor built;
+> `~4.8 h` measured. Criteria in `phase1/run_v23_curvature.sh`'s header.
+
+### Why this one is different, and what that says about the last several
+
+V22 found ~20% asymptotic bias in the censored-exposure draw **by surprise** — in a secondary
+cell of a track built to answer a covariate-draw question. That is the pattern the cycle
+adopted at §7b was supposed to replace, and it recurred. So the mechanism was derived and
+probed *before* anything was built. It took about four minutes of compute:
+
+1. **Why it must exist.** `leftcens` draws from a conditional linear in its predictors; the
+   true conditional for a censored `logX1` contains `p(Z1 | logX1) = N(Z1; g(logX1), s²)`,
+   non-linear in `logX1` wherever `g` is curved. From reading the fitted conditional, not from
+   simulation.
+2. **Why it is asymptotic.** The coefficients converge to the best *linear* approximation of a
+   non-linear target, which stays wrong — matching V22's flat +20.8/+20.3/+20.3% over 16× in
+   `n`.
+3. **What governs it.** Not the amplitude of `g` but `u`, the density-weighted residual SD of
+   `g` after its best linear fit below the LOD (`ef_unrep_curvature()`). A `tanh`-only arrow
+   with `sd(g)` = 1.20 — as large as V22's — gives **+0.09%**, because it is nearly
+   linear-fittable there; V22's arrow at `u` = 0.262 gives **+22.3%**.
+4. **Why squared.** `u` is orthogonal in density-weighted L² to the linear predictors' span, so
+   the first-order term in the bias expansion vanishes (`THEORY.md` §3c). **The first
+   quadratic law in this project with a reason behind it.**
+
+### The registered law
+
+> **X-block bias% = 300 · u²**, calibrated on ONE point (cv262 = V22's own arrow).
+
+| cell | `a` | `c` | `u` | predicted |
+|---|---|---|---|---|
+| `cv000` | 0.0 | 0.00 | 0.0000 | **0.00%** *(the null)* |
+| `cv040` | 0.4 | 0.00 | 0.0399 | 0.48% |
+| `cv119` | 0.8 | 0.10 | 0.1190 | 4.25% |
+| `cv153` | 0.0 | 0.35 | 0.1531 | 7.04% |
+| `cv182` | 0.8 | 0.25 | 0.1818 | 9.91% |
+| `cv262` | 1.2 | 0.35 | 0.2621 | 20.60% *(calibration)* |
+| `cv364` | 1.6 | 0.50 | 0.3636 | 39.66% |
+
+**The 40-rep probe already disagrees at two points** — `u` = 0.1195 measured +0.09% against
+4.3% predicted, `u` = 0.1531 measured +4.24% against 7.0% — each about 2 MC se away. Whether a
+**one-parameter** `u²` law survives at 500 reps, or needs a second term, is what this settles.
+
+**Rejected if** any predicted cell misses by more than 5 pp; the log–log slope's 95% CI
+excludes 2 (which would also kill the orthogonality argument, and with it §3c's candidate
+mechanism for `f²`); `cv000` exceeds 1.5 pp; or the bias is not flat between `n` = 800 and
+3,200.
+
+### One arm is a warning about the only open build track
+
+`smc_xgrid` is **item 07**'s grid exposure draw. A 22-rep probe of this cell put it at
+**+93.7% with coverage 0.000** — inverted. The mechanism is plain: it proposes from the
+exposure prior and reweights by `p(Y | x, rest)`, so it never uses the `Z1 = g(logX1)`
+information at all, discarding the linear-but-partly-right covariate conditioning `leftcens`
+does use. Item 07 has been the only open build track for weeks. **It must not ship without
+this cell in its acceptance set**, and confirming or clearing the inversion at 500 reps is a
+first-class goal here, not a side observation.
+
+The other arms: `z21_exact` isolates the X block (which is what the law is about),
+`pipeline_bartMI` supplies the shipped baseline V22's secondary cell lacked, and
+`pipeline_micePmm` was 10 pp better than the default in the probe.
+
+**Cost — measured.** 308-task full-wave pilot: 29.3 s/task at `n` = 800 and 79.0 at 3,200, so
+78 + 209 min = **~4.8 h**. `STAGES=1` settles the law in 78 min; the second stage only
+confirms flatness in `n`, which V22 already measured over a wider range in one of these cells.
+
+---
+
 ## 9. Track V4 — Variance attribution (and pilot `m`)
 
 > **STATUS: RESOLVED — 2026-08-25.** 5 scenarios × 4 arms × 300 reps, 1500 tasks, 5.25 h,
