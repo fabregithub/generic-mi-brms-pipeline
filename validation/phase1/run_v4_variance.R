@@ -93,7 +93,12 @@ V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              # V17: auxiliary covariate, shipped vs documented behaviour.
              "pipeline_auxZ_shipped", "pipeline_auxZ_asdoc",
              # V20: block attribution under a fork/pipe (exact_fork.R).
-             "ef_bart_ship", "ef_exact_ship", "ef_bart_exact", "ef_exact_exact")
+             "ef_bart_ship", "ef_exact_ship", "ef_bart_exact", "ef_exact_exact",
+             # V21: the covariate-draw ladder (exact_fork.R).
+             "z21_exact", "z21_fit_proper", "z21_fit_improper", "z21_pmm",
+             "z21_bart", "z21_bart_inner3",
+             # V22: Z2 by the same method as Z1.
+             "z21_fit_proper_z2same", "z21_pmm_z2same")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 

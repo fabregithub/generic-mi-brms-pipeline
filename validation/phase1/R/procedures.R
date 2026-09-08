@@ -372,6 +372,17 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   if ("ef_exact_ship" %in% which)           out$efes  <- .ef_args(proc_ef_exact_ship)
   if ("ef_bart_exact" %in% which)           out$efbe  <- .ef_args(proc_ef_bart_exact)
   if ("ef_exact_exact" %in% which)          out$efee  <- .ef_args(proc_ef_exact_exact)
+  # Track V21 (exact_fork.R): WHAT about a covariate draw has to be right.
+  # The X block is held at the shipped leftcens draw in every arm.
+  if ("z21_exact" %in% which)               out$z1a   <- .ef_args(proc_z21_exact)
+  if ("z21_fit_proper" %in% which)          out$z1b   <- .ef_args(proc_z21_fit_proper)
+  if ("z21_fit_improper" %in% which)        out$z1c   <- .ef_args(proc_z21_fit_improper)
+  if ("z21_pmm" %in% which)                 out$z1d   <- .ef_args(proc_z21_pmm)
+  if ("z21_bart" %in% which)                out$z1e   <- .ef_args(proc_z21_bart)
+  if ("z21_bart_inner3" %in% which)         out$z1f   <- .ef_args(proc_z21_bart_inner3)
+  # V22: Z2 drawn by the same method as Z1 (the V19 discrepancy probe).
+  if ("z21_fit_proper_z2same" %in% which)   out$z2a   <- .ef_args(proc_z21_fit_proper_z2same)
+  if ("z21_pmm_z2same" %in% which)          out$z2b   <- .ef_args(proc_z21_pmm_z2same)
   # Track V12 (smc_impute.R): the Z-block draw, shape versus mean. Both arms use
   # the same correct conditional mean; only the draw's shape differs.
   # A 2x2: {Z draw shape} x {X draw}. V12 could isolate the Z shape but not

@@ -3,7 +3,7 @@
 **Short version.** The pipeline treats every row marked `use_in_model = TRUE` the same way,
 but your covariates do not all play the same causal role — and the role decides both whether
 adjusting for the variable is correct at all, and how much bias the imputation adds.
-Validation measured three things worth knowing before you run:
+Validation measured four things worth knowing before you run:
 
 1. **Adjusting for a collider inverts the exposure effect** — from +0.40 to −0.10 in a
    measured case, on complete data, before imputation enters. No imputation method repairs
@@ -14,6 +14,9 @@ Validation measured three things worth knowing before you run:
    credible interval does not reveal it**.
 3. **That bias shrinks slowly with sample size and never disappears** — still 2–4% at
    n = 12,800.
+4. **It comes from the covariate imputation, not the exposure imputation** — 85% to 104% of
+   it. There is no drop-in fix yet, which is why the guidance below is about reducing your
+   exposure to the problem rather than correcting it.
 
 None of this makes the pipeline unusable. It means the covariate list is a modelling
 decision, not a bookkeeping one, and that a clean-looking coverage number is not evidence the
@@ -78,6 +81,34 @@ falls as `n^−1/2`, so the *ratio* grows: coverage degrades as the sample grows
 reach 0.80 somewhere above n ≈ 100,000. That is beyond most realistic cohorts, but the
 direction is the wrong one.
 
+### Where the bias comes from: the covariate imputation, not the exposure imputation
+
+The `censored_exposure_block_fcs` strategy alternates two blocks — one imputing covariates,
+one imputing the censored exposure. Validation swapped each block's draw for the exactly
+correct one, in turn, on the same data:
+
+| what was replaced | share of the bias it removes |
+|---|---|
+| **the covariate draw** | **85% – 104%** |
+| the censored-exposure draw | 0.1% – 11.7% |
+| both together | the same as the covariate draw alone |
+
+**Essentially all of it is the covariate draw.** Replacing the covariate imputation with the
+correct conditional — leaving the exposure imputation exactly as it is — brings the bias to
+within ±0.5% of zero at every sample size tested. The two blocks turn out to act
+independently here: their combined effect is their sum, to within 0.4 percentage points.
+
+**What that means for you as a user, today:** the exposure side of this pipeline is not the
+problem when your covariate is causally active. The imputation of the *covariate* is, and
+there is no drop-in replacement for it yet — the correct conditional is only available when
+the data-generating process is known, which it is in a simulation and is not in your study.
+Two parametric imputers that *are* correctly specified for the covariate were also tested and
+carried +4% to +6% bias that does not shrink with sample size, so simply switching to a
+parametric covariate imputer is **not** a workaround.
+
+So the guidance below is what the evidence currently supports. It is deliberately
+conservative: reduce the exposure to the problem rather than try to correct it.
+
 ### What to do about it
 
 - **Report the exposure effect with this in mind** if a confounder or mediator in your model
@@ -87,7 +118,12 @@ direction is the wrong one.
 - **Reduce the missingness in causally active covariates** in preference to reducing it
   elsewhere. Missingness in a precision covariate costs almost nothing here (measured at
   ~1 pp); missingness in a confounder costs 20× that.
-- **Keep the BART Z-block default** — see below.
+- **Keep the BART Z-block default** — see below. Since the bias is the covariate draw, the
+  covariate imputer is the setting that matters most here, and BART is the only one measured
+  whose bias shrinks as the sample grows.
+- **A complete confounder is worth more than a large sample.** The bias falls only as
+  `n^−1/3`, so collecting more subjects is a weak remedy; filling in the confounder is a
+  direct one.
 - **Do not read a good coverage number as reassurance** on this point.
 
 ---
@@ -169,7 +205,11 @@ That overrides the automatic set and is honoured in full.
 | How that bias scales with `n` (`n^−1/3`, permanent) | [`validation/phase1/FINDINGS_v18.md`](../validation/phase1/FINDINGS_v18.md) |
 | The imputer comparison, and `forest_boot`'s −23% | [`validation/phase1/FINDINGS_v19.md`](../validation/phase1/FINDINGS_v19.md) |
 | Why `Y` belongs in every imputation block | [`validation/phase1/FINDINGS_v16.md`](../validation/phase1/FINDINGS_v16.md) |
+| That the bias is the **covariate** draw, not the exposure draw | [`validation/phase1/FINDINGS_v20.md`](../validation/phase1/FINDINGS_v20.md) |
 
-**What is not yet known:** which part of the imputation produces the confounder/mediator
-bias — the exposure draw, the covariate draw, or their alternation. Until that is settled
-there is no fix to offer, only the guidance above.
+**What is not yet known:** what a shippable replacement for the covariate draw would be. The
+bias is now located — it is the covariate imputation — but the correct conditional used to
+demonstrate that relies on knowing the data-generating process, and the obvious substitutes
+were already ruled out: two parametric imputers correctly specified for the covariate still
+carried +4% to +6% non-shrinking bias. Until that is solved the guidance above is the whole
+of the remedy.

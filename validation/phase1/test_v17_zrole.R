@@ -35,7 +35,7 @@ beta <- function(d, zterms) {
 near <- function(a, b, tol) abs(a - b) < tol
 
 cat("\n=== 1. every role keeps b1 = 0.40 recoverable by ITS OWN correct model ===\n")
-for (role in c("precision", "fork", "pipe", "collider", "mixed")) {
+for (role in c("precision", "fork", "pipe", "pipe_nl", "collider", "mixed")) {
   set.seed(101)
   tr <- make_truth(p = 3L, erf_form = "additive", z_role = role)
   d  <- simulate_complete(N, tr)$data
@@ -90,7 +90,7 @@ pcor <- function(d, a, b, given) {
   cor(ra, rb)
 }
 set.seed(301)
-for (role in c("precision", "fork", "pipe", "collider")) {
+for (role in c("precision", "fork", "pipe", "pipe_nl", "collider")) {
   tr <- make_truth(p = 3L, erf_form = "additive", z_role = role)
   d  <- simulate_complete(N, tr)$data
   pc <- pcor(d, "Z1", "logX1", c("logX2", "logX3", "Z2"))
@@ -119,12 +119,13 @@ ok("default formula is unchanged",
    identical(deparse(dgp_formula(tr)), "Y ~ logX1 + logX2 + logX3 + Z1 + Z2"),
    deparse(dgp_formula(tr)))
 ok("estimand_true is still b[1] in every role",
-   all(vapply(c("precision","fork","pipe","collider","mixed"),
+   all(vapply(c("precision","fork","pipe","pipe_nl","collider","mixed"),
               function(r) make_truth(p=3L, z_role=r)$estimand_true == 0.40, logical(1))))
 
 cat("\n=== 5. the auxiliary knob, and the defect it measures ===\n")
 for (f in c("censoring.R", "metrics.R", "procedures.R", "procedures_pipeline.R",
-            "robustness.R", "proper_impute.R", "mice_impute.R", "bart_impute.R"))
+            "robustness.R", "proper_impute.R", "mice_impute.R", "bart_impute.R",
+            "exact_fork.R"))
   source(file.path(.here, "R", f))
 env <- tryCatch(v1_load_pipeline(quiet = TRUE), error = function(e) NULL)
 if (is.null(env)) {
@@ -168,6 +169,31 @@ if (is.null(env)) {
   ok("the two arms differ (the defect has an effect to measure)",
      !isTRUE(all.equal(a$estimate, b$estimate)))
 }
+
+cat("\n=== 6. pipe_nl -- V22's deciding cell, and the guards on its anchor ===\n")
+set.seed(606)
+trn <- make_truth(p = 3L, erf_form = "additive", z_role = "pipe_nl")
+dn  <- simulate_complete(200000L, trn)$data
+ok("pipe_nl: correct model recovers 0.40", near(beta(dn, trn$z_in_model), 0.40, 0.02),
+   sprintf("%.4f", beta(dn, trn$z_in_model)))
+pc <- pcor(dn, "Z1", "logX1", c("logX2", "logX3", "Z2"))
+ok("pipe_nl: Z1 is ON an X-Y path", abs(pc) > 0.3, sprintf("partial cor = %+.3f", pc))
+sl <- summary(lm(Z1 ~ logX1 + logX2 + logX3 + Z2 + Y, data = dn))$sigma
+sn <- summary(lm(Z1 ~ ef_nl_g(logX1, trn) + logX2 + logX3 + Z2 + Y, data = dn))$sigma
+ok("pipe_nl: a LINEAR imputation model is genuinely misspecified",
+   sl / sn - 1 > 0.10,
+   sprintf("residual SD %.0f%% worse than the correct form", 100 * (sl / sn - 1)))
+rn <- resid(lm(Z1 ~ ef_nl_g(logX1, trn) + logX2 + logX3 + Z2 + Y, data = dn))
+ok("pipe_nl: the exact Z1 conditional stays GAUSSIAN (anchor stays closed form)",
+   abs(mean(scale(rn)^3)) < 0.05 && abs(mean(scale(rn)^4) - 3) < 0.10,
+   sprintf("skew %.3f, kurtosis %.3f", mean(scale(rn)^3), mean(scale(rn)^4)))
+# The two guards that stop a FABRICATED "exact" arm under pipe_nl. If either
+# stops erroring, someone has given pipe_nl a Gaussian joint it does not have.
+ok("pipe_nl: .ef_joint REFUSES to build a Gaussian joint",
+   inherits(try(.ef_joint(trn), silent = TRUE), "try-error"))
+ok("pipe_nl: ef_draw_x1 REFUSES (its conditional is non-Gaussian)",
+   inherits(try(ef_draw_x1(dn[1:10, ], trn, 1:5, rep(0, 10), NULL), silent = TRUE),
+            "try-error"))
 
 cat(sprintf("\n%s  (%d failure%s)\n", if (fails == 0L) "ALL PASS" else "FAILURES",
             fails, if (fails == 1L) "" else "s"))

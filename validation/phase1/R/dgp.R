@@ -84,13 +84,33 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
   #   collider    X1 -> Z1 <- Y                 adjusting INDUCES bias; the
   #                                             correct analysis omits Z1
   #   mixed       Z1 fork AND Z2 pipe           no single covariate is both
+  #   pipe_nl     X1 -> Z1 -> Y, arrow NON-LINEAR   THE DECIDING CELL (V22)
+  #
+  # WHY pipe_nl EXISTS. V21 found a correctly specified ESTIMATED covariate draw
+  # is unbiased where the covariate conditional is linear-Gaussian -- which both
+  # the `fork` and `pipe` cells are BY CONSTRUCTION. That makes V21's result one
+  # half of a trade: R8 adopted BART because a parametric Z block is misspecified
+  # when the conditional is NON-linear (V6 measured mice pmm at -4.70% there).
+  # Trading a 5% bias under linearity for a 5% bias under non-linearity is not a
+  # fix, and no cell could test both sides -- `z_form = "nonlinear"` makes Z1 a
+  # DESCENDANT of the exposures, which V17 showed is off-path.
+  #
+  # `pipe_nl` is the missing cell: Z1 is genuinely ON an X-Y path AND its
+  # conditional has a non-linear mean, so a linear imputation model is really
+  # misspecified while BART can learn the shape. Verified before adoption:
+  # the analysis model still recovers b1 (0.3996 at n = 3e5), the partial
+  # correlation of Z1 with logX1 given the rest is +0.601, a linear imputation
+  # model's residual SD is 21% worse than the correct form, and the exact
+  # conditional of Z1 stays GAUSSIAN (skew 0.001, kurtosis 3.001) -- which is
+  # what keeps exact_fork.R's anchor closed-form.
   #
   # TWO STRUCTURAL CONSEQUENCES, both handled here rather than left to the
   # caller. Under "collider" Z1 must NOT cause Y (or it would be a fork as well),
   # so gamma[1] is zeroed; and the correctly-specified analysis model must DROP
   # Z1, which is what `z_in_model` tells dgp_formula(). Everywhere else
   # `z_in_model` is the full set and the formula is unchanged.
-  if (!z_role %in% c("precision", "descendant", "fork", "pipe", "collider", "mixed")) {
+  if (!z_role %in% c("precision", "descendant", "fork", "pipe", "pipe_nl",
+                     "collider", "mixed")) {
     stop("unknown z_role: ", z_role, call. = FALSE)
   }
   z_in_model <- c("Z1", "Z2")[seq_len(q)]
@@ -109,6 +129,10 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     delta_xz = 0.60,        # pipe/collider:  X1 -> Z1
     delta_yz = 0.60,        # collider:        Y -> Z1
     delta_xz2 = 1.20,       # mixed:          X1 -> Z2 on the logit scale
+    # pipe_nl: Z1 = a*tanh(b*logX1) + c*(logX1^2 - 1) + noise. `tanh` gives
+    # saturation and the square gives curvature -- neither representable by a
+    # linear conditional, both learnable by BART.
+    nl_a = 1.20, nl_b = 1.80, nl_c = 0.35, nl_sd = 0.80,
     # Under "pipe" the adjusted analysis estimates the DIRECT effect, which is
     # b[1]. Recorded here so the distinction is in the object rather than only in
     # a comment -- it is not the estimand, and must never be swapped in as one.
@@ -123,6 +147,15 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     estimand_name = "b_logX1",
     estimand_true = b[1]
   )
+}
+
+#' The non-linear `X1 -> Z1` arrow used by `z_role = "pipe_nl"`.
+#'
+#' Defined here rather than inline so the DGP and `exact_fork.R`'s exact
+#' conditional cannot drift apart -- if they did, the "exact" arm would be wrong
+#' and would still return believable numbers.
+ef_nl_g <- function(x, truth) {
+  truth$nl_a * tanh(truth$nl_b * x) + truth$nl_c * (x^2 - 1)
 }
 
 #' Simulate one complete (uncensored, fully observed) dataset from the ERF.
@@ -168,7 +201,7 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
   # code -- same calls, same order, same RNG stream -- which is what keeps every
   # earlier track's results reproducible from their recorded seeds.
   z_role <- z_role %||% truth$z_role %||% "precision"
-  if (z_role %in% c("fork", "pipe", "collider", "mixed")) {
+  if (z_role %in% c("fork", "pipe", "pipe_nl", "collider", "mixed")) {
     return(.simulate_causal_z(n, truth, rho = rho, sd_x = sd_x, mu_x = mu_x,
                               skew = skew, sigma_y = sigma_y, z_role = z_role))
   }
@@ -284,6 +317,13 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
     Y    <- eta_x(logX) + as.vector(Zm0 %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
     z1   <- truth$delta_xz * logX[, 1] + truth$delta_yz * Y +      # X1 -> Z1 <- Y
             stats::rnorm(n, 0, 0.8)
+
+  } else if (z_role == "pipe_nl") {
+    z2   <- stats::rbinom(n, 1, 0.5)
+    logX <- draw_x(0)
+    z1   <- ef_nl_g(logX[, 1], truth) + stats::rnorm(n, 0, truth$nl_sd)
+    Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
+    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
 
   } else {                                                    # mixed: fork + pipe
     z1   <- stats::rnorm(n)                                   # fork, drawn first

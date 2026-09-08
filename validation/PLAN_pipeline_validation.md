@@ -1817,6 +1817,150 @@ scenario provides one.
 
 ---
 
+## 8m. Track V20 — which block carries the bias?
+
+> **STATUS: RESOLVED — 2026-09-07.** 3 `n` levels × 2 cells × 5 arms × 500 reps, 3,000 tasks,
+> **183.9 min against 2.9 h predicted**, zero errors. **It is the covariate draw: fixing the
+> Z block removes 85–104% of the bias; fixing the exposure draw removes 0.1–11.7%.**
+> **Every registered gate passed** — the first since V15. Full reading:
+> [`phase1/FINDINGS_v20.md`](phase1/FINDINGS_v20.md).
+
+**Registration.** Prediction and criteria were written into
+`phase1/run_v20_attribute.sh`'s header and committed before the run.
+
+### Design
+
+A 2×2 swapping each block's draw for the true conditional, on the `zr_fork` and `zr_pipe`
+cells:
+
+| | X shipped (`leftcens`) | X exact |
+|---|---|---|
+| Z shipped (BART) | `ef_bart_ship` — **control** | `ef_bart_exact` |
+| Z exact | `ef_exact_ship` | `ef_exact_exact` |
+
+**New code was required, and this is the part worth remembering.** V12/V13's exact Z draw
+computes `p(Z1 | Y) ∝ p(Y | Z1, rest) · N(Z1 | 0, 1)` — correct in the **precision** structure
+every track before V17 used, where `Z1` is exogenous. **Under a fork it is wrong**: `Z1 →
+logX1` at δ = 0.60, so `logX1` is a child of `Z1` and carries information the missing
+`p(logX1 | Z1)` factor discards. Measured: its draws are **32% too wide** around the true
+conditional mean, while their marginal SD (0.998 vs a true 0.997) looks perfectly fine.
+Reusing it would have yielded a believable decomposition from a broken "exact" arm — the
+leftcens failure mode of FINDINGS_v13 again. `R/exact_fork.R` conditions the joint Gaussian in
+closed form instead; `test_v20_exact.R` verifies it against known answers (20 assertions).
+
+### Outcome
+
+| cell | `n` | reference | fix-Z | fix-X | interaction |
+|---|---|---|---|---|---|
+| `zr_fork` | 800 | 4.63% | **−4.64** | −0.31 | +0.24 |
+| `zr_fork` | 3,200 | 2.99% | **−2.55** | −0.35 | +0.22 |
+| `zr_fork` | 12,800 | 1.33% | **−1.33** | −0.07 | +0.06 |
+| `zr_pipe` | 800 | 5.14% | **−4.87** | −0.01 | +0.40 |
+| `zr_pipe` | 3,200 | 2.38% | **−2.47** | −0.06 | +0.22 |
+| `zr_pipe` | 12,800 | 1.67% | **−1.46** | −0.11 | +0.10 |
+
+Share removed: fix-Z **85.1–103.7%**, fix-X **0.1–11.7%**. All four registered bars pass
+(fix-Z ≥ 70%, fix-X ≤ 30%, |interaction| ≤ 2 pp, `ef_exact_exact` within 1.5 pp of zero —
+worst +0.66%). Control passes at worst 0.80 pp; oracle unbiased (worst 0.34%).
+
+**The blocks are additive here** — the interaction never exceeds 0.40 pp, against −6.4 pp in
+V17's collider cells. Whether the blocks interact is structure-dependent.
+
+**The sharper test dissolved.** Fixing Z drives the bias to ~0 at every `n` (−0.01% to
++0.45%), so there is no residual exponent to flatten. A slope fitted to that is fitted to
+noise. `pipeline_bartMI`'s −0.309/−0.361 replicates V18 (−0.335) and V19 (−0.311) a third
+time.
+
+### What it settles, and what it does not
+
+**The fix belongs in the covariate block, not the exposure block.** Item 07 — a
+substantive-model-compatible *exposure* draw — has been the only open build track and the
+presumed remedy for everything; it removes 0.1–11.7% of *this* bias. Item 07 remains right
+for the mixture failure (V3/V9) and the non-linear-outcome penalty (V13/V14), which are
+X-block defects. This is a different defect in a different block that had been folded into
+the same queue.
+
+**But "fix the Z block" is not yet a shippable proposal.** The exact conditional here uses
+knowledge of the DGP, and V19 already ruled out the obvious substitutes: `micePmm` and
+`properZ` are *correctly specified in form* for this `Z₁` and still carry +4 to +6%
+asymptotic bias. So the target is not "use a parametric imputer" — something else about
+those draws is wrong, and V20 does not say what. **That is the next question.**
+
+---
+
+## 8n. Track V21 — which property of a covariate draw has to be right?
+
+> **STATUS: RESOLVED — 2026-09-07.** 3 `n` levels × 2 cells × 6 arms × 500 reps, 3,000 tasks,
+> **315.9 min against 4.9 h predicted**, zero errors. **It is BART's smoothing, 100% of it.
+> A correctly specified *estimated* draw is unbiased (+0.26% / +0.58%).** Every registered
+> gate passed. Full reading: [`phase1/FINDINGS_v21.md`](phase1/FINDINGS_v21.md).
+
+**Registration.** Prediction and criteria written into
+`phase1/run_v21_zdraw_ladder.sh`'s header and committed before the run.
+
+### Design
+
+V20 supplied a known-unbiased anchor (the exact conditional, ±0.5%). The ladder walks from it
+to BART one property at a time, X block held at the shipped `leftcens` draw:
+`exact` → `fit_proper` (estimated, correct form) → `fit_improper` (properness) → `pmm`
+(donor matching) → `bart` (smoothing) → `bart_inner3` (the shipped inner-FCS loop). Three `n`
+levels, because each candidate has a distinct signature: estimation error n^−1/2, smoothing
+n^−1/3, matching flat, properness in the interval rather than the point estimate.
+
+### Outcome
+
+| arm | `zr_fork` @ 800 / 3,200 / 12,800 | `zr_pipe` | share of the span |
+|---|---|---|---|
+| `exact` *(anchor)* | −0.05 / +0.46 / −0.01% | +0.31 / −0.10 / +0.21% | 0% |
+| `fit_proper` | **+0.26** / +0.55 / −0.03% | **+0.58** / −0.14 / +0.24% | 6.6% / 5.8% |
+| `fit_improper` | +0.01 / +0.42 / −0.02% | +0.41 / −0.15 / +0.26% | 1.3% / 2.1% |
+| `pmm` | +0.07 / +0.50 / −0.04% | +0.64 / −0.16 / +0.23% | 2.5% / 7.0% |
+| **`bart`** | **+4.73 / +2.99 / +1.31%** | **+5.11 / +2.34 / +1.64%** | **100%** |
+| `bart_inner3` | +4.68 / +2.87 / +1.25% | +5.13 / +2.30 / +1.67% | — |
+
+`bart`'s slope is −0.463 / −0.410. All four registered gates pass, and the anchor and oracle
+hold (worst 0.46% and 0.37%).
+
+**Properness is an interval problem, not a bias one** — V4's signature reproduced in a
+structure V4 could not see: bias moves ≤0.25 pp while `b` shrinks 12–16% and coverage falls
+0.95 → 0.94. **Donor matching costs nothing** — pmm sits on the anchor, so the registered
+"pmm's bias will not decay" is *untestable* rather than confirmed. **The inner-FCS loop
+contributes nothing** (−0.12 to +0.03 pp), so V20's instrument omitting it was harmless and
+that 0.26–0.80 pp gap has another cause. **The instruments agree**: V21's `z21_bart` matches
+V20's `ef_bart_ship` to ≤0.10 pp at all six combinations.
+
+### The V19 discrepancy, registered in advance
+
+V19 measured `micePmm` at +2.4 to +3.9% and `properZ` at +4.5 to +6.3%, both asymptotic and
+both parametric; here every parametric arm sits at ±0.6%. The driver registered this boundary
+before the run, so it is a **located discrepancy, not a contradiction**: `z21_pmm` draws `Z1`
+alone on the correct formula with `Z2` exact, while `micePmm` runs the pipeline's mice path
+over `Z1`, `Z2` **and `Y`** with mice's own predictor matrix. **The property of being
+parametric-and-correct suffices; the available implementations are biased for some other
+reason** — multi-target joint imputation, the predictor matrix, or `Y` as a target. That is
+the narrowed open question.
+
+### What it settles, and the cell that decides the fix
+
+**A shippable fix exists in principle.** The consequential registered outcome was the
+opposite — if `fit_proper` had exceeded 2 pp, estimating a correctly specified conditional
+would itself have caused the defect and there would be no fix. It came in at 0.26% / 0.58%.
+
+**But the fix is a TRADE and this run tests only one side of it.** Both cells have a
+linear-Gaussian `Z₁` conditional, so every parametric arm is correct *by construction*. R8
+adopted BART precisely because a parametric Z block is misspecified when the covariate
+conditional is non-linear — V6 measured `mice pmm` at −4.70% there. **Trading a 5% bias under
+linearity for a 5% bias under non-linearity is not a fix**, and nothing here says which way it
+goes.
+
+**So the next step is not to build the parametric draw.** It is to run this ladder in a cell
+where the covariate conditional is genuinely **non-linear and the covariate is on an X–Y
+path**. No scenario provides one: `z_form = "nonlinear"` makes `Z1` a *descendant* of the
+exposures, which V17 showed is off-path. **That cell has to be built** — a fork or pipe whose
+`Z1 → X1` or `X1 → Z1` arrow is non-linear.
+
+---
+
 ## 9. Track V4 — Variance attribution (and pilot `m`)
 
 > **STATUS: RESOLVED — 2026-08-25.** 5 scenarios × 4 arms × 300 reps, 1500 tasks, 5.25 h,

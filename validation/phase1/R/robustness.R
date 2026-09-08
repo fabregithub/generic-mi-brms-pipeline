@@ -260,7 +260,36 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("zrmar_fork",     "z_role", mar_frac = 0.4, z_role = "fork",     seed_as = "zr_fork"),
     .v2_scenario("zrmar_pipe",     "z_role", mar_frac = 0.4, z_role = "pipe",     seed_as = "zr_pipe"),
     .v2_scenario("zrmar_collider", "z_role", mar_frac = 0.4, z_role = "collider", seed_as = "zr_collider"),
-    .v2_scenario("zrmar_mixed",    "z_role", mar_frac = 0.4, z_role = "mixed",    seed_as = "zr_mixed")
+    .v2_scenario("zrmar_mixed",    "z_role", mar_frac = 0.4, z_role = "mixed",    seed_as = "zr_mixed"),
+
+    # ---- V22: THE DECIDING CELL ------------------------------------------------
+    # A pipe whose X1 -> Z1 arrow is NON-LINEAR, so Z1 is on an X-Y path AND its
+    # conditional has a non-linear mean. V21 showed a correctly specified
+    # ESTIMATED covariate draw is unbiased where that conditional is
+    # linear-Gaussian -- which every cell before this one is, by construction.
+    # This is where a linear parametric draw is genuinely misspecified and BART
+    # can learn the shape, so it decides whether V21's "a fix exists" is a fix or
+    # a different bug.
+    #
+    # THE EXPOSURE IS FULLY OBSERVED IN THE FIRST TWO CELLS (nd_frac = 0), and
+    # that is not a convenience -- it is required. Measured while building this:
+    # with logX1 40% censored, the ladder's exact-Z anchor sits at **+17%**
+    # instead of ~0, because leftcens draws logX1 from a conditional LINEAR in
+    # Z1 while the truth has Z1 = g(logX1). The X block is badly misspecified
+    # here, so it swamps the covariate-draw comparison and the ladder has no
+    # zero point. With logX1 observed the same anchor is +1.39% +/- 0.89 --
+    # consistent with zero, and the comparison is purely about the Z draw.
+    #
+    # `zr_pipe_nc` is the matched LINEAR comparator (same missingness, same
+    # absence of censoring), so the two differ only in the arrow's shape.
+    # `zr_pipenl_cens` keeps the censored version as a SECONDARY cell: it has no
+    # valid anchor and cannot be decomposed, but it prices the total and flags
+    # the X-block interaction as a finding in its own right.
+    .v2_scenario("zr_pipe_nc",     "z_role", nd_frac = 0.0, mcar_frac = 0.4, z_role = "pipe"),
+    .v2_scenario("zr_pipenl",      "z_role", nd_frac = 0.0, mcar_frac = 0.4, z_role = "pipe_nl",
+                 seed_as = "zr_pipe_nc"),
+    .v2_scenario("zr_pipenl_cens", "z_role", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl",
+                 seed_as = "zr_pipe")
   )
 }
 
