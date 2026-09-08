@@ -11,7 +11,8 @@ Validation measured four things worth knowing before you run:
    convention invites it.
 2. **Where a covariate is a confounder or a mediator and has missing values, the default
    imputation adds +5% to +10% bias** to the exposure coefficient, and **the coverage of the
-   credible interval does not reveal it**.
+   credible interval does not reveal it**. The sign matters as much as the size: the bias is
+   **away from the null**, so it *inflates* an exposure–response rather than hiding one.
 3. **That bias shrinks slowly with sample size and never disappears** — still 2–4% at
    n = 12,800.
 4. **It comes from the covariate imputation, not the exposure imputation** — 85% to 104% of
@@ -63,13 +64,30 @@ independent of the exposures, or generated from them. Under that structure the d
 well behaved (bias ≤1.3%, coverage 0.937–0.963). Under a **confounder or a mediator** with
 40% missingness it is not:
 
-| sample size | bias in the exposure coefficient | coverage |
-|---|---|---|
-| n = 800 | **+5% to +10%** | 0.93–0.95 |
-| n = 3,200 | +2.7% to +6.2% | 0.91–0.94 |
-| n = 12,800 | **+2.0% to +3.6%** | 0.87–0.92 |
+| sample size | bias in the coefficient | **bias / standard error** | coverage |
+|---|---|---|---|
+| n = 800 | +5% to +10% | **0.30 – 0.67** | 0.93–0.95 |
+| n = 3,200 | +2.7% to +6.2% | **0.36 – 0.77** | 0.91–0.94 |
+| n = 12,800 | +2.0% to +3.6% | **0.50 – 0.67** | 0.87–0.92 |
 
-Two things to take from this.
+**Read the middle column, not the left one.** Relative bias shrinks with sample size; the
+bias *relative to your standard error* does not — it grows slightly. And the second is what
+decides whether the bias can change a conclusion. As a rough guide, a study powered to detect
+some effect needs about 2.8 standard errors to do so, so a bias of 0.3 SE consumes roughly a
+tenth of that, and a bias of 1.0 SE about a third.
+
+That framing is deliberate: **the effect size you care about is your choice, not a constant.**
+A 5% change is a common convention, but a setting with no assumed threshold — ionising
+radiation and cancer risk, say — has no such floor, and there the same absolute bias consumes
+a much larger share of whatever you are trying to detect.
+
+**And note the direction.** Every measurement of this defect is **positive** — away from the
+null. It does not hide an exposure–response, it **manufactures or inflates** one. In a
+precautionary or regulatory setting that is the more dangerous of the two directions: a
+conservative bias can be disclosed and lived with, an anti-conservative one produces findings
+that are not there.
+
+Three things to take from this.
 
 **Coverage does not detect it.** The intervals are honestly sized — they are not too narrow.
 They cover because at these sample sizes the bias is still smaller than one standard error.
@@ -193,10 +211,21 @@ not the mean. So if one of your covariates has a genuinely **non-linear** relati
 censored exposure, that relationship cannot be represented, and the exposure imputation is
 misspecified in a way no amount of data fixes.
 
-Measured: with a covariate related to the censored exposure through
-`tanh` plus a quadratic, the exposure coefficient carried **~20% bias, flat across
-n = 800 to 12,800** — asymptotic, not a small-sample artefact, and 2–4× the covariate-draw
-bias described above.
+Measured: with a covariate related to the censored exposure through `tanh` plus a quadratic,
+the exposure coefficient carried **~20% bias, flat across n = 800 to 12,800** — asymptotic,
+not a small-sample artefact, and 2–4× the covariate-draw bias described above. In standard-error
+units that is **1.2 SE at n = 800 and 2.2 SE at n = 3,200** — comparable to, then larger than,
+the effect a study of that size is powered to detect. And it is **away from the null**, so it
+inflates the exposure–response rather than hiding it.
+
+**How much censoring it takes.** The mechanism is that the exposure draw fits a *straight line*
+to a curved relationship, so what matters is how much of the curve falls below the detection
+limit. At **5% non-detects** the censored region sits in the far tail where the relationship is
+nearly straight and the effect is negligible (≲2%). It grows steeply with the non-detect rate —
+roughly 50× in the unrepresentable-curvature term between 5% and 70% censoring — so **the
+practical threshold is the non-detect rate, not the presence of curvature alone**. If your
+exposure is 5–10% non-detect, this is unlikely to matter; at 40% or more it is the dominant
+error in the analysis.
 
 **What to do:**
 

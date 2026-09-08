@@ -59,8 +59,26 @@
 #   whether a one-parameter u^2 law survives at 500 reps or whether the residuals
 #   are real and the account needs a second term.
 #
+# TWO CONVENTIONS THIS RUN ADOPTS (PLAN §11, changed 2026-09-08)
+#   1. THE BAR IS IN bias/SE, NOT RELATIVE BIAS. Relative bias decays as n^-1/3
+#      while bias/SE GROWS as n^0.17 (V18), so a relative bar gets easier to
+#      pass exactly as the bias becomes more consequential. At n = 12800 the old
+#      10% relative bar permits a bias worth 95% of a 2.8-SE detectable effect.
+#      Default gate: **bias/SE <= 0.3**, about 10% of a detectable effect. The
+#      target effect size is a CHOICE -- 5% is an epidemiological convention, and
+#      a no-threshold setting has no such floor -- so bias/SE is reported and the
+#      conversion is the reader's.
+#   2. DIRECTION IS REPORTED, NOT JUST MAGNITUDE. Away from the null inflates an
+#      exposure-response (anti-conservative); toward the null risks missing one
+#      (conservative); a sign that FLIPS with a design parameter is worse than
+#      either, and V15 found exactly that. The probe says this defect is AWAY
+#      from the null (+20.8% at u = 0.262), i.e. the dangerous direction, and
+#      whether that sign is stable across the u sweep is a registered question.
+#
 # FALSIFICATION, PRE-DECLARED
 #   * any predicted cell off by more than 5 pp -> the one-parameter law fails
+#   * the SIGN is not positive in every cell with u > 0 -> the direction is not
+#     stable in u, and no single caveat covers the defect
 #   * log|bias| on log u: slope 95% CI excluding 2 -> the quadratic form fails,
 #     and with it the orthogonality argument
 #   * cv000 above 1.5 pp -> the null leaks and the whole predictor is suspect
@@ -164,7 +182,15 @@ NLEVELS=(0 800 3200)
   echo "  4.3% predicted; u=0.1531 gave +4.24% vs 7.0%), each ~2 MC se. Whether"
   echo "  a ONE-PARAMETER u^2 law survives at 500 reps is what this settles."
   echo ""
-  echo "REJECTED IF: any predicted cell off by >5 pp; or the log-log slope CI"
+  echo "BAR IS IN bias/SE (PLAN 11, changed 2026-09-08): default gate 0.3, about"
+  echo "  10% of a 2.8-SE detectable effect. Relative bias is the wrong currency --"
+  echo "  it decays as n^-1/3 while bias/SE GROWS as n^0.17."
+  echo "DIRECTION IS REPORTED: the probe puts this defect AWAY from the null"
+  echo "  (+20.8% at u=0.262) -- the anti-conservative direction. Whether that"
+  echo "  sign holds across the u sweep is a registered question."
+  echo ""
+  echo "REJECTED IF: any predicted cell off by >5 pp; the sign is not positive in"
+  echo "  every cell with u > 0; or the log-log slope CI"
   echo "  excludes 2 (which would also kill the orthogonality argument); or"
   echo "  cv000 exceeds 1.5 pp; or the bias is not flat between n=800 and 3200."
   echo ""

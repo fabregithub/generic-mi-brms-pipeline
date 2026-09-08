@@ -24,6 +24,16 @@ Keep this file current: the validation study is the evidence base for the claims
 README makes about bias, coverage and scope, so a stale entry here silently becomes a
 wrong claim in the documentation.
 
+> **Convention changed 2026-09-08 — acceptance criteria are now in `bias/SE`, not relative
+> bias.** Relative bias decays as `n^−1/3` while `bias/SE` *grows* as `n^0.17` (V18), so the
+> old 10% relative bar got easier to pass exactly as the bias became more consequential — at
+> `n` = 12,800 it permitted a bias worth 95% of a detectable effect. Default gate is now
+> **`bias/SE` ≤ 0.3**, and **direction is reported alongside magnitude**: away from the null is
+> anti-conservative, toward it is conservative, and a sign that flips with a design parameter
+> is worse than either. See `PLAN_pipeline_validation.md` §11 and the direction ledger in §11b.
+> **Every criterion registered before this date is in the old currency** and needs re-reading
+> against §11b before being cited.
+
 Last updated: **2026-09-08** · after V22 — **there is no trade**: a parametric covariate draw wins on both sides (−0.14% against BART's +2.84% where the covariate conditional is non-linear), so a fix is real. **And a larger separate defect: ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** — now the biggest open item
 
 ---

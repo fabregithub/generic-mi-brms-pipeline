@@ -2226,3 +2226,80 @@ Mirror Phase 1:
   to `B` rather than `Ubar` — and a poor *acceptance criterion*. Coverage is the acceptance
   criterion. Where a width band is genuinely wanted, raise `n` until its MC error sits
   comfortably inside the band, or drop the band.
+
+- **State the bar in the currency the decision uses — `bias/SE`, not relative bias.**
+  *(Adopted 2026-09-08, after V18 and V22 exposed the problem.)* Every criterion in this plan
+  before this date is a bound on **relative bias of the coefficient** (10%, or ±3 pp on a
+  paired excess). That is the wrong currency, and it fails in a specific direction: V18
+  measured relative bias decaying as `n^−1/3` while **`bias/SE` grows as `n^0.17`**. So a
+  relative bar gets *easier to pass* exactly as the bias becomes more consequential.
+
+  What a 10% relative bar actually permits, using each run's own measured `emp_se`:
+
+  | `n` | emp. SE | 10% of `b₁` | in SE units | share of a 2.8-SE effect |
+  |---|---|---|---|---|
+  | 800 | 0.054 | 0.040 | 0.74 | **26%** |
+  | 3,200 | 0.028 | 0.040 | 1.45 | **52%** |
+  | 12,800 | 0.015 | 0.040 | 2.67 | **95%** |
+
+  At `n` = 12,800 a result passing the old bar could carry a bias nearly as large as the
+  effect the study is powered to detect.
+
+  **The convention from here:** report **`bias/SE`** as the primary quantity. It is
+  interpretable without assuming an effect size, which matters because the target effect is a
+  *choice*, not a constant — 5% is a common convention in epidemiology, but a no-threshold
+  setting (ionising radiation and cancer, say) has no such floor and the target may be
+  arbitrarily small. Converting to a share of the detectable effect is then the reader's step,
+  not ours:
+
+  | target effect | 1% | 2% | 5% | 10% |
+  |---|---|---|---|---|
+  | bias of 0.1 SE consumes | 4% | 3% | 2% | 1% |
+  | bias of 0.3 SE consumes | 11% | 8% | 5% | 3% |
+  | bias of 1.0 SE consumes | 36% | 25% | 18% | 11% |
+
+  *(Share of a 2.8-SE minimum detectable effect at the stated relative effect size, using the
+  V22 `zr_fork` geometry; the ordering, not the exact percentages, is the transferable part.)*
+
+  **For this project's own gating, use `bias/SE ≤ 0.3`** as the default bar — about 10% of a
+  detectable effect in the mid-range above. Where a track needs a different bar it must say
+  so and say why.
+
+- **Record the DIRECTION of the bias, and whether it is stable.** A magnitude alone cannot be
+  acted on. A bias **toward the null** is conservative: it risks missing a real effect, which
+  matters in a precautionary setting but does not manufacture one. A bias **away from the
+  null** is anti-conservative: it inflates or invents an exposure–response, and in a
+  no-threshold setting where any positive finding drives policy that is the dangerous
+  direction. A bias whose **sign flips** with a design parameter is worse than either, because
+  no single correction and no single caveat covers it — V15 found exactly that, with the
+  curvature estimate inverting past `f` ≈ 0.55.
+
+  Every findings document from here reports direction alongside magnitude, and the direction
+  ledger in §11b keeps the picture in one place.
+
+## 11b. The direction ledger
+
+**Added 2026-09-08.** Measured signs, not remembered ones — read from the results files. `b₁`
+is positive, so *away from the null* means the estimate is inflated.
+
+| defect | direction | size | `bias/SE` @ n=800 | consequence |
+|---|---|---|---|---|
+| **Shipped default under a causally active covariate** (V17–V21) | **AWAY from the null** | +4.4% to +10.4% | 0.30–0.67 | Inflates the exposure–response. **Anti-conservative** |
+| **Censored-exposure draw, non-linear covariate arrow** (V22) | **AWAY from the null** | ~+20%, asymptotic | 1.18 | Largest measured, and in the dangerous direction |
+| Item 07's grid exposure draw, same cell (probe) | **AWAY from the null** | ~+94% | — | Coverage 0.000; inverts the arm it was meant to fix |
+| `forest_boot` / `properBoot` under a confounder (V19) | toward the null | −22% to −26% | 1.65–1.69 | Conservative, but coverage → 0. Visible at least |
+| Omitting `Y` from the imputation (V16, Phase 1 H1) | toward the null | −13% (−5.6% to −14.4%) | ~0.5 | Conservative — the classical attenuation |
+| Curvature on a mixture surface (V3, V15) | toward the null, **then INVERTS** | −12% to −117% | — | **Sign flips past `f` ≈ 0.55.** No single caveat covers it |
+| `mice pmm` with an inert covariate (V6, V19) | toward the null | −4.2% to −4.7% | 0.35 | Conservative |
+| Interaction estimand, single-exposure censoring (V3) | away from the null | +2.6% to +5.7% | — | Mild |
+
+**The asymmetry worth noticing.** Across 118 shipped- and near-shipped-arm cells in V16–V23,
+**75 are away from the null and 43 toward it** — and the split is not random. The defects this
+project has *closed* (omitted `Y`, the improper Z block, `forest_boot`) were the
+**conservative** ones. The two that remain open — the covariate-block defect and the
+censored-exposure defect — are both **anti-conservative**, and the second is the largest thing
+measured anywhere in the record.
+
+That ordering matters for how the remaining work is prioritised: a conservative defect can be
+disclosed and lived with, an anti-conservative one manufactures findings.
+
