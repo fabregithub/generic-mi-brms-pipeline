@@ -34,7 +34,9 @@ wrong claim in the documentation.
 > **Every criterion registered before this date is in the old currency** and needs re-reading
 > against §11b before being cited.
 
-Last updated: **2026-09-08** · after V22 — **there is no trade**: a parametric covariate draw wins on both sides (−0.14% against BART's +2.84% where the covariate conditional is non-linear), so a fix is real. **And a larger separate defect: ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** — now the biggest open item
+Last updated: **2026-09-09** · after V23 — the censored-exposure defect is **derivable**: its null cell is zero, four of six level predictions land within 1.5 pp from one calibration point, and it is asymptotic. But the one-parameter `u²` law **saturates**, and the exponent test **had no power** (CI [0.99, 2.28] contains 1 and 2 alike). **Item 07's grid draw is confirmed catastrophic here — up to +142%, coverage 0.000**
+
+*(earlier)* after V22 — **there is no trade**: a parametric covariate draw wins on both sides (−0.14% against BART's +2.84% where the covariate conditional is non-linear), so a fix is real. **And a larger separate defect: ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** — now the biggest open item
 
 ---
 
@@ -54,7 +56,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V22 (V23 registered)
+### Validation plan — Tracks V0–V23
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -84,7 +86,7 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V20 | **Which block** carries that bias? | ✅ resolved | **The covariate draw.** Fixing the Z block removes **85–104%**; fixing the exposure draw **0.1–11.7%**; interaction ≤0.40 pp. **All registered gates passed** — the first since V15. So **item 07 is not the fix for this**, and a shippable Z-block fix is the open question |
 | V21 | **Which property** of the covariate draw has to be right? | ✅ resolved | **Flexibility, and nothing else.** BART's smoothing carries **100%**; a correctly specified estimated draw is **+0.3 / +0.6%**, and so are improper and donor-matched versions. Properness moves the *interval* (`b` −12–16%), not the bias. **A fix exists in principle — but it is a trade, and the deciding cell (non-linear covariate conditional, on-path) does not exist yet** |
 | V22 | Is a parametric covariate draw a **fix**, or a different bug? | ✅ resolved | **A fix — there is no trade.** It is unbiased (−0.14%) even where the covariate conditional is non-linear and it is *misspecified*, because the analysis absorbs the error; BART is +2.84% there. **Separately: the censored-exposure draw carries ~20% ASYMPTOTIC bias under a non-linear covariate arrow** |
-| V23 | The censored-exposure defect, **derived first** | 📋 registered | Mechanism derived rather than measured: `leftcens` is linear in its predictors, so the damage is `u` = the part of a non-linear covariate arrow a line cannot express below the LOD — and it should enter **squared**, because `u` is an L²-projection residual. Registered law **bias% = 300·u²**. `phase1/run_v23_curvature.sh`, ~4.8 h |
+| V23 | The censored-exposure defect, **derived first** | ✅ resolved | **The derivation holds, the one-parameter law does not quite.** Null cell −0.80%, four of six predictions within 1.5 pp, bias flat to ≤0.27 pp over 4× in `n`. But `cv364` misses by 8.8 pp (free constant 249, not 300) and the **exponent test had no power** — CI [0.99, 2.28]. **Item 07's grid draw: up to +142%, coverage 0.000** |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -137,48 +139,51 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed run — V22, 2026-09-08 (435 min)
+### ✅ Last completed run — V23, 2026-09-09 (304 min)
 
-3 `n` levels × 3 cells × 7 arms × 500 reps = 4,500 tasks, zero errors.
-[`phase1/FINDINGS_v22.md`](phase1/FINDINGS_v22.md) · verdict arithmetic:
-[`phase1/analyze_v22.R`](phase1/analyze_v22.R)
+2 `n` levels × 7 cells × 4 arms × 500 reps = 7,000 tasks, zero errors.
+[`phase1/FINDINGS_v23.md`](phase1/FINDINGS_v23.md) · verdict arithmetic:
+[`phase1/analyze_v23.R`](phase1/analyze_v23.R)
 
-**V21 left one objection standing.** It found a correctly specified estimated covariate draw
-unbiased — but both its cells had a *linear-Gaussian* covariate conditional, so every
-parametric arm was correct by construction. R8 adopted BART precisely because a parametric Z
-block is misspecified when that conditional is non-linear (V6: −4.70%). Trading a 5% bias
-under linearity for a 5% bias under non-linearity would not be a fix.
+**The first track designed from a derivation rather than a surprise.** V22 found ~20%
+asymptotic bias in the censored-exposure draw by accident. Before building anything this time
+the mechanism was derived: `leftcens` fits a conditional **linear in its predictors**, so the
+damage is governed by `u` — the density-weighted residual of the covariate arrow after its best
+linear fit below the LOD — entering **squared** because `u` is an L²-projection residual.
+Registered law **bias% = 300·u²**, calibrated on one point.
 
-**There is no trade.** In the non-linear cell:
+| cell | `u` | predicted | measured | `bias/SE` |
+|---|---|---|---|---|
+| `cv000` | 0.0000 | 0.00% | **−0.80%** | 0.07 |
+| `cv119` | 0.1190 | 4.25% | +4.70% | 0.34 |
+| `cv182` | 0.1818 | 9.91% | +11.42% | 0.79 |
+| `cv262` | 0.2621 | 20.60% | +20.31% | 1.19 |
+| `cv364` | 0.3636 | 39.66% | **+30.82%** | 1.48 |
 
-| arm | `zr_pipe_nc` (linear) | `zr_pipenl` (**non-linear**) |
-|---|---|---|
-| `exact` *(anchor)* | −0.34% | −0.59% |
-| **`fit_proper`** | **−0.22%** | **−0.14%** |
-| **`bart`** | **+4.44%** | **+2.84%** |
+**What held:** the null cell is zero, four of six predictions land within **1.5 pp** from a
+single calibration point, the bias is **asymptotic** (≤0.27 pp shift over 4× in `n`), and the
+direction is stable and away from the null.
 
-The parametric draw wins in *both* cells, by 4.66 pp and 2.98 pp — **unbiased even where it is
-misspecified**, by the mechanism registered in advance: the analysis conditions on `logX1`, so
-a linear draw's error in approximating `g(logX1)` is absorbed by `logX1`'s own coefficient.
-**Estimand-specific** — for an estimand depending on `Z1`'s own coefficient there is no such
-absorption.
+**What did not:** `cv364` misses by **8.8 pp** and both largest-`u` cells are over-predicted —
+free constant 249, not 300. **The one-parameter law saturates.**
 
-**One gate missed and its pre-written reading is withdrawn.** `bart` came in at +2.84% under a
-≥3% bar whose registered interpretation was "nothing to fix". The neighbouring numbers refute
-it: BART's penalty shrinks (4.44 → 2.84%) but does not vanish, and `fit_proper` still beats it
-by 2.98 pp. The registered *arm comparison* was the right instrument and it passed.
+**And the exponent test had no power.** Registered as "reject if the log–log slope's CI excludes
+2"; measured **1.638 [0.994, 2.282]**, which contains 1 as readily as 2. The gate passed by
+being uninformative, so `THEORY.md` §3c's orthogonality argument is **neither confirmed nor
+refuted**. Second consecutive track where a gate resolved for the wrong reason — hence a new
+convention in `PLAN_pipeline_validation.md` §11: state the CI width that would make a gate
+discriminating, and check the design can deliver it.
 
-**And a larger defect the track was not built to find.** With the exposure censored under the
-same non-linear arrow, the exact-`Z` anchor sits at **+20.8 / +20.3 / +20.3%** — flat in `n`.
-**The X block alone carries ~20%, asymptotically**, 2–4× the covariate-draw defect this line
-of work has been chasing, and it lands on the censored-exposure draw itself. `leftcens`'s
-conditional is linear in its predictors by construction, so a covariate with a non-linear
-relationship to the censored exposure is outside what it can represent — and no cell before
-V22 had one. That cell has no anchor and no shipped baseline, so it is a signal to
-investigate, not a decomposed result. **It needs its own track and is now the largest open
-defect.**
+**The threshold a user needs:** `bias/SE` crosses the 0.3 gate at **`u` ≈ 0.12**. With `u`
+growing ~51× between 5% and 70% non-detects, almost no realistic curvature reaches that at
+5–10% censoring; a moderately curved covariate relationship does at 40%+.
 
-*(Cost: 435 min against 7.0 h predicted.)*
+**Item 07 is confirmed catastrophic.** `smc_xgrid` is fine at `g ≡ 0` (−0.92%) and degrades
+monotonically with `u` — **+43.8% at `cv119`, +94.1% at `cv262`, +142.1% at `cv364`, coverage
+0.000**. It reweights by `p(Y|x, rest)` and never uses the covariate arrow at all. **It must
+not ship without this cell class in its acceptance set.**
+
+*(Cost: 304 min against 4.8 h predicted.)*
 
 ## Document map
 
@@ -213,6 +218,7 @@ defect.**
 | [`phase1/FINDINGS_v20.md`](phase1/FINDINGS_v20.md) | V20: the bias is the **covariate draw** — 85–104% of it — not the exposure draw | **Before treating item 07 as the fix for the confounder bias** |
 | [`phase1/FINDINGS_v21.md`](phase1/FINDINGS_v21.md) | V21: it is BART's **smoothing**; a correctly specified estimated draw is unbiased — but the fix is a trade, untested on the side that matters | **Before proposing a parametric Z block as the fix** |
 | [`THEORY.md` §3c](THEORY.md) | The first derived mechanism with a **reason for the quadratic form** — and a candidate explanation for V15's `f²` | Before treating the measured exponents as unexplained |
+| [`phase1/FINDINGS_v23.md`](phase1/FINDINGS_v23.md) | V23: the censored-exposure law derived and tested — levels hold, exponent unresolved, **item 07 inverts** | **Before shipping item 07**, and before quoting the `u²` law as settled |
 | [`phase1/FINDINGS_v22.md`](phase1/FINDINGS_v22.md) | V22: the trade does not exist — the parametric draw wins on both sides. **And ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** | Before proposing the Z-block fix, and **before trusting the censored-exposure draw with a non-linear covariate** |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),

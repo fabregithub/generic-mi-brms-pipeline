@@ -326,16 +326,29 @@ orthogonality annihilates that term. The leading contribution is therefore **sec
 
 > **bias ≈ k · u²**
 
-This is a heuristic argument rather than a proof, and V23
-(`PLAN_pipeline_validation.md` §8p) is its test — with the log–log slope's CI excluding 2 as
-the condition that would kill it.
+This is a heuristic argument rather than a proof.
+
+> **TESTED, 2026-09-09 (V23) — and the test had no power.** The law's *levels* hold well:
+> four of six predictions within 1.5 pp from a single calibration point, the null cell at
+> −0.80%, and the bias flat to ≤0.27 pp across a 4× range of `n`, confirming it is asymptotic.
+> But the exponent came back at **1.638 with a 95% CI of [0.994, 2.282]** — containing 2 and 1
+> alike, on six points. **So the orthogonality argument is neither confirmed nor refuted.**
+> The point estimate leans below 2, and the two largest-`u` cells are over-predicted (the
+> biggest by 8.8 pp, with a freely fitted constant of 249 rather than 300), so **the
+> one-parameter `u²` form saturates** and something is missing at large `u`.
+>
+> Distinguishing 1.64 from 2 needs more `u` levels at the low end, where the bias is small and
+> Monte-Carlo error dominates — materially more expensive, and worth doing only if this
+> argument is load-bearing for something else. Until then it stands as a *motivated* form
+> rather than a demonstrated one. `phase1/FINDINGS_v23.md`.
 
 **What it may explain beyond itself.** §4's `f²` law for curvature attenuation has been frank
 curve-fitting since V15. If the orthogonality argument is right, any misspecification
 expressible as an L²-projection residual should enter the bias quadratically — and the censored
 fraction's effect may be one. That would turn `f²` from a fitted shape into a consequence.
 **Not claimed here**; recorded as the first candidate mechanism this document has had for a
-rate rather than a magnitude.
+rate rather than a magnitude — and after V23, still a candidate, because the exponent test
+could not tell 1 from 2.
 
 ---
 

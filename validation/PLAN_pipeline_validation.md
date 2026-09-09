@@ -2040,8 +2040,69 @@ it is a signal to investigate rather than a decomposed result — and it needs i
 
 ## 8p. Track V23 — the censored-exposure defect, derived first
 
-> **STATUS: REGISTERED, not yet run.** Cells, plumbing and the derived predictor built;
-> `~4.8 h` measured. Criteria in `phase1/run_v23_curvature.sh`'s header.
+> **STATUS: RESOLVED — 2026-09-09.** 2 `n` levels × 7 cells × 4 arms × 500 reps, 7,000 tasks,
+> **303.7 min against 4.8 h predicted**, zero errors. **The derivation holds; the
+> one-parameter law does not quite; the exponent test had no power; item 07 is confirmed
+> catastrophic.** Full reading: [`phase1/FINDINGS_v23.md`](phase1/FINDINGS_v23.md).
+
+### Outcome
+
+| cell | `u` | predicted | measured | miss | `bias/SE` |
+|---|---|---|---|---|---|
+| `cv000` | 0.0000 | 0.00% | **−0.80%** | −0.80 | 0.07 |
+| `cv040` | 0.0399 | 0.48% | +0.89% | +0.41 | 0.07 |
+| `cv119` | 0.1190 | 4.25% | +4.70% | +0.46 | 0.34 |
+| `cv153` | 0.1531 | 7.04% | +3.37% | −3.66 | 0.29 |
+| `cv182` | 0.1818 | 9.91% | +11.42% | +1.50 | 0.79 |
+| `cv262` | 0.2621 | 20.60% | +20.31% | −0.29 | 1.19 |
+| `cv364` | 0.3636 | 39.66% | **+30.82%** | **−8.84** | 1.48 |
+
+**What the derivation got right.** The null cell is zero (−0.80%, bias/SE 0.07); four of six
+predictions land within **1.5 pp** from a *single* calibration point; the bias is **asymptotic**
+— ≤0.27 pp shift between `n` = 800 and 3,200 in every non-null cell; and the direction is
+**stable and away from the null** throughout.
+
+**What it got wrong.** The ±5 pp gate fails at `cv364` by **8.8 pp**, and both largest-`u`
+cells are over-predicted — a freely fitted constant with the exponent held at 2 gives **249**,
+not 300. **The law saturates at large `u`**: one parameter is not enough.
+
+**THE EXPONENT TEST HAD NO POWER, AND THE GATE HID IT.** Registered: reject if the log–log
+slope's CI excludes 2. Measured **+1.638, CI [+0.994, +2.282]** — which contains 2 *and* 1
+*and* everything between, on six points. The gate passed by being uninformative. So the
+orthogonality argument of `THEORY.md` §3c is **neither confirmed nor refuted**, and the point
+estimate leans below 2, consistent with the saturation.
+
+**This is the second consecutive track where a registered gate resolved for the wrong
+reason** (V22's ≥3% bar on BART). Both were single thresholds on a quantity whose
+informativeness depended on precision nobody checked in advance. **New convention: before
+registering a CI-based gate, state what CI width would make it discriminating, and check the
+design can deliver it.** Added to §11.
+
+**The practical threshold, in the new currency.** `bias/SE` crosses the 0.3 gate at
+**`u` ≈ 0.12**: below it the defect is tolerable, above it consumes a quarter of a detectable
+effect and rises fast. With `u` growing ~51× between 5% and 70% non-detects, that means almost
+no realistic curvature reaches the threshold at 5–10% censoring, and a moderately curved
+covariate relationship does at 40%+.
+
+### Item 07 is confirmed catastrophic, and it scales with `u`
+
+| cell | `z21_exact` | `bartMI` | `micePmm` | **`smc_xgrid`** |
+|---|---|---|---|---|
+| `cv000` | −0.80% | −2.03% | −3.40% | **−0.92%** |
+| `cv119` | +4.70% | +9.25% | +8.10% | **+43.83%** |
+| `cv262` | +20.31% | +28.84% | +18.05% | **+94.06%** |
+| `cv364` | +30.82% | +46.22% | +29.43% | **+142.06%** |
+
+`smc_xgrid` is fine at `g ≡ 0` and degrades monotonically with `u`, reaching three times the
+shipped path's bias with **coverage 0.000**. It proposes from the exposure prior and reweights
+by `p(Y | x, rest)`, so it never uses the `Z1 = g(logX1)` information at all. **Item 07 must
+not ship without this cell class in its acceptance set.** It remains right for the mixture
+failure (V3/V9) and the non-linear-outcome penalty (V13/V14) — both about the *outcome*
+likelihood — but it makes this case several times worse.
+
+`micePmm` tracks the exact-Z arm (+29.4% vs +30.8% at `cv364`) while `bartMI` runs ~15 pp
+above both: consistent with V21/V22, since this is an X-block defect and BART adds its own
+covariate-draw bias on top.
 
 ### Why this one is different, and what that says about the last several
 
@@ -2264,6 +2325,16 @@ Mirror Phase 1:
   **For this project's own gating, use `bias/SE ≤ 0.3`** as the default bar — about 10% of a
   detectable effect in the mid-range above. Where a track needs a different bar it must say
   so and say why.
+
+- **Before registering a CI-based gate, state the CI width that would make it
+  discriminating — and check the design can deliver it.** *(Adopted 2026-09-09, after two
+  consecutive tracks resolved a gate for the wrong reason.)* V23 registered "reject the
+  quadratic form if the log–log slope's CI excludes 2" and measured **1.638 [0.994, 2.282]**:
+  the gate passed, but the interval contains 1 as readily as 2, so it could never have
+  discriminated quadratic from linear. V22 registered "`bart` ≥ +3%" and missed at +2.84%,
+  where the pre-written interpretation of the miss was contradicted by the neighbouring arms.
+  Both were single thresholds whose informativeness nobody checked in advance. A gate that can
+  only pass, or that licenses a conclusion the rest of the run refutes, is not a test.
 
 - **Record the DIRECTION of the bias, and whether it is stable.** A magnitude alone cannot be
   acted on. A bias **toward the null** is conservative: it risks missing a real effect, which
