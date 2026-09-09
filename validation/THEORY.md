@@ -14,6 +14,219 @@ themselves locally but none explain the set.
 
 ---
 
+## 0. The whole account — and what in it is an identity, a claim, or a guess
+
+**Added 2026-09-09, corrected the same day.** Twenty-three tracks and the framework behind
+them had been implicit. Writing it down exposed that its three parts have *very* different
+epistemic status, and an earlier draft of this section blurred them. They are separated here
+because the difference decides what is worth testing.
+
+### The identity — not testable, and not tested
+
+For a missing value `v`,
+
+> `p(v | Y, rest) ∝ p(Y | v, rest; θ) · p(v | rest)`,  so
+> `ℓ(v) ≡ log p(v | Y, rest) = log p(Y | v, rest; θ) + log p(v | rest) + const`
+
+**This is Bayes' theorem.** It is true by construction, it has never been "validated", and
+validating it would be a category error. Every use of it in this document is a use of an
+identity, not of a finding. What Meng's congeniality argument adds is the *observation* that an
+imputation drawing from anything else is uncongenial — also not an empirical claim.
+
+### The empirical claim — what family the pipeline actually draws from
+
+This *is* testable, and it is where an earlier draft of this section was wrong.
+
+| block | what it draws from | representable class |
+|---|---|---|
+| **covariate** (BART, or mean + homoscedastic Gaussian) | a Gaussian on the **raw** scale | log-density quadratic in `v` |
+| **exposure** (`leftcens::impute_censored_conditional`) | shash margin → **transform to a latent normal scale** (`x_to_z`) → interval-censored Gaussian AFT (`survreg`) → truncated normal draw → `z_to_x` | log-density quadratic in **`z(v)`**, the shash transform — **not** in `v` |
+
+**The earlier draft stated one projection, onto `span{1, v, v²}`, for both blocks. That is
+wrong for the exposure block**, whose representable class is quadratic in a *monotone
+transform* of `v`. The transform is not incidental: Phase 1 §7.5 measured coverage falling to
+0.47 when it is replaced by a plain Gaussian on skewed exposures, so it is doing real work and
+enlarges the representable class in a way the raw-scale statement misses.
+
+Verified by reading the installed function, not from memory: `fit_shash_margin` → `x_to_z` →
+`survreg` → `rnorm_trunc` → `z_to_x`.
+
+### The conjecture — why the bias should be second order
+
+Let `q*` be the member of the block's representable family that the fit converges to. **It is
+the KL projection**, because these are maximum-likelihood fits under misspecification — *not*
+the L² projection of the log-density, which is what the earlier draft asserted. The
+first-order condition at `q*` is that the true distribution is orthogonal to the fitted
+family's **score**,
+
+> `E_true[ ∂/∂β log q_β ]|_{β*} = 0`
+
+i.e. moment matching, not log-density projection. The bias in `θ̂` is a smooth functional of
+the imputation distribution, and its derivative along directions *inside* the family vanishes
+at `q*` — so the leading term is **quadratic in the distance from the family**.
+
+**That argument may well be right, but three things about it are unsettled and one of them is
+a substitution I have not justified:**
+
+1. **The norm is unspecified.** "Distance from the family" is a distributional distance (KL,
+   Hellinger, …). Nothing here says which, and the exponent could depend on the choice.
+2. **`u` is a proxy, not the object.** V23's `u` is the *L² residual of the covariate arrow
+   `g` after a linear fit below the LOD* — neither a KL distance nor an L² log-density
+   residual. It predicted four of six cell levels to within 1.5 pp from one calibration point,
+   which is striking and **unexplained**. Why a heuristic proxy tracks the theory's quantity so
+   well is an open question, not a result.
+3. **The exponent is untested and the constant is unfixed.** V23 measured the exponent at
+   **1.638, CI [0.994, 2.282]** — containing 1 as readily as 2. Refitting the constant with the
+   exponent held at 2 gave **249**, against the registered 300, and the two largest-`u` cells
+   were over-predicted, so the one-parameter form saturates.
+
+**Status: a motivated form with an unspecified norm, a proxy standing in for its argument, an
+exponent consistent with anything between linear and quadratic, and a constant that moved 17%
+on refitting.** That is weaker than "derived", and the earlier draft of this section read as
+though it were stronger.
+
+### The proposition that *is* well tested — propagation
+
+A non-zero misspecification for `v` moves estimand `θ` only if `v` is conditioned on by the
+analysis (§1b), **and** lies on an open exposure–outcome path (§1b), **and** the
+misspecification is not absorbable by a coefficient the analysis already fits (V22). All three
+required. V17 measured a factor of ~22 between the first two holding and not; V22 found a case
+where the third fails and a misspecified draw is nonetheless unbiased for the focal
+coefficient.
+
+**This is the part of the framework with real evidence behind it**, and it is structural rather
+than numerical — which is why it survived the currency change in §4b intact while every
+magnitude had to be re-read.
+
+### What the account buys, and what it does not
+
+It buys an enumeration: every defect measured anywhere in this project is a way for the fitted
+family to miss the target, and the ways are structured — a non-quadratic outcome term, a
+non-representable `p(v | rest)`, or a scale on which neither is quadratic. It says what a fix
+must do: enlarge the family, shrink the distance, or break propagation.
+
+It does not buy magnitudes. Every number in this document is conditional on a chosen distance
+from the family, and §0b shows **that distance is not identifiable from data**. So the project
+has measured a response function it cannot locate a real study on — and the response function's
+own exponent and constant are, after V23, still unfixed.
+
+---
+
+## 0c. What a wrong draw actually does: an exact two-term decomposition
+
+**Derived and verified 2026-09-09.** §0 gave the identity and a conjecture about magnitudes.
+This section is neither: it is an **exact algebraic consequence** of the identity for the
+estimator this pipeline actually computes, verified numerically to machine precision. It is
+the first equation in this document that is derived, checked, and not fitted.
+
+### The decomposition
+
+Let the analysis model be correct,
+
+> `Y = β₀X + γ₀′Z + ε`
+
+with `X` left-censored at `L`. The imputation supplies `X̃`, equal to `X` on observed rows, and
+write
+
+> `Δ = X̃ − X`   (zero on observed rows, non-zero only where `X ≤ L`)
+
+Substituting `X = X̃ − Δ` into the normal equations for `W = (X̃, Z, 1)` gives, with **no
+asymptotics and no approximation**,
+
+> `b̂ = (β₀, γ₀′)′ − β₀ (W′W)⁻¹W′Δ + (W′W)⁻¹W′ε`
+
+so the bias in the focal coefficient is **exactly the sum of two terms**:
+
+> **T₁ = −β₀ · [(W′W)⁻¹W′Δ]₁**  — the **imputation-error** term
+> **T₂ = +[(W′W)⁻¹W′ε]₁**  — the **outcome-borrowing** term
+
+`T₂` exists because a `Y`-aware imputation makes `X̃` a function of `Y`, and `Y` contains `ε`.
+It is zero if and only if the imputation ignores `Y`.
+
+### What each term does — measured, not asserted
+
+`b₀ = 0.40`, 40% left-censored, shipped `leftcens` draw, 120 reps at `n` = 2,000. The residual
+`bias − T₁ − T₂` is ~10⁻¹⁷ in every row, as it must be:
+
+| cell | bias | `T₁` (attenuates) | `T₂` (borrows) |
+|---|---|---|---|
+| precision | +0.0010 | −0.0578 | +0.0589 |
+| **precision, `Y` omitted** | **−0.0602** | −0.0610 | **+0.0008** |
+| fork | −0.0017 | −0.0631 | +0.0613 |
+| pipe | +0.0049 | −0.0710 | +0.0759 |
+| **`pipe_nl`** | **+0.0933** | −0.0088 | **+0.1021** |
+| `pipe_nl`, `Y` omitted | −0.0092 | −0.0151 | +0.0059 |
+
+**`T₁` is negative in every cell** — attenuation toward the null, behaving exactly like
+classical measurement error on the censored rows.
+
+**`T₂` is positive and vanishes when `Y` is dropped** (+0.0008, +0.0059 against +0.06 to +0.10
+when `Y` is used).
+
+### `T₂` is proportional to the imputation's `Y`-loading
+
+Scaling the fitted `Y` coefficient of a *correctly specified* draw by `k` (so `k` = 1 is the
+congenial draw), `n` = 3,000, 100 reps:
+
+| `k` | bias | `T₁` | `T₂` | `T₂/k` |
+|---|---|---|---|---|
+| 0.0 | −0.0430 | −0.0419 | −0.0011 | — |
+| 0.5 | −0.0208 | −0.0471 | +0.0263 | 0.053 |
+| **1.0** | **+0.0005** | −0.0550 | +0.0555 | 0.056 |
+| 1.5 | +0.0196 | −0.0659 | +0.0855 | 0.057 |
+| 2.0 | +0.0347 | −0.0796 | +0.1143 | 0.057 |
+
+`T₂/k` is constant to two figures. So:
+
+> **Congeniality is the `Y`-loading at which `T₁ + T₂ = 0`.**
+
+The net bias crosses zero at `k` = 1 (+0.0005). Congeniality is not "the draw happens to be
+unbiased" — it is the exact point at which outcome-borrowing offsets censoring attenuation.
+That is a sharper statement than §1's clause list, and it is derived from the identity rather
+than measured against it.
+
+### The direction rule, and the correction it forces
+
+| what the imputation does | `T₂` | net direction | measured |
+|---|---|---|---|
+| ignores `Y` | 0 | **toward the null** — pure attenuation | −0.043 (−10.8%) at `k` = 0 |
+| under-borrows (`k` < 1) | small | toward the null | −0.021 at `k` = 0.5 |
+| **congenial** (`k` = 1) | offsets `T₁` | **unbiased** | +0.0005 |
+| over-borrows (`k` > 1) | dominates | **away from the null** | +0.035 at `k` = 2 |
+| wrong conditional *while using* `Y` | dominates | **away from the null** | +0.093 in `pipe_nl` |
+
+**So "imputing left-censored `X` incorrectly gives bias toward the null" is true only of the
+`T₂` = 0 case** — the classical result, and the one Phase 1's H1 and V16 measured (−13.1 pp).
+Get the conditional wrong *while still conditioning on `Y`* and the sign reverses, because the
+draw over-borrows from the outcome. Every away-from-null entry in the §11b direction ledger is
+this: a `T₂` that `T₁` no longer cancels.
+
+In `pipe_nl` the mechanism is visible in the split — `T₁` collapses to −0.0088 while `T₂` rises
+to +0.1021. The non-linear covariate arrow does not make the draw noisier; it makes it lean on
+`Y` for information the arrow should have supplied.
+
+### A falsifiable consequence, already observed
+
+Item 07's grid draw proposes from the exposure prior and **reweights by `p(Y | x, rest)`** —
+which is maximal outcome borrowing with no covariate-arrow information at all. The
+decomposition therefore predicts a runaway `T₂` and a large away-from-null bias in exactly the
+cells where the arrow matters. V23 measured **+43.8%, +94.1%, +142.1%** as `u` rises, with
+coverage 0.000 (`phase1/FINDINGS_v23.md`). That was observed before this decomposition was
+written; it is now predicted by it.
+
+### What this changes about the fix
+
+The target is **not** "make `Δ` small". `T₁` and `T₂` are both large in every well-behaved
+cell (≈ ±0.06) and cancel; a fix that shrank `Δ` alone would break the cancellation. The target
+is `T₁ + T₂ = 0`, i.e. **the correct `Y`-loading**, which is what congeniality delivers and
+what a misspecified conditional gets wrong in either direction.
+
+**This also bounds what any diagnostic could do.** `T₂` depends on `ε`, which is unobservable,
+and `T₁` on `Δ`, which requires the unobserved `X`. Neither term is estimable from data — a
+sharper version of §0b's non-identifiability, now with a reason rather than an experiment.
+
+---
+
 ## 1. The condition
 
 For a variable `v` with missing values, the imputation must draw from the distribution
@@ -36,6 +249,14 @@ The pipeline instead draws `v` from a **linear-Gaussian regression of `v` on (Y,
 |---|---|
 | **(A)** | the outcome model is **linear in `v`** |
 | **(B)** | `p(v | rest)` is **Gaussian** |
+
+> **Scale correction, 2026-09-09.** For the **exposure** block both clauses are on the
+> **shash-transformed** scale, not the raw one: `leftcens` fits its Gaussian AFT after
+> `x_to_z()`, so what must hold is that the outcome is linear in `z(v)` and `p(z(v) | rest)`
+> is Gaussian. That is a *weaker* requirement than the raw-scale version — it is why the shash
+> margin recovers skewed exposures where a plain Gaussian gives coverage 0.47 (Phase 1 §7.5)
+> — and every clause-(B) statement about the exposure block in §§2–4 should be read on that
+> scale. For the **covariate** block the raw-scale statement is correct as written.
 
 Under (A) and (B) the product of two Gaussians is Gaussian, its mean is linear in `Y`, and
 its variance is free of `Y` — exactly what a linear-Gaussian regression represents. Violate
@@ -83,6 +304,57 @@ estimand depending on `v`'s own coefficient, for which no such absorption exists
 **Consequence for reading this document.** Every magnitude in §§2–4 is an estimand-specific
 number. The condition is a property of the imputation; whether violating it costs anything is
 a property of the imputation *and* the DAG *and* the estimand. All three have to be named.
+
+### 1b(i). The adjustment set is an estimand choice, and it changes what propagates
+
+**Added 2026-09-09.** Condition (i) says "conditioned on by the analysis model" as though the
+adjustment set were given. It is not — it follows from the estimand, and the DAG decides which:
+
+| DAG | estimand | `Z` in the analysis model? |
+|---|---|---|
+| **fork** (confounder) | the causal effect | **must be** — otherwise the backdoor stays open |
+| **pipe** (mediator) | **total** effect (`X→Y` plus `X→Z→Y`) | **must not be** |
+| **pipe** | **direct** effect | **must be** |
+| collider | any | **must not be** |
+
+Every pipe cell in V17–V23 used the *direct* effect, so the total-effect case — a legitimate
+and common target — had never been tested. Measured (40% censored, `m` = 20, 200 reps,
+`Z1` always **in** the imputation):
+
+| cell | estimand | truth | rel. bias | `bias/SE` | coverage |
+|---|---|---|---|---|---|
+| pipe | direct | 0.400 | +0.54% | 0.06 | 0.975 |
+| pipe | **total** | 0.700 | **+0.05%** | **0.01** | 0.955 |
+| `pipe_nl` | direct | 0.400 | +22.75% | 1.86 | 0.600 |
+| `pipe_nl` | **total** | 0.830 | **+17.85%** | **3.29** | **0.100** |
+
+**Two results, and they point opposite ways.**
+
+**Where the covariate draw is the problem, the estimand choice protects you.** In the linear
+pipe the total effect is essentially exact (+0.05%, `bias/SE` 0.01), and dropping `Z1` from the
+*imputation* as well costs the total effect nothing (+0.03%) while costing the direct effect
+**+5.07%**. That is condition (i) doing exactly what it says: an analysis that does not
+condition on `Z` cannot be reached through `Z`.
+
+**Where the exposure draw is the problem, it does not.** In `pipe_nl` the total effect is
++17.85% — smaller in *relative* terms than the direct effect's +22.75%, but **`bias/SE` 3.29
+against 1.86, and coverage 0.100 against 0.600**. Worse in the currency that decides (§4b),
+because the total effect has the smaller standard error.
+
+**So condition (i) governs covariate-draw violations only.** A violation in the **exposure**
+draw reaches *every* estimand involving `X`, whatever the adjustment set, because `X` is in
+every model. Choosing the total effect is a real mitigation for one class of defect and no
+mitigation at all for the other.
+
+**A prediction of mine was refuted here, and the reasoning error is worth recording.** I
+predicted the total effect would be biased *toward the direct effect* whenever the imputation
+conditions on `Z`, on the grounds that the imputer then "knows" the part of `Y` that `Z`
+explains. Measured: +0.05%. The error was conflating *an imputer richer than the analyst's
+model* — which classically affects the **variance**, and does so here, mildly and
+conservatively (coverage 0.955–0.975, width/SE ≈ 1.01) — with *an imputer that is wrong*, which
+affects the point estimate. If the draw is from the correct posterior given observed data, the
+completed data has the correct joint distribution and **every** functional of it is
+consistently estimable, including one the imputer's own model does not name.
 
 ---
 
@@ -319,10 +591,17 @@ its best linear fit below the LOD. Write it `u` (`ef_unrep_curvature()` in
 1.20 — as large as V22's — gives **+0.09%** bias, because `tanh` saturates and is nearly
 linear-fittable over the censored region, while V22's arrow at `u` = 0.262 gives **+22.3%**.
 
-**Why `u` enters SQUARED.** `u` is by construction orthogonal, in the density-weighted L²
-sense, to the span of the linear predictors — it is the residual of that projection. A
-first-order expansion of the bias functional pairs the misspecification with the score, and
-orthogonality annihilates that term. The leading contribution is therefore **second order**:
+**Why `u` enters SQUARED.** `u` is the residual of a density-weighted L² projection of `g`
+onto the linear span, so it is orthogonal to that span, and a first-order expansion of the
+bias functional would pair the misspecification with the score and annihilate it — leaving a
+second-order leading term:
+
+> ⚠️ **This argument is looser than it reads; see §0.** The fit converges to the **KL**
+> projection, not the L² projection of a log-density, so the orthogonality that actually holds
+> is to the fitted family's *score* (moment matching). And `u` is the L² residual of `g`
+> alone — neither a KL distance nor a log-density residual — so it is a **proxy standing in
+> for the theory's quantity**, not the quantity itself. That it predicts four of six cell
+> levels to 1.5 pp is empirically striking and theoretically unexplained.
 
 > **bias ≈ k · u²**
 
@@ -543,6 +822,195 @@ the **estimand** (a violation reaches some and not others), the **currency** (`b
 relative bias — they move at different rates in `n`), and the **direction** (conservative,
 anti-conservative, or sign-flipping). A number without all three is not actionable, and every
 figure in this document registered before 2026-09-08 was quoted without the second.
+
+---
+
+## 6b. What a correct draw would be: the DAG-factorised target, and an algorithm
+
+**Derived and design-tested 2026-09-09.** Everything before this section says where the
+pipeline goes wrong. This one says what right would look like. It is Bayes plus the DAG's
+factorisation, and nothing else.
+
+### The target
+
+For a censored exposure `X` with parents `Pa(X)` and children `Ch(X)` among the modelled
+variables (`Y` is always a child of `X`):
+
+> **p(x | rest, x ≤ L) ∝ p(x | Pa(X)) · ∏_{C ∈ Ch(X)} p(C | x, Pa(C)\{X}) · 1{x ≤ L}**
+
+That is just Bayes applied to the joint the DAG implies. Written out per role:
+
+| DAG | `Pa(X)` | `Ch(X)` | target ∝ |
+|---|---|---|---|
+| **fork** (`Z→X`, `Z→Y`) | `{Z}` | `{Y}` | `p(x \| Z) · p(Y \| x, Z)` |
+| **pipe** (`X→Z→Y`) | `∅` | `{Z, Y}` | `p(x) · ` **`p(Z \| x)`** ` · p(Y \| x, Z)` |
+| **collider** (`X→Z←Y`) | `∅` | `{Z, Y}` | `p(x) · ` **`p(Z \| x, Y)`** ` · p(Y \| x)` |
+
+**What `leftcens` implements is the fork form**, and only that: a regression of `x` on
+`(Y, all covariates)` treats every covariate as a *parent*. It is exact when the joint is
+Gaussian-linear — which is why the `fork` cell measures **+0.28%** — and it has **no child
+factor at all**, which is why a pipe with a non-linear `X→Z` arrow fails.
+
+### The estimand does not change the target
+
+This is worth stating because it is not obvious and it simplifies the design. The target above
+is the correct posterior **given observed data**, so the completed data has the correct joint
+distribution and *every* functional of it is consistently estimable — including the total
+effect, whose analysis model does not name `Z`. §1b(i) measured this: +0.05% for the total
+effect from an imputation that conditions on `Z`.
+
+So the estimand enters **only** in the analysis model applied afterwards. What it costs is
+variance, not bias: a target richer than the analyst's model gives mildly conservative
+inference (coverage 0.955–0.975, width/SE ≈ 1.01), which is Meng's classical result.
+
+| | imputation target | analysis model |
+|---|---|---|
+| fork | the fork form | `Y ~ X + Z` |
+| pipe, **direct** | the pipe form | `Y ~ X + Z` |
+| pipe, **total** | the pipe form — *unchanged* | `Y ~ X` |
+| collider | the collider form | `Y ~ X` |
+
+### The algorithm
+
+`X` is scalar and bounded above by `L`, so a grid inverse-CDF draw is exact to grid resolution
+and needs no proposal, no weights and no acceptance step:
+
+```
+per outer sweep t:
+  draw θ⁽ᵗ⁾ from the analysis model's posterior          # properness (V4, V21)
+  draw φ⁽ᵗ⁾ from each child model's posterior
+  fit the interval-censored model of X on Pa(X)          # what leftcens already does
+  for each censored cell i:
+    1. m_i, s_i  ← parent fit for row i
+    2. grid  x_g  over (L_i − 6 s_i, L_i],  G points
+    3. log w_g = log p(x_g | Pa_i)                            # parents
+               + log p(Y_i | x_g, Z_i; θ⁽ᵗ⁾)                  # the outcome child
+               + Σ_{C ∈ Ch(X)} log p(C_i | x_g, ·; φ⁽ᵗ⁾)      # THE MISSING TERM
+    4. normalise w, inverse-CDF sample x̃_i
+```
+
+Only **step 3's third line** is new. It is empty for a fork, so the fork case needs no change.
+
+**This is not item 07.** Item 07 proposes from the exposure prior and *reweights by
+`p(Y | x, rest)`* — the same missing child factor, but with the outcome term amplified rather
+than balanced, which is why V23 measured it at **+142%** with coverage 0.000. In §0c's terms it
+maximises `T₂` while leaving `T₁` alone. The grid form above balances the factors instead of
+reweighting by one of them.
+
+### Design test: with the child factor known, the defect goes away
+
+`pipe_nl`, 40% censored, `m` = 20, 200 reps, `g` supplied (so this tests the *design*, not the
+estimation of `g`):
+
+| child factor | estimand | rel. bias | `bias/SE` | coverage |
+|---|---|---|---|---|
+| off | direct | +6.50% | 0.96 | 0.965 |
+| **on** | direct | **−0.26%** | **0.04** | 0.995 |
+| off | total | +4.73% | 1.62 | 0.815 |
+| **on** | total | **−0.26%** | **0.08** | 0.980 |
+
+*(Reference: shipped `leftcens` gives +19.5% and +16.9% in these cells. The "off" rows are
+better than that because this grid uses the exact parent factor and the true `θ`, so they
+isolate the child factor's own contribution.)*
+
+**The design is right.** All the remaining risk is in obtaining `p(Z | x)` below the LOD, which
+§0b shows is **not identifiable** — so it has to be a declared assumption with a sensitivity
+axis, not an estimate. That is the honest shape of the fix: the algorithm is exact given a
+child model, and the child model is an assumption.
+
+### `Z` is needed in the imputation even when it is absent from the model
+
+**Added 2026-09-09.** A natural simplification is: if `Z` is not in the analysis model, the
+imputation does not need it either — so only the fork and the pipe-direct cases need the new
+child factor. **That is wrong, and it fails in the cases where the current code is furthest
+off.**
+
+`Z` belongs in the target iff `Z` is **observed and informative about `X`** — which has
+nothing to do with the analysis model. In a pipe `Z` is a *child* of `X`, so `p(Z | x)` is
+observed information about `x`, and dropping it means drawing from the wrong posterior no
+matter what the analyst then fits.
+
+**And the non-linearity does not disappear when `Z` is marginalised out — it moves.** With
+`Z₁ = g(X₁) + ν` and `Y = b₁X₁ + γ₁Z₁ + …`, marginalising `Z₁` gives
+
+> `Y = b₁X₁ + γ₁·g(X₁) + … + (γ₁ν + ε)`
+
+so once `Z₁` is no longer conditioned on, **`Y` is non-linear in `X₁`** through `γ₁·g(X₁)`. A
+linear draw is misspecified either way: **clause (B)** if you condition on `Z`, **clause (A)**
+if you do not. Measured in `pipe_nl` with the total effect as the estimand:
+
+| `Z₁` in the exposure draw | rel. bias | `bias/SE` | coverage |
+|---|---|---|---|
+| in | +16.87% | 2.91 | 0.145 |
+| out | +14.31% | 2.45 | 0.320 |
+
+Both badly wrong. Dropping `Z` buys 2.6 pp and costs the structure that would have let the
+child factor fix it — the DAG-factorised draw with the child factor **on** gives **−0.26%** for
+this same total-effect estimand.
+
+**So the algorithm is needed in four cases, not two:**
+
+| DAG / estimand | `Z` in the analysis? | child factor needed? |
+|---|---|---|
+| fork | yes | no — `Z` is a *parent*; current code is already correct (+0.28%) |
+| pipe, **direct** | yes | **yes** — `p(Z \| x)` |
+| pipe, **total** | **no** | **yes** — `p(Z \| x)`, unchanged |
+| collider | **no** | **yes** — `p(Z \| x, Y)` |
+
+The two rows where `Z` is absent from the model are precisely the two where the child factor is
+indispensable and the current code has no equivalent.
+
+### Why point estimates, and where that choice runs out
+
+**Added 2026-09-09.** Every verdict in this project compares a point estimate, an empirical SE
+and a coverage rate — not whole posteriors. For a Gaussian linear estimand that loses nothing,
+and it can be checked exactly without MCMC, because the conjugate posterior for a coefficient
+is closed form. Pooling `m` = 20 exact posteriors and comparing to the complete-data posterior:
+
+| cell | location shift | scale ratio | pooled skew / kurtosis | complete-data skew / kurtosis |
+|---|---|---|---|---|
+| fork | −0.0015 | 1.24 | +0.034 / 2.94 | +0.000 / 3.05 |
+| pipe | +0.0028 | 1.20 | +0.035 / 2.95 | +0.000 / 3.05 |
+| `pipe_nl` | **+0.0945** | **1.58** | +0.030 / 2.95 | +0.000 / 3.05 |
+
+**The pooled posterior is symmetric and mesokurtic in every cell** — indistinguishable in shape
+from the complete-data posterior. Location and scale describe it completely, and those are
+exactly what bias, `emp_se` and coverage measure. So for this estimand class, comparing whole
+posteriors would add nothing, and MCMC would add nothing but cost: `fit_lm_estimand()` is what
+makes 500 reps × 7 cells × 4 arms a five-hour run rather than a months-long one.
+
+**But that argument is specific to a Gaussian linear model, and the pipeline is not one.** Its
+real targets are logistic, ordinal via `mo()`, splines and mixed models, where the posterior
+for a coefficient is skewed and location-plus-scale is *not* a complete summary. Two
+consequences, both unaddressed:
+
+1. **Every validation result in this project is on a Gaussian linear estimand.** Transfer to
+   the pipeline's actual model classes is an assumption, not a measurement.
+2. **Step 6's posterior-pooling machinery has never been exercised.** It applies the finite-`m`
+   variance correction on a support-respecting transform, *gated by a bimodality diagnostic* —
+   machinery that only acts when the pooled posterior is non-Gaussian. In 23 tracks that
+   condition has never been met, so the gate has never fired and the transform has never been
+   tested against a known answer.
+
+**That is a larger gap than any remaining cell in the covariate programme**, and it is the one
+place where "compare the whole posterior" would be the right instrument rather than a more
+expensive version of the same answer.
+
+### A shortcut that does not work
+
+I hypothesised that if `p(Z | x)` cannot be modelled, *dropping* `Z` from the exposure draw
+might beat conditioning on it linearly. **Refuted**, measured by changing only `leftcens`'s
+predictor set:
+
+| cell | estimand | `Z1` in the draw | `Z1` out |
+|---|---|---|---|
+| `pipe_nl` | direct | +19.48% (`bias/SE` 1.53) | **+32.32% (2.95)** |
+| `pipe_nl` | total | +16.87% (2.91) | +14.31% (2.45) |
+| `fork` | direct | +0.28% (0.03) | **+4.11% (0.56)** |
+
+Dropping it is clearly worse for the direct effect and for the fork, and only marginally better
+for the total effect. There is no shortcut: the child factor has to be modelled, or its absence
+disclosed.
 
 ---
 

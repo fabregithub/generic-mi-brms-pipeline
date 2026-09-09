@@ -32,7 +32,7 @@ Write `X` for the exposure, `Y` for the outcome, `Z` for a covariate.
 | role | structure | adjust for `Z`? | why |
 |---|---|---|---|
 | **Confounder** ("fork") | `Z → X`, `Z → Y` | **Yes** | Omitting it leaves the exposure effect confounded |
-| **Mediator** ("pipe") | `X → Z → Y` | **Depends on the estimand** | Adjusting gives the *direct* effect; omitting gives the *total* effect. Both are legitimate — say which you mean |
+| **Mediator** ("pipe") | `X → Z → Y` | **Depends on the estimand** | Adjusting gives the *direct* effect; omitting gives the *total* effect. Both are legitimate — say which you mean, and see below: the choice also changes how much the imputation can hurt you |
 | **Collider** | `X → Z ← Y` | **No** | Adjusting opens a spurious path and biases the estimate, potentially reversing its sign |
 | **Precision covariate** | `Z → Y` only | Optional | Improves precision, cannot confound |
 
@@ -152,6 +152,40 @@ conservative: reduce the exposure to the problem rather than try to correct it.
   `n^−1/3`, so collecting more subjects is a weak remedy; filling in the confounder is a
   direct one.
 - **Do not read a good coverage number as reassurance** on this point.
+
+---
+
+## If you are targeting a total effect, the covariate problem largely goes away
+
+The section above is about a covariate that is **in your model**. That is a choice, and for a
+mediator it follows from the estimand:
+
+| your target | mediator `Z` in the model? |
+|---|---|
+| **total effect** of the exposure (direct plus the part acting through `Z`) | **no** |
+| **direct effect**, holding `Z` fixed | **yes** |
+
+**And the choice matters for the imputation, not just the interpretation.** Measured on the
+same data, 40% non-detects:
+
+| target | bias | bias / SE | coverage |
+|---|---|---|---|
+| direct effect | +0.5% | 0.06 | 0.98 |
+| **total effect** | **+0.05%** | **0.01** | 0.96 |
+
+A covariate you do not adjust for cannot carry a covariate-imputation problem into your
+estimate. Dropping the mediator from the imputation as well costs the **total** effect nothing
+(+0.03%) while costing the **direct** effect **+5%**.
+
+> ⚠️ **But this does not protect you from the exposure-side problem** described in the next
+> section but one. Where a covariate relates *non-linearly* to a censored exposure, the total
+> effect carried **+17.9% bias with coverage 0.10** — worse in standard-error units than the
+> direct effect's +22.8% at coverage 0.60, because the total effect has the smaller standard
+> error. The exposure draw feeds every estimand involving the exposure, whatever your
+> adjustment set.
+
+**Practical reading.** If your scientific question is a total effect, prefer it — you lose one
+whole class of imputation error. Do not read that as protection against the other class.
 
 ---
 

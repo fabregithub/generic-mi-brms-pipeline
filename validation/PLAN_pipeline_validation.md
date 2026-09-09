@@ -2364,6 +2364,13 @@ is positive, so *away from the null* means the estimate is inflated.
 | `mice pmm` with an inert covariate (V6, V19) | toward the null | −4.2% to −4.7% | 0.35 | Conservative |
 | Interaction estimand, single-exposure censoring (V3) | away from the null | +2.6% to +5.7% | — | Mild |
 
+**The mechanism, added 2026-09-09.** `THEORY.md` §0c decomposes the bias exactly into
+`T₁` (censoring attenuation, always negative) and `T₂` (outcome borrowing, zero iff the
+imputation ignores `Y`, and proportional to its `Y`-loading). Congeniality is the loading at
+which they cancel. So **every "toward the null" row below is a `T₂` that is too small, and
+every "away from the null" row is a `T₂` that `T₁` no longer cancels.** The ledger is not a
+list of unrelated signs; it is one quantity above or below its congenial value.
+
 **The asymmetry worth noticing.** Across 118 shipped- and near-shipped-arm cells in V16–V23,
 **75 are away from the null and 43 toward it** — and the split is not random. The defects this
 project has *closed* (omitted `Y`, the improper Z block, `forest_boot`) were the
