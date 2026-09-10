@@ -176,6 +176,14 @@ to −14% at 40% non-detects.
 the two-block engine works, what has been validated and to what precision, the correction
 history (v1.4.0, v1.5.0, v1.5.1), and the recommended `m`.
 
+> **⚠️ One case needs your judgement, and Step 1 now screens for it.** The exposure draw is
+> exact when a covariate is a *cause* of the censored exposure (a confounder), and when it is an
+> *effect* whose relationship with the exposure is **straight**. It carries **+22% bias that does
+> not shrink with sample size** when a covariate is an *effect* of the exposure (a mediator) and
+> that relationship is **curved**. `01_validate_config.R` reports the curvature and non-detect
+> rate per covariate, but only you can say which direction the causal arrow points.
+> See [`docs/covariate-roles.md`](docs/covariate-roles.md).
+
 The scope limit is reproduced here in full rather than linked, because acting on it matters
 more than finding it:
 

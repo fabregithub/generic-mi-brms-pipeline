@@ -2257,6 +2257,132 @@ Two properties of the harness's randomness that have already caused confusion:
    runs, hold the arm set fixed — or compare within a run, which is what every verdict here
    does.
 
+## 8q. Track V24 — the DAG-factorised exposure draw, all four cases at once
+
+> **STATUS: RESOLVED — 2026-09-09.** 3 `n` levels × 6 cells × 200 reps = 3,600 tasks, 7 arms each,
+> **320 min against 8.2 h predicted**, zero errors. **C1, C3 and C4 met at every `n`; C2 at the
+> two larger `n` — its `n` = 800 miss is a registration error of mine, not a result (the bar
+> asked for a 1.0 improvement in a cell that only had 0.48 of bias available).** The algorithm
+> is exact given a child model. The three results that constrain what can ship are below.
+> Full reading: [`phase1/FINDINGS_v24.md`](phase1/FINDINGS_v24.md).
+
+### Outcome
+
+| # | criterion | 800 | 3200 | 12800 |
+|---|---|---|---|---|
+| C1 | `dag_true` `\|bias/SE\|` < 0.3, all six cells | **MET** | **MET** | **MET** |
+| C2 | child factor gains ≥ 1.0; no-op under fork | *bar unreachable* | **MET** | **MET** |
+| C3 | `dag_lin` strictly worse than `dag_Yonly` under `pipe_nl` | **HOLDS** | **HOLDS** | **HOLDS** |
+| C4 | `*_tot` cells recover 0.700 / 0.830 | **MET** | **MET** | **MET** |
+| C5 | direction (descriptive) | 6/6 toward null | 6/6 | 6/6 |
+
+**1. The factorisation is right in all four cases at once.** `dag_true` never exceeds
+`|bias/SE|` = **0.13** at any `n`, coverage 0.905–0.985, indistinguishable from `oracle`.
+Against **−1.15 to −8.24** for the incongenial draw at `n` = 12800 (coverage 0.000 in five of
+six), so no cell passes vacuously.
+
+**2. The draw class in use today is *asymptotically* biased wherever the covariate is a
+mediator.** `dag_Yonly` is what V0–V23 all used. Relative bias flat, `bias/SE` ∝ √n:
+
+| cell | rel. bias (800/3200/12800) | `bias/SE` | coverage |
+|---|---|---|---|
+| pipe, direct | −7.48 / −6.18 / −6.18% | 0.58 → 0.97 → 1.94 | 0.945 → 0.830 → 0.535 |
+| pipe, **total** | −7.37 / −6.90 / −6.68% | 1.04 → 1.97 → 3.80 | 0.830 → 0.480 → **0.040** |
+| `pipe_nl`, direct | +7.52 / +9.25 / +8.82% | 0.48 → 1.19 → 2.28 | 0.940 → 0.780 → 0.375 |
+| `pipe_nl`, **total** | +5.10 / +5.59 / +5.76% | 0.84 → 1.86 → 3.83 | 0.895 → 0.565 → **0.050** |
+
+The **linear** `pipe` rows are the ones that change the picture: `u` = 0 there by construction,
+and they still carry 6–7%. §3c's `u²` law is a modifier, not the mechanism — see `THEORY.md`
+§6b, which also records the one control V24 lacks.
+
+**3. A more flexible child model is monotonically worse.** `n` = 12800, `pipe_nl` direct: none
++8.82%, linear +25.75%, quad +31.07%, cubic +37.38%, true **−0.21%**; total +5.76 / +22.27 /
++29.04 / +41.66 / **+0.04%**, coverage 0.000 for every fitted form. Below an LOD there is no
+data to fit the shape from, so a richer basis extrapolates further wrong. **The fix cannot
+carry a fitted default.**
+
+**4. A collider needs nothing.** `dag_Yonly` +0.06 to +0.16% at every `n`. Corrects §6b's
+four-cases table as first written.
+
+### The question
+
+`THEORY.md` §6b derives the target for a left-censored exposure from Bayes plus the DAG's
+factorisation, and `leftcens` implements only its **fork** form — every covariate a parent, no
+child factor. §6b concludes the child factor is needed in **four** cases, differing along two
+axes that no prior track crossed: the covariate's causal role, and (for a pipe) **which
+estimand**. V0–V23 estimated the direct effect in every cell, because `z_in_model` was always
+the full set.
+
+| cell | `z_role` | `target` | `Z₁` adjusted? | child factor |
+|---|---|---|---|---|
+| `dag_fork` | fork | direct | yes (backdoor) | no — `Z₁` is a *parent* |
+| `dag_pipe_dir` | pipe | direct | yes | `p(Z₁ \| x)` |
+| `dag_pipe_tot` | pipe | **total** | **no** | `p(Z₁ \| x)` |
+| `dag_pnl_dir` | `pipe_nl` | direct | yes | `p(Z₁ \| x)`, non-linear |
+| `dag_pnl_tot` | `pipe_nl` | **total** | **no** | `p(Z₁ \| x)`, non-linear |
+| `dag_collider` | collider | direct | **no** | `p(Z₁ \| x, Y)` |
+
+**Why one sweep rather than a track per case.** The claim is not "the draw is unbiased here",
+it is "bias direction is DAG-aware and each case is fixed for its own reason". Cases run
+separately cannot rule out a sign being an artefact of one cell, and the two **linear** `pipe`
+cells are only meaningful *as controls* that separate the factorisation from the
+non-linearity. `seed_as` pairs every pipe-family cell to `dag_pipe_dir`.
+
+**Why the covariates are fully observed** (`mcar_frac` = 0, against 0.4 in every `zr_*` cell):
+all three factors condition on `Z`, so a missing `Z₁` is a different question and would
+reintroduce V21's covariate-draw ladder as a confound. `dag_impute_datasets()` refuses missing
+covariates outright. The combined case is a `ROADMAP.md` item.
+
+### The arm ladder
+
+| arm | target conditions on | note |
+|---|---|---|
+| `dag_noY` | parents + truncation | the incongenial draw |
+| `dag_Yonly` | + `p(Y \| x, Pa(Y))` | what V0–V23 all used |
+| `dag_lin` | + `p(Z₁ \| x)` fitted linear | the only assumption-free form |
+| `dag_quad` / `dag_cubic` | + fitted quadratic / cubic | sensitivity |
+| `dag_true` | + the **true** arrow | **ORACLE — not a proposed method** |
+
+`dag_true` separates "is the factorisation right" from "can the child model be estimated".
+§0b already measured the second answer as **no** below the LOD, so `dag_lin/quad/cubic` are a
+sensitivity axis, never a tuning choice.
+
+### Registered criteria
+
+Per §11: each gate must be able to fail for the reason it names, and none may be satisfiable
+by an uninformative result. `analyze_v24.R` implements the informativeness checks.
+
+| # | criterion | voided if |
+|---|---|---|
+| C1 | `dag_true`: `\|bias/SE\|` < 0.3 in **all six** cells | any cell's `dag_noY` is under 0.3 — it had no bias to remove |
+| C2 | child factor gains ≥ 1.0 in `\|bias/SE\|` in both `pipe_nl` cells, and is **bit-identical** to `dag_Yonly` under the fork | — |
+| C3 | `dag_lin` is *strictly worse* than `dag_Yonly` in both `pipe_nl` cells | `dag_lin` is also worse in the **linear** controls, where it is correctly specified — then it is not misspecification |
+| C4 | the `*_tot` cells recover 0.700 / 0.830, **not** `b₁` = 0.400 | an estimate matching both — the wiring, not the draw |
+| C5 | direction of `dag_noY`'s bias per cell | **descriptive only**; must not be reported as a gate |
+
+**Most consequential outcome.** C1 *and* C3 both holding makes the deliverable a **sensitivity
+procedure over a declared child model**, not a drop-in fix — because getting `p(Z \| x)` wrong
+below the LOD would then be *more* damaging than omitting the term.
+
+### What the design test measured first
+
+*(Superseded by the run above; kept because it is how the design was checked before the compute
+was spent, and because it carries the paired standard-error comparison the track does not.)*
+200 reps, `n` = 2000, LCR 40%, covariates observed, arms paired within a rep. Full table in
+`THEORY.md` §6b. In brief: the factorisation holds in all four cases at once
+(`\|bias/SE\|` ≤ **0.02**, coverage 0.95–0.985, against 1.9–2.9 incongenial); the linear child
+form is right where the arrow is linear (−0.07%) and **harmful where it is not** (+26.11%,
+`bias/SE` 2.17; and 1.48 → **5.74** with coverage **0.000** for the total effect); the fork
+needs only the `Y` factor (+0.08%); and under a **collider** the `Y`-only draw is *already*
+unbiased (−0.14%), so the child factor there buys 1.4 ± 0.1% of the SE and is available rather
+than indispensable.
+
+> That last point revises §6b's four-cases table as originally written: the collider row
+> claimed the child factor was needed. It is *legitimate* there, not *necessary* — `Z₁` is off
+> every `X`–`Y` path and absent from the analysis model, so ignoring it is congenial. The
+> honest recommendation for a collider is not to spend an unidentifiable assumption on 1.4% of
+> the SE.
+
 ## 11. Reporting conventions
 
 Mirror Phase 1:

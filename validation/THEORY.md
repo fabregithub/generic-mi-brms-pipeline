@@ -955,10 +955,138 @@ this same total-effect estimand.
 | fork | yes | no — `Z` is a *parent*; current code is already correct (+0.28%) |
 | pipe, **direct** | yes | **yes** — `p(Z \| x)` |
 | pipe, **total** | **no** | **yes** — `p(Z \| x)`, unchanged |
-| collider | **no** | **yes** — `p(Z \| x, Y)` |
+| collider | **no** | ~~**yes**~~ — **corrected by V24: available, not necessary.** The `Y`-only draw is already unbiased there (+0.06 to +0.16% across three `n`), because `Z₁` is off every `X`–`Y` path and absent from the correct analysis model, so omitting it is *congenial*. The child factor buys 1.4 ± 0.1% of the SE — not worth an unidentifiable assumption |
 
-The two rows where `Z` is absent from the model are precisely the two where the child factor is
-indispensable and the current code has no equivalent.
+Of the two rows where `Z` is absent from the analysis model, **one** is where the child factor
+is indispensable (pipe-total) and one is where it turned out to be optional (collider) — see
+the corrected row above. The distinction is whether `Z` is on an `X`–`Y` path, not whether it
+is in the model.
+
+### All four cases at once, and the one place the algorithm turns harmful
+
+> **Superseded in scale by Track V24 (2026-09-09), which ran the same design through the real
+> runner at `n` = 800 / 3200 / 12800 × 200 reps and confirmed every result below, with two
+> additions the design test could not see — the current draw class is **asymptotically** biased
+> wherever the covariate is a mediator (6–7% flat in `n`, coverage → 0.040), and a *more
+> flexible* child model is *monotonically worse*. Read
+> [`phase1/FINDINGS_v24.md`](phase1/FINDINGS_v24.md) first; this section is the derivation and
+> the single-`n` design test it was built from.**
+
+**Added 2026-09-09.** The four-cases table above was assembled from cells measured
+separately, which cannot rule out a sign being a property of one cell rather than of the
+role. `phase1/derive_dag_four.R` runs all four simultaneously — the two axes are the
+covariate's role and, for a pipe, the estimand — with the two **linear** pipe cells included
+as controls that separate the *factorisation* from the *non-linearity*. `n` = 2000, LCR 40%,
+`m` = 20, **200 reps**, arms paired on data and imputation seed within a rep.
+
+`Δ SE` is the paired change in the pooled SE against the `Y`-only draw, with its Monte-Carlo
+error — `bias/SE` cannot show an efficiency change, since an arm that sharpens the draw moves
+numerator and denominator together.
+
+| case | arm | rel. bias | `bias/SE` | coverage | `Δ SE` (paired) |
+|---|---|---|---|---|---|
+| fork | no `Y` | −17.34% | 2.42 | 0.270 | +1.7 ± 0.2% |
+| fork | **`Y` only** (= DAG-correct) | **+0.08%** | **0.01** | 0.965 | — |
+| pipe, direct | no `Y` | −23.90% | 2.94 | 0.095 | +0.5 ± 0.2% |
+| pipe, direct | `Y` only | −6.00% | 0.74 | 0.905 | — |
+| pipe, direct | **+ child, linear** | **−0.07%** | **0.01** | 0.960 | +4.3 ± 0.1% |
+| pipe, total | `Y` only | −6.86% | 1.54 | 0.670 | — |
+| pipe, total | **+ child, linear** | **−0.24%** | **0.06** | 0.950 | −4.6 ± 0.1% |
+| `pipe_nl`, direct | no `Y` | −19.23% | 1.94 | 0.530 | +0.4 ± 0.2% |
+| `pipe_nl`, direct | `Y` only | +9.04% | 0.92 | 0.870 | — |
+| `pipe_nl`, direct | + child, **linear** | **+26.11%** | **2.17** | 0.415 | +22.3 ± 0.2% |
+| `pipe_nl`, direct | **+ child, true** | **−0.11%** | **0.01** | 0.985 | −9.3 ± 0.2% |
+| `pipe_nl`, total | `Y` only | +5.65% | 1.48 | 0.695 | — |
+| `pipe_nl`, total | + child, **linear** | **+21.94%** | **5.74** | **0.000** | −0.2 ± 0.2% |
+| `pipe_nl`, total | **+ child, true** | **+0.00%** | **0.00** | 0.950 | +1.0 ± 0.2% |
+| collider | no `Y` | −14.94% | 2.12 | 0.435 | +1.6 ± 0.1% |
+| collider | `Y` only | −0.14% | 0.02 | 0.945 | — |
+| collider | + child, true | −0.13% | 0.02 | 0.950 | −1.4 ± 0.1% |
+
+Four things follow, and only the first was expected.
+
+**1. The factorisation is right in all four cases simultaneously.** With the child model
+supplied, `|bias/SE|` is at most **0.02** across fork, `pipe_nl`-direct, `pipe_nl`-total and
+collider, with coverage 0.95–0.985 — against 1.9–2.9 for the incongenial draw in the same
+cells. This is not a vacuous pass: every cell has real bias to remove.
+
+**2. A *misspecified* child factor is worse than no child factor at all.** In `pipe_nl` the
+linear child form takes `bias/SE` from 0.92 → **2.17** (direct) and 1.48 → **5.74** (total,
+coverage **0.000**). The linear pipe controls show this is misspecification and not the factor
+itself: there the same linear form is correct by construction and it *improves* both cells to
+`|bias/SE|` ≤ 0.06.
+
+> **This is the constraint on the fix, and it is sharper than "the child model is an
+> assumption".** An assumption that degrades gracefully could ship with a default. This one
+> does not: getting `p(Z | x)` wrong below the LOD is *more* damaging than omitting the term,
+> so the algorithm cannot ship with a fitted-by-default child model. It has to be a
+> **sensitivity procedure over a declared form** — and a run that declares the form wrongly is
+> worse off than one that never used the algorithm. §0b's non-identifiability result is
+> therefore not a caveat on this fix, it is the fix's binding constraint.
+
+**3. Under a collider the child factor is an *efficiency* term, not a bias fix.** The `Y`-only
+draw is already at −0.14% there, because with `Z₁` absent from the analysis model and off every
+`X`–`Y` path, ignoring `Z₁` entirely is *congenial*. Adding `p(Z₁ | x, Y)` buys **1.4 ± 0.1%**
+of the SE — real, but small against an unidentifiable assumption. **The collider is the one
+case of the four where the honest recommendation is not to use the algorithm.** The four-cases
+table above overstates the collider row: the child factor is *available* there, not
+*indispensable*.
+
+**4. `Δ SE` moves in both directions, and the sign tracks the estimand.** For the *direct*
+effect the child factor widens intervals (+4.3% linear pipe); for the *total* effect it narrows
+them (−4.6%). Consistent with §1b(i): the total-effect analysis discards `Z₁`, so the
+information the child factor recovers has nowhere else to enter.
+
+### What V24 added, at scale
+
+**Two results needed three `n` levels, so the single-`n` design test could not reach them.**
+
+**The draw the pipeline uses today is *asymptotically* biased wherever the covariate is a
+mediator.** `dag_Yonly` — parents plus `p(Y | x, Pa(Y))`, no child factor, the class every
+track from V0 to V23 used — has **flat** relative bias and therefore `bias/SE` growing as √n:
+
+| cell | rel. bias (800 / 3200 / 12800) | `bias/SE` | coverage | exponent |
+|---|---|---|---|---|
+| pipe, direct | −7.48 / −6.18 / −6.18% | 0.58 → 0.97 → 1.94 | 0.945 → 0.830 → 0.535 | 0.43 |
+| pipe, total | −7.37 / −6.90 / −6.68% | 1.04 → 1.97 → 3.80 | 0.830 → 0.480 → **0.040** | 0.47 |
+| `pipe_nl`, direct | +7.52 / +9.25 / +8.82% | 0.48 → 1.19 → 2.28 | 0.940 → 0.780 → 0.375 | 0.56 |
+| `pipe_nl`, total | +5.10 / +5.59 / +5.76% | 0.84 → 1.86 → 3.83 | 0.895 → 0.565 → **0.050** | 0.55 |
+| fork | ±0.4% | ≤ 0.07 | 0.925–0.980 | — |
+| collider | ≤ +0.71% | ≤ 0.08 | 0.925–0.975 | −0.03 |
+
+**The two linear `pipe` rows are the important ones.** §3c and V22 attributed the ~20%
+censored-exposure defect to the arrow's *non-linearity*, through `u²`. These cells have a
+**linear-Gaussian** arrow, so `u` = 0 by construction — and they still carry 6–7%, flat over a
+16× range in `n`.
+
+`u` therefore cannot be what *generates* this defect, because **`u` = 0 in two situations that
+differ by 6 pp**: when the arrow is *absent* (V23's `cv000`, `g ≡ 0`, measured −0.80%) and when
+the arrow is *present but linear* (V24's `dag_pipe_*`, −6.18 / −6.68%). Both have zero
+unrepresentable curvature; only the second has a `p(Z₁ | x)` that depends on `x` at all. So the
+generator is **whether the child factor carries information**, and `u²` governs how much worse
+things get once it also cannot be represented — a modifier, not the mechanism.
+
+*Caveat on that comparison:* `cv000` was measured on the pipeline arms and `dag_pipe_*` on
+V24's harness draw, so the two numbers come from different instruments. V24 has **no
+arrow-absent cell of its own**, which is the clean within-instrument control this argument
+wants; it is listed as open in `ROADMAP.md`.
+
+**A more flexible child model is monotonically worse.** At `n` = 12800, `pipe_nl` direct:
+no child +8.82%, linear +25.75%, quadratic +31.07%, cubic +37.38%, true **−0.21%**; total:
++5.76 / +22.27 / +29.04 / +41.66 / **+0.04%**, coverage 0.000 for every fitted form.
+
+> This is §0b's non-identifiability turned into a *sign*. The usual defence — fit something
+> flexible and let the data decide — is **exactly backwards** below an LOD, because there is no
+> data there to decide with and a richer basis extrapolates further wrong. It is why the fix
+> cannot carry a fitted default, and why "declared form plus sensitivity axis" is not
+> conservatism but the only correct interface.
+
+**Where this is not yet tested.** The covariates are fully observed in every cell above
+(`mcar_frac` = 0), deliberately — all three factors condition on `Z`, so a missing `Z₁` is a
+different question, and leaving it missing would reintroduce V21's covariate-draw ladder as a
+confound. `dag_impute_datasets()` refuses missing covariates rather than returning `NA`. The
+combined case is open (`ROADMAP.md`).
+
 
 ### Why point estimates, and where that choice runs out
 

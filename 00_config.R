@@ -218,7 +218,15 @@ analysis_spec <- list(
     # censored_exposure = list(
     #   exposure_vars = c("X"),          # censored focal exposure(s)
     #   predictors    = NULL,            # reduced X-block predictor set; NULL = auto
-    #                                    #   (outcome + use_in_model covariates + other exposures)
+    #                                    #   (outcome + use_in_model covariates
+    #                                    #   + AUXILIARY covariates + other exposures).
+    #                                    #   ⚠️ If you set this explicitly you override the
+    #                                    #   automatic set entirely -- include any covariate
+    #                                    #   the exposure CAUSES even when it is out of your
+    #                                    #   analysis model (a mediator in a total-effect
+    #                                    #   analysis). Omitting one was measured at 6-7%
+    #                                    #   bias, flat in n, coverage falling to 0.040.
+    #                                    #   See validation/phase1/FINDINGS_v24.md.
     #   outer_sweeps  = 5L,              # block-FCS outer sweeps (3-5 is usually enough)
     #   margin        = "shash",         # "shash" (skew-aware, shares copula's margin) or
     #                                    #   "gaussian" (plain tobit; use only if skew negligible)

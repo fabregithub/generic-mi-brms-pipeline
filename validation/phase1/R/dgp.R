@@ -54,7 +54,8 @@ if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
 #'   to analysis misspecification.
 make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
                        y_form = "linear", z_role = "precision",
-                       nl_a = NULL, nl_c = NULL) {
+                       nl_a = NULL, nl_c = NULL, target = "direct",
+                       mu_x = 0.0, sd_x = 1.0) {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -120,25 +121,79 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     z_in_model <- setdiff(z_in_model, "Z1")
   }
 
+  # ---- V24: WHICH ESTIMAND, for the roles where there is a choice -----------
+  # THEORY.md 1b(i): the adjustment set is not a modelling preference, it is part
+  # of the estimand's definition. Under a pipe both answers are correct and they
+  # are DIFFERENT numbers -- adjusting for the mediator gives the DIRECT effect
+  # b[1], omitting it gives the TOTAL effect. Every track before V24 estimated
+  # the direct effect, because `z_in_model` was always the full set. `target`
+  # makes the other choice available so the two can be tested side by side.
+  #
+  # Under a fork there is no choice: Z1 opens a backdoor, so it must be adjusted
+  # for and "total" is not a separate estimand. Under a collider Z1 is off every
+  # X-Y path, so total and direct coincide and Z1 is out either way. Asking for
+  # "total" in those roles is therefore a specification error, not a variant.
+  if (!target %in% c("direct", "total"))
+    stop("unknown target: ", target, call. = FALSE)
+  if (identical(target, "total") && !z_role %in% c("pipe", "pipe_nl")) {
+    stop("target = \"total\" is only defined for a pipe; under z_role = \"",
+         z_role, "\" the total and direct effects are either not both ",
+         "identified (fork) or identical (collider, precision, descendant).",
+         call. = FALSE)
+  }
+
+  # The total effect is what a model WITHOUT the mediator recovers.
+  #
+  #   pipe:     Z1 = delta_xz * logX1 + noise, noise independent of X, so
+  #             Y = (b1 + delta_xz * gamma1) logX1 + ... exactly.
+  #
+  #   pipe_nl:  Z1 = g(logX1) + noise with g non-linear, so there is no single
+  #             structural total effect -- the derivative varies with x. What the
+  #             analysis model targets is the LINEAR PROJECTION, and for jointly
+  #             Gaussian exposures Stein's identity makes that projection exact:
+  #             Cov(g(X1), Xj) = Cov(X1, Xj) E[g'(X1)], so the coefficient vector
+  #             of g(X1) on (X1, X2, X3) is E[g'(X1)] * e1 -- ALL of it lands on
+  #             logX1 and none on the other exposures. Hence
+  #                 total = b1 + gamma1 * E[g'(X1)],  X1 ~ N(mu_x, sd_x^2).
+  #             Verified by simulation at n = 4e5: 0.8269 against 0.8298 here
+  #             (1.4 SE), and the logX2 coefficient stays at its structural
+  #             0.1996 -- which is the "none on the others" half of the claim.
+  #             `mu_x`/`sd_x` must match what is passed to the simulator; the
+  #             defaults are the ones every scenario uses.
+  # Structural arrow strengths, needed here as well as in the returned list.
+  delta_zx <- 0.60; delta_xz <- 0.60; delta_yz <- 0.60; delta_xz2 <- 1.20
+  nl_a_v <- nl_a %||% 1.20; nl_b_v <- 1.80; nl_c_v <- nl_c %||% 0.35
+
+  total_effect <- if (identical(z_role, "pipe")) {
+    b[1] + delta_xz * gamma[1]
+  } else if (identical(z_role, "pipe_nl")) {
+    xq <- seq(mu_x - 10 * sd_x, mu_x + 10 * sd_x, length.out = 20001L)
+    wq <- stats::dnorm(xq, mu_x, sd_x); wq <- wq / sum(wq)
+    gprime <- nl_a_v * nl_b_v / cosh(nl_b_v * xq)^2 + 2 * nl_c_v * xq
+    b[1] + gamma[1] * sum(wq * gprime)
+  } else b[1]
+
+  if (identical(target, "total")) z_in_model <- setdiff(z_in_model, "Z1")
+
   list(
     intercept = 0.0,
     b = b, gamma = gamma,
     z_role = z_role, z_in_model = z_in_model,
     # Strengths of the new structural arrows. Sized against gamma[1] = 0.50 and
     # b[1] = 0.40 so each role is a real feature of the DGP, not a nudge.
-    delta_zx = 0.60,        # fork/mixed:     Z1 -> X1
-    delta_xz = 0.60,        # pipe/collider:  X1 -> Z1
-    delta_yz = 0.60,        # collider:        Y -> Z1
-    delta_xz2 = 1.20,       # mixed:          X1 -> Z2 on the logit scale
+    delta_zx = delta_zx,    # fork/mixed:     Z1 -> X1
+    delta_xz = delta_xz,    # pipe/collider:  X1 -> Z1
+    delta_yz = delta_yz,    # collider:        Y -> Z1
+    delta_xz2 = delta_xz2,  # mixed:          X1 -> Z2 on the logit scale
     # pipe_nl: Z1 = a*tanh(b*logX1) + c*(logX1^2 - 1) + noise. `tanh` gives
     # saturation and the square gives curvature -- neither representable by a
     # linear conditional, both learnable by BART.
     # V23 sweeps these, so a scenario may override them; NULL keeps V22's values.
-    nl_a = nl_a %||% 1.20, nl_b = 1.80, nl_c = nl_c %||% 0.35, nl_sd = 0.80,
+    nl_a = nl_a_v, nl_b = nl_b_v, nl_c = nl_c_v, nl_sd = 0.80,
     # Under "pipe" the adjusted analysis estimates the DIRECT effect, which is
     # b[1]. Recorded here so the distinction is in the object rather than only in
     # a comment -- it is not the estimand, and must never be swapped in as one.
-    total_effect = if (identical(z_role, "pipe")) b[1] + 0.60 * gamma[1] else b[1],
+    total_effect = total_effect, target = target,
     b_int = b_int, b_quad = b_quad,
     erf_form = erf_form,
     y_form = y_form, b_zq = b_zq,
@@ -147,7 +202,10 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     # logX1 = 0 (the point about which b_int / b_quad are centred), so the
     # matched analysis model (dgp_formula) recovers it as the `logX1` coefficient.
     estimand_name = "b_logX1",
-    estimand_true = b[1]
+    # V24: the estimand FOLLOWS the target. Before V24 this was always b[1]
+    # because every cell adjusted for everything; a "total" cell that kept
+    # b[1] here would score a correct answer as a 75% bias.
+    estimand_true = if (identical(target, "total")) total_effect else b[1]
   )
 }
 

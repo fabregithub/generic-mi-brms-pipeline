@@ -1,5 +1,9 @@
 source("00_config.R")
 source("00_common_functions.R")
+# Sourced for `ce_preflight_curvature()`, which Step 1 runs when the
+# censored-exposure strategy is selected. Guarded so a project that does not
+# use that strategy (and may not carry the file) still validates.
+if (file.exists("00_censored_exposure.R")) source("00_censored_exposure.R")
 
 init_logging("pipeline")
 setup_project_dirs(paths)
@@ -139,6 +143,18 @@ safe_step("STEP 1: Validate configuration", {
           "(attenuates the exposure-response coefficient)."
         )
       }
+    }
+
+    # ---- preflight: is this analysis in the unsafe cell? --------------------
+    # Runs on every censored-exposure config: the point is to tell the user
+    # whether the one unsafe cell (a curved mediator) applies to them at all.
+    # Wrapped because a diagnostic must never be the reason a valid config
+    # fails to validate.
+    if (exists("ce_preflight_curvature")) {
+      tryCatch(ce_preflight_curvature(raw_data, analysis_spec, var_dict),
+               error = function(e)
+                 message("Censored-exposure preflight skipped: ",
+                         conditionMessage(e)))
     }
 
     for (x in ce$exposure_vars) {

@@ -32,7 +32,7 @@ Write `X` for the exposure, `Y` for the outcome, `Z` for a covariate.
 | role | structure | adjust for `Z`? | why |
 |---|---|---|---|
 | **Confounder** ("fork") | `Z → X`, `Z → Y` | **Yes** | Omitting it leaves the exposure effect confounded |
-| **Mediator** ("pipe") | `X → Z → Y` | **Depends on the estimand** | Adjusting gives the *direct* effect; omitting gives the *total* effect. Both are legitimate — say which you mean, and see below: the choice also changes how much the imputation can hurt you |
+| **Mediator** ("pipe") | `X → Z → Y` | **Depends on the estimand** | Adjusting gives the *direct* effect; omitting gives the *total* effect. Both are legitimate — say which you mean. **⚠️ This is also the role that carries the pipeline's largest known defect when the exposure is censored, and the one a large sample does not rescue** — see [the exposure-side warning](#-a-non-linear-covariateexposure-relationship-breaks-the-censored-exposure-draw) |
 | **Collider** | `X → Z ← Y` | **No** | Adjusting opens a spurious path and biases the estimate, potentially reversing its sign |
 | **Precision covariate** | `Z → Y` only | Optional | Improves precision, cannot confound |
 
@@ -54,6 +54,13 @@ say — set `use_in_model = FALSE` for it.
 
 If you want to keep it for imputation only, that is what `use_as_auxiliary` is for — with one
 caveat below.
+
+**Keeping it for imputation only is also the right call numerically, and there is nothing more
+to do.** With the collider left out of the analysis model, leaving it out of the exposure
+imputation as well is *unbiased* (−0.1% measured) — the omission is congenial, because a
+collider sits off every exposure–outcome path. Using it to inform the exposure imputation buys
+about 1.4% of the standard error and costs an assumption that cannot be checked (see the fix
+section near the end). For a collider, the simple thing is the correct thing.
 
 ---
 
@@ -178,11 +185,17 @@ estimate. Dropping the mediator from the imputation as well costs the **total** 
 (+0.03%) while costing the **direct** effect **+5%**.
 
 > ⚠️ **But this does not protect you from the exposure-side problem** described in the next
-> section but one. Where a covariate relates *non-linearly* to a censored exposure, the total
-> effect carried **+17.9% bias with coverage 0.10** — worse in standard-error units than the
-> direct effect's +22.8% at coverage 0.60, because the total effect has the smaller standard
-> error. The exposure draw feeds every estimand involving the exposure, whatever your
-> adjustment set.
+> section but one — and for a **mediator** the total effect is the *more* exposed of the two,
+> not the less. Where a covariate relates non-linearly to a censored exposure the total effect
+> carried **+17.9% bias at `bias/SE` 6.1**, worse in standard-error units than the direct
+> effect's +22.0% at 2.4, because the total effect has the smaller standard error. The exposure
+> draw feeds every estimand involving the exposure, whatever your adjustment set.
+>
+> **There is also a trap specific to this choice.** Dropping the mediator from the analysis
+> model used to drop it from the exposure *imputation* as well, which cost 6–7% with coverage
+> falling to **0.040** at n = 12,800. Fixed 2026-09-09 — the exposure draw now keeps
+> auxiliary and out-of-model covariates. If you pass `censored_exposure$predictors` explicitly,
+> make sure the mediator is in that list even though it is out of your model.
 
 **Practical reading.** If your scientific question is a total effect, prefer it — you lose one
 whole class of imputation error. Do not read that as protection against the other class.
@@ -273,8 +286,97 @@ error in the analysis.
   a coverage-detectable failure.
 
 This was found in the same run that resolved the covariate-draw question, and it is the
-largest open defect in the censored-exposure path. It has not yet been decomposed — see
+largest open defect in the censored-exposure path. See
 [`validation/phase1/FINDINGS_v22.md`](../validation/phase1/FINDINGS_v22.md).
+
+### The fix that is being built — and why it is not a switch you can turn on
+
+**Added 2026-09-09.** The cause is now understood well enough to write down. The correct
+distribution to draw a below-LOD exposure from factorises along your DAG:
+
+> `p(x | everything else, x ≤ LOD)` ∝ `p(x | causes of x)` × `p(outcome | x, …)` ×
+> **`p(each covariate that x causes | x, …)`** × `1{x ≤ LOD}`
+
+The shipped draw has the first two factors and not the third. When a covariate is a *cause* of
+the exposure (a **confounder**) there is no third factor and the draw is already correct — this
+is why the confounder case shows no exposure-side defect. When the covariate is an *effect* of
+the exposure (a **mediator**), the missing factor is exactly the curved relationship the draw
+cannot represent.
+
+Adding that factor works. Measured across sample sizes 800 to 12,800, with the relationship
+supplied, the bias is **at most 0.13 standard errors** and interval coverage is nominal — the
+same as having no missing data at all — simultaneously for the direct effect, the total effect
+and the collider case.
+
+**But it cannot be shipped as a default, and this is the part worth planning around.** The
+missing factor has to be evaluated *below* the detection limit, where by definition there is no
+exposure data to fit it from — so its shape is an assumption, not an estimate. And getting that
+assumption wrong is **worse than leaving the factor out**, with the damage increasing the more
+flexible the fitted shape:
+
+| what you assume about the relationship | resulting bias | interval coverage |
+|---|---|---|
+| nothing (leave the factor out) | +8.8% | 0.375 |
+| a straight line | +25.8% | 0.000 |
+| a quadratic | +31.1% | 0.000 |
+| a cubic | +37.4% | 0.000 |
+| the true shape | **−0.2%** | **0.945** |
+
+*(direct effect, 40% non-detects, n = 12,800; the total effect behaves the same, ending at
++41.7% for a cubic)*
+
+A fitted polynomial is *always* worse than omitting the factor, and the more flexible the worse.
+
+That ordering is the opposite of the usual instinct — fit something flexible and let the data
+decide. Below a detection limit there is no data to decide with, so a richer curve simply
+extrapolates further in the wrong direction.
+
+**What has to be right is the *shape*, not the numbers.** Tested separately: with the correct
+functional form declared and its coefficients estimated from the rows above the detection limit,
+the bias is **−0.5%** — as good as knowing the answer. Getting an internal constant wrong (say
+`tanh(x)` where the truth is `tanh(1.8x)`) costs **+3.2%**, not 25%, so a roughly-right shape
+degrades gracefully. But **dropping a term** from an otherwise correct form gives **+20.7%** —
+worse than leaving the factor out. The failure mode is missing structure, not insufficient
+flexibility.
+
+**So the fix will arrive as a sensitivity analysis over a shape you declare**, not as an option
+you switch on. It is **not implemented yet**: a first attempt that reweighted the existing draw
+was built, measured, and removed, because it cannot work in exactly the curved case it was for.
+Progress is tracked in [`validation/ROADMAP.md`](../validation/ROADMAP.md).
+
+### What this means for you today
+
+**The advice above still stands** — linearise the covariate if you can; otherwise treat the
+exposure–response estimate as biased and say so. Beyond that, it depends entirely on the
+covariate's role:
+
+- **Confounder** (a cause of the exposure): **nothing to do.** The exposure draw is already
+  correct in this case, at every sample size tested.
+- **Collider** (an effect of both exposure and outcome): **nothing to do.** The correct
+  analysis omits it, and omitting it from the imputation too is unbiased (+0.1 to +0.2%). The
+  extra factor buys about 1.4% of the standard error there — not worth an unverifiable
+  assumption.
+- **Mediator** (an effect of the exposure): **this is the case that needs care, and what matters
+  is whether the relationship is straight.**
+  - *Straight relationship* — nothing to do. The exposure draw is exact (−0.02% for a direct
+    effect, +0.19% for a total effect), **provided the covariate is in the exposure draw's
+    predictor set.** It now is by default; see the note below on auxiliaries.
+  - *Curved relationship* — **this is the pipeline's largest known defect.** +22% for a direct
+    effect, +18% for a total effect, and it does **not** shrink as your sample grows. Options in
+    order: transform the covariate to straighten it; failing that, remove it from
+    `censored_exposure$predictors` (measured to roughly halve the bias, +22% → +9%, and free);
+    failing that, report the estimate as biased. There is no switch for this yet — see
+    [`docs/censored-exposures.md`](censored-exposures.md).
+
+> **The practical warning for mediators.** A curved relationship between a censored exposure and
+> a covariate that the exposure *causes* is not rescued by a large sample size, and the interval
+> will not warn you — coverage was **0.000** in the worst measured cell. Step 1 of the pipeline
+> now screens for exactly this and prints what it finds. If it fires, the question "is this
+> covariate a cause or an effect of my exposure?" has to be answered from subject knowledge
+> before the estimate can be relied on.
+
+Details: [`validation/phase1/FINDINGS_v24.md`](../validation/phase1/FINDINGS_v24.md),
+[`validation/THEORY.md` §6b](../validation/THEORY.md).
 
 ---
 
@@ -286,10 +388,23 @@ block but **not** by the censored-exposure block. `00_censored_exposure.R` build
 exposure draw's predictor set from `use_in_model` alone, so an auxiliary variable helps impute
 covariates and is silently left out of the exposure imputation.
 
-Measured effect: under 1 percentage point, and its sign differed between missingness
-mechanisms — so this is a documentation gap more than a numerical problem. But if you are
-relying on an auxiliary variable specifically to inform a censored exposure, name it
-explicitly instead:
+**⚠️ Fixed 2026-09-09 — and it was not the small problem this section used to describe.** The
+automatic predictor set now includes `use_as_auxiliary = TRUE` and `role = "auxiliary"`
+variables, so an auxiliary does reach the exposure draw.
+
+The original measurement — "under 1 percentage point" — was taken on a covariate that carried
+little information about the exposure. The variable most likely to be marked "impute only, not
+in the model" is a **mediator in a total-effect analysis**, and a mediator is precisely the
+covariate that *does* carry information about a censored exposure. Dropping such a covariate
+from the exposure draw was measured at **6–7% bias, flat in sample size**, so coverage falls as
+the study grows: 0.945 → 0.830 → **0.535** for a direct effect and 0.830 → 0.480 → **0.040** for
+a total effect across n = 800 → 12,800. [`FINDINGS_v24.md`](../validation/phase1/FINDINGS_v24.md)
+
+The same applies to any covariate you deliberately keep out of the analysis model. If you set
+`use_in_model = FALSE` for a mediator to target a total effect, it used to leave the exposure
+imputation as well; now it does not.
+
+You can still name predictors explicitly, which overrides the automatic set entirely:
 
 ```r
 analysis_spec$imputation$censored_exposure$predictors <- c(

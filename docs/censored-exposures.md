@@ -206,6 +206,64 @@ study design, as noted above.
 
 ---
 
+## What changed on 2026-09-09, and why
+
+Two changes to this path, both driven by Track V24
+([`FINDINGS_v24.md`](../validation/phase1/FINDINGS_v24.md)). Neither changes the default
+behaviour of an analysis whose covariates are all in the model.
+
+### 1. Auxiliary and out-of-model covariates now reach the exposure draw
+
+The automatic X-block predictor set was `outcome + use_in_model covariates + other exposures`.
+It now also includes `use_as_auxiliary = TRUE` and `role = "auxiliary"` variables.
+
+**Why it mattered.** The covariate most likely to be marked "impute only, not in the model" is a
+**mediator in a total-effect analysis** — and a mediator is exactly the covariate that carries
+information about a censored exposure, because it is an *effect* of it. Dropping such a covariate
+from the exposure draw was measured at **6–7% bias, flat in sample size**, so interval coverage
+*falls as the study grows*: 0.945 → 0.830 → **0.535** for a direct effect and 0.830 → 0.480 →
+**0.040** for a total effect across n = 800 → 12,800.
+
+This fix assumes nothing. Conditioning *linearly* on the covariate is sufficient whenever its
+relationship with the exposure is linear — and where it is, the draw is then exact (−0.02%).
+
+If you set `censored_exposure$predictors` explicitly you override the automatic set entirely, so
+check that mediators and auxiliaries are in your list.
+
+### 2. Step 1 screens for the one configuration that is genuinely unsafe
+
+The exposure draw is exact for a confounder, exact for a collider, and exact for a mediator whose
+relationship with the exposure is **straight**. It is badly biased in one case: a **mediator with
+a curved relationship** — **+22.0%** for a direct effect and **+17.9%** for a total effect at 40%
+non-detects, and it does not shrink with sample size.
+
+Whether a relationship is curved is visible *above* the detection limit, so `01_validate_config.R`
+now reports it per (exposure, covariate) pair, alongside the non-detect rate that decides how far
+the draw must extrapolate. It is silent when nothing looks curved.
+
+It is a screen, not a guarantee. It cannot see below the LOD — validation measured that curvature
+there is **not identifiable** — and it cannot tell a cause from an effect. Only you can say which
+direction the arrow points.
+
+**If it fires, in order of preference:**
+
+1. **Transform the covariate** so the relationship is straight, and pass the transformed version
+   via `censored_exposure$predictors`. This is a real fix and costs nothing.
+2. **Remove the mediator from `censored_exposure$predictors`.** Measured to roughly *halve* the
+   bias (+22.0% → +9.07%), because a linear conditional forced onto a curved relationship does
+   more damage than simply discarding the information. Not a fix, but free and strictly better.
+3. **Report the estimate as biased away from the null.** There is no option to switch on. The
+   fix that works is known and validated (a grid sampler that adds the missing factor: −0.1% to
+   −0.6% in every case), but implementing it faithfully against an arbitrary `brms` analysis
+   model is its own piece of work and is tracked in
+   [`validation/ROADMAP.md`](../validation/ROADMAP.md). An implementation that reweighted
+   `leftcens`'s draws instead was built, measured, and removed — it cannot work in exactly the
+   curved case it was for, and the reasoning is recorded at the top of
+   `00_censored_exposure.R`.
+
+Background: [`docs/covariate-roles.md`](covariate-roles.md) and
+[`validation/SUMMARY.md`](../validation/SUMMARY.md).
+
 ---
 
 *[← Back to the main README](../README.md)*

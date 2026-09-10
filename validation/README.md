@@ -34,7 +34,9 @@ wrong claim in the documentation.
 > **Every criterion registered before this date is in the old currency** and needs re-reading
 > against §11b before being cited.
 
-Last updated: **2026-09-09** · after V23 — the censored-exposure defect is **derivable**: its null cell is zero, four of six level predictions land within 1.5 pp from one calibration point, and it is asymptotic. But the one-parameter `u²` law **saturates**, and the exponent test **had no power** (CI [0.99, 2.28] contains 1 and 2 alike). **Item 07's grid draw is confirmed catastrophic here — up to +142%, coverage 0.000**
+Last updated: **2026-09-09** · after V24 — the **DAG-factorised exposure draw** is exact in all four cases it is needed for (`|bias/SE|` ≤ 0.13 at `n` = 800–12,800, indistinguishable from complete data), but **the algorithm being right is the easy half**. Three results constrain what can ship: the **current** draw class is **asymptotically** biased wherever the covariate is a **mediator** — 6–7% flat in `n` even with a *linear* arrow, coverage 0.945 → **0.040**; a **more flexible** child model is **monotonically worse** (cubic +37%, coverage 0.000 for every fitted form), so it cannot carry a fitted default; and a **collider** needs nothing
+
+*(earlier)* after V23 — the censored-exposure defect is **derivable**: its null cell is zero, four of six level predictions land within 1.5 pp from one calibration point, and it is asymptotic. But the one-parameter `u²` law **saturates**, and the exponent test **had no power** (CI [0.99, 2.28] contains 1 and 2 alike). **Item 07's grid draw is confirmed catastrophic here — up to +142%, coverage 0.000**
 
 *(earlier)* after V22 — **there is no trade**: a parametric covariate draw wins on both sides (−0.14% against BART's +2.84% where the covariate conditional is non-linear), so a fix is real. **And a larger separate defect: ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** — now the biggest open item
 
@@ -56,7 +58,7 @@ Document: [`PLAN_leftcensored_exposure_integration.md`](PLAN_leftcensored_exposu
 | 4 | Wire block-FCS into the pipeline | ✅ built + hardened |
 | 5 | Pilot `m`, document FMI | ✅ **done 2026-08-28** — `m` = 30 confirmed (V7 P3) |
 
-### Validation plan — Tracks V0–V23
+### Validation plan — Tracks V0–V24
 
 Tracks the *validation of the shipped code*.
 Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
@@ -87,6 +89,7 @@ Document: [`PLAN_pipeline_validation.md`](PLAN_pipeline_validation.md)
 | V21 | **Which property** of the covariate draw has to be right? | ✅ resolved | **Flexibility, and nothing else.** BART's smoothing carries **100%**; a correctly specified estimated draw is **+0.3 / +0.6%**, and so are improper and donor-matched versions. Properness moves the *interval* (`b` −12–16%), not the bias. **A fix exists in principle — but it is a trade, and the deciding cell (non-linear covariate conditional, on-path) does not exist yet** |
 | V22 | Is a parametric covariate draw a **fix**, or a different bug? | ✅ resolved | **A fix — there is no trade.** It is unbiased (−0.14%) even where the covariate conditional is non-linear and it is *misspecified*, because the analysis absorbs the error; BART is +2.84% there. **Separately: the censored-exposure draw carries ~20% ASYMPTOTIC bias under a non-linear covariate arrow** |
 | V23 | The censored-exposure defect, **derived first** | ✅ resolved | **The derivation holds, the one-parameter law does not quite.** Null cell −0.80%, four of six predictions within 1.5 pp, bias flat to ≤0.27 pp over 4× in `n`. But `cv364` misses by 8.8 pp (free constant 249, not 300) and the **exponent test had no power** — CI [0.99, 2.28]. **Item 07's grid draw: up to +142%, coverage 0.000** |
+| V24 | The **DAG-factorised exposure draw**, all four cases at once | ✅ resolved (algorithm validated; **pipeline implementation is open**) | **The algorithm is right; the interface is the hard part.** C1/C3/C4 met at all three `n`, C2 at the two larger (its n = 800 miss is a registration error — the bar exceeded the bias available). With the child model supplied, `|bias/SE|` ≤ 0.13 everywhere. **Post-run:** the child model need only be right in FORM (−0.5% with fitted coefficients, +3.2% with a wrong internal constant); the shipped draw is exact for a confounder and a LINEAR mediator (−0.02%) and biased only for a **curved** one (+22.0%); a collider needs nothing. **And the cheap implementation route fails:** reweighting `leftcens`'s draws works on the linear pipe (+0.46%) but not under non-linearity (+32.5%), because the proposal itself is misspecified there |
 
 > **Two numbering schemes coexist** — design-plan Phases and validation-plan Tracks. They
 > are not the same sequence and do not map one-to-one. The mapping table is in
@@ -139,7 +142,42 @@ Open follow-ups from V8, both small: the design confounds "3 targets" with "Y is
 ~3× runtime saving is inferred from the fit count, not measured — `secs` is logged per
 replication, not per arm.
 
-### ✅ Last completed run — V23, 2026-09-09 (304 min)
+### ✅ Last completed run — V24, 2026-09-09 (320 min)
+
+3 `n` levels × 6 cells × 200 reps = 3,600 tasks, 7 arms each, zero errors.
+[`phase1/FINDINGS_v24.md`](phase1/FINDINGS_v24.md) · verdict arithmetic:
+[`phase1/analyze_v24.R`](phase1/analyze_v24.R)
+
+**The first track to test a *constructive fix* rather than characterise a defect** — and the
+first to run four causal cases in one sweep, because the claim under test was that bias
+direction is DAG-aware, which cells run separately cannot establish. The algorithm draws a
+below-LOD exposure from the target its DAG implies:
+
+> `p(x | rest, x ≤ L)` ∝ `p(x | Pa(X))` · `p(Y | x, Pa(Y))` · **`∏_{C∈Ch(X)} p(C | x, ·)`** · `1{x ≤ L}`
+
+The shipped path has the first two factors. The third is the fix.
+
+**What held.** Given the child model, `|bias/SE|` ≤ **0.13** in fork, pipe-direct, pipe-total
+and collider simultaneously, at every `n`, indistinguishable from complete data — against
+**−1.15 to −8.24** for the draw without it. The total effect is now a first-class estimand
+(`pipe` 0.700, `pipe_nl` 0.830 via Stein's identity), and C4 confirms both `*_tot` cells
+recover their own value rather than `b₁`.
+
+**What the run added that the design could not show.**
+
+| | |
+|---|---|
+| The **current** draw class is **asymptotically** biased wherever the covariate is a **mediator** | 6–7% flat in `n` — **even with a linear arrow**, where `u` = 0 — so coverage falls 0.945 → **0.040** as `n` grows. `u²` is a modifier, not the mechanism |
+| A **more flexible** child model is **monotonically worse** | linear +25.75%, quad +31.07%, cubic +37.38%, true **−0.21%**; coverage **0.000** for every fitted form. Below an LOD there is no data to fit the shape from |
+| A **collider** needs nothing | the existing draw is already unbiased there (+0.06 to +0.16%); the new term buys 1.4 ± 0.1% of the SE |
+
+**So the algorithm being right was the easy half.** It cannot ship with a fitted default — it
+has to be a **sensitivity procedure over a declared form**, and a badly declared form leaves a
+user worse off than not using it. One registered gate (C2) failed at `n` = 800 for a reason
+that was my error rather than the method's: it asked for a 1.0 improvement in `|bias/SE|` from
+a cell that only had 0.48 of bias available.
+
+### ✅ Previous run — V23, 2026-09-09 (304 min)
 
 2 `n` levels × 7 cells × 4 arms × 500 reps = 7,000 tasks, zero errors.
 [`phase1/FINDINGS_v23.md`](phase1/FINDINGS_v23.md) · verdict arithmetic:
@@ -220,6 +258,9 @@ not ship without this cell class in its acceptance set.**
 | [`THEORY.md` §3c](THEORY.md) | The first derived mechanism with a **reason for the quadratic form** — and a candidate explanation for V15's `f²` | Before treating the measured exponents as unexplained |
 | [`phase1/FINDINGS_v23.md`](phase1/FINDINGS_v23.md) | V23: the censored-exposure law derived and tested — levels hold, exponent unresolved, **item 07 inverts** | **Before shipping item 07**, and before quoting the `u²` law as settled |
 | [`phase1/FINDINGS_v22.md`](phase1/FINDINGS_v22.md) | V22: the trade does not exist — the parametric draw wins on both sides. **And ~20% asymptotic bias in the censored-exposure draw under a non-linear covariate arrow** | Before proposing the Z-block fix, and **before trusting the censored-exposure draw with a non-linear covariate** |
+
+| [`phase1/FINDINGS_v24.md`](phase1/FINDINGS_v24.md) | V24: the DAG-factorised draw is exact given a child model whose **form** is right — and the shipped draw is exact except for a **curved mediator** (+22%). Also: why reweighting `leftcens`'s draws cannot implement it | **Before proposing this as a drop-in fix**; before recommending it for a collider; and **before trusting a curved-mediator exposure estimate at any `n`** |
+| [`SUMMARY.md`](SUMMARY.md) | The 24-track synthesis: theory, measurements, algorithm, what ships and what does not | **Start here** if you are picking this up cold |
 
 **Runners** live in `phase1/`: `run_phase1.sh` (Phase 1), `run_v1_pipeline.sh` (V1),
 `run_v2_robustness.sh` (V2), `run_v4_variance.sh` (V4, V5, V6, V7 and V8 — the arm/scenario

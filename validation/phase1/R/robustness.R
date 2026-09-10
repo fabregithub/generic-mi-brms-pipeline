@@ -131,7 +131,8 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          censor_all = FALSE, mcar_frac = 0.0, y_frac = 0.0,
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
                          y_form = "linear", z_role = "precision",
-                         nl_a = NULL, nl_c = NULL, seed_as = NULL) {
+                         nl_a = NULL, nl_c = NULL, target = "direct",
+                         seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
        skew = skew, censor_all = censor_all, mcar_frac = mcar_frac,
@@ -141,6 +142,10 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
        z_role = z_role,
        # V23: the non-linear arrow's shape, swept to test bias ~ u^2.
        nl_a = nl_a, nl_c = nl_c,
+       # V24: WHICH ESTIMAND. Only a pipe has a choice, and the two answers are
+       # different numbers -- so this changes `estimand_true` and the analysis
+       # model's adjustment set together, via make_truth(). See dgp.R.
+       target = target,
        # `seed_as` makes this cell draw its data with ANOTHER cell's seed, so the
        # two see byte-identical exposures, covariates and outcome noise and differ
        # only in the feature under test. That turns a cell-vs-cell contrast from
@@ -311,7 +316,52 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("cv153", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.0, nl_c = 0.35),
     .v2_scenario("cv182", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 0.8, nl_c = 0.25),
     .v2_scenario("cv262", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 1.2, nl_c = 0.35),
-    .v2_scenario("cv364", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 1.6, nl_c = 0.50)
+    .v2_scenario("cv364", "curvature", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe_nl", nl_a = 1.6, nl_c = 0.50),
+
+    # ---- V24: the four cases that need the DAG-factorised exposure draw ------
+    # THEORY.md 6b concluded the draw is needed in FOUR cases, differing along
+    # TWO axes -- the covariate's role, and (for a pipe) which estimand:
+    #
+    #   dag_fork        fork      direct   Z1 adjusted (backdoor); Z1 a PARENT
+    #   dag_pipe_dir    pipe      direct   Z1 adjusted;            Z1 a CHILD
+    #   dag_pipe_tot    pipe      total    Z1 NOT adjusted;        Z1 a CHILD
+    #   dag_pnl_dir     pipe_nl   direct   as pipe_dir, arrow non-linear
+    #   dag_pnl_tot     pipe_nl   total    as pipe_tot, arrow non-linear
+    #   dag_collider    collider  direct   Z1 NOT adjusted;   child of X AND Y
+    #
+    # Testing all six in one sweep is what makes the DIRECTION claim checkable:
+    # the four cases have different bias signs, and a track that ran them
+    # separately could not rule out the sign being an artefact of its cell.
+    #
+    # WHY THE LINEAR `pipe` CELLS ARE HERE and not only pipe_nl. The linear pipe
+    # is the control that separates the FACTORISATION from the NON-LINEARITY: its
+    # child arrow is linear-Gaussian, so a correct factorisation with a linear
+    # child model should be exactly right there. If a pipe_nl cell improves and
+    # the linear pipe does not, the gain is not the factorisation.
+    #
+    # `seed_as` pairs each pipe_nl cell with its linear counterpart, and the two
+    # estimand cells with each other, so the contrasts are paired.
+    # WHY mcar_frac = 0 HERE, when every zr_* cell uses 0.4. V24's question is
+    # about the EXPOSURE draw, and the covariate block was settled by V20 (the
+    # block attribution) and V21 (what about the covariate draw has to be right).
+    # Leaving Z 40% missing would put V21's ladder back in as a confound, and
+    # the DAG factorisation conditions on the covariates in all three of its
+    # factors -- so a missing Z1 is not a harder version of the same question,
+    # it is a different question. This is the mirror of `zr_pipenl`, which sets
+    # nd_frac = 0 to isolate the covariate block. The combined case is open
+    # (ROADMAP) and dag_impute_datasets() refuses it rather than returning NA.
+    .v2_scenario("dag_fork",     "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "fork"),
+    .v2_scenario("dag_pipe_dir", "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "pipe", target = "direct"),
+    .v2_scenario("dag_pipe_tot", "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "pipe", target = "total", seed_as = "dag_pipe_dir"),
+    .v2_scenario("dag_pnl_dir",  "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "pipe_nl", target = "direct", seed_as = "dag_pipe_dir"),
+    .v2_scenario("dag_pnl_tot",  "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "pipe_nl", target = "total", seed_as = "dag_pipe_dir"),
+    .v2_scenario("dag_collider", "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "collider")
   )
 }
 

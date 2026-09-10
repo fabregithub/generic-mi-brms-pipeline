@@ -368,6 +368,16 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   .ef_args <- function(f) f(bundle, m = m, seed = seed,
                             sweeps = ce_control$outer_sweeps %||% 3L,
                             margin = ce_control$margin %||% "shash")
+  # Track V24 (dag_draw.R): the DAG-factorised exposure draw, tested across all
+  # four cases that need it (fork, pipe-direct, pipe-total, collider) in one
+  # sweep. `child_form` is the SENSITIVITY AXIS, not a tuning knob -- THEORY.md
+  # 0b measures that the child model is not identifiable below the LOD.
+  if ("dag_noY" %in% which)                 out$dgn   <- .ef_args(proc_dag_noY)
+  if ("dag_Yonly" %in% which)               out$dgy   <- .ef_args(proc_dag_Yonly)
+  if ("dag_lin" %in% which)                 out$dgl   <- .ef_args(proc_dag_lin)
+  if ("dag_quad" %in% which)                out$dgq   <- .ef_args(proc_dag_quad)
+  if ("dag_cubic" %in% which)               out$dgc   <- .ef_args(proc_dag_cubic)
+  if ("dag_true" %in% which)                out$dgt   <- .ef_args(proc_dag_true)
   if ("ef_bart_ship" %in% which)            out$efbs  <- .ef_args(proc_ef_bart_ship)
   if ("ef_exact_ship" %in% which)           out$efes  <- .ef_args(proc_ef_exact_ship)
   if ("ef_bart_exact" %in% which)           out$efbe  <- .ef_args(proc_ef_bart_exact)

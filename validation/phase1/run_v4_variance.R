@@ -68,9 +68,10 @@ if (is.null(.here) || !nzchar(.here)) {
   f <- sub("^--file=", "", a[grep("^--file=", a)])
   .here <- if (length(f)) dirname(normalizePath(f)) else "validation/phase1"
 }
+suppressMessages(library(survival))   # dag_draw.R's interval-censored parent fit
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
             "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
-            "bart_impute.R", "smc_impute.R", "exact_fork.R")) {
+            "bart_impute.R", "smc_impute.R", "exact_fork.R", "dag_draw.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -98,7 +99,13 @@ V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              "z21_exact", "z21_fit_proper", "z21_fit_improper", "z21_pmm",
              "z21_bart", "z21_bart_inner3",
              # V22: Z2 by the same method as Z1.
-             "z21_fit_proper_z2same", "z21_pmm_z2same")
+             "z21_fit_proper_z2same", "z21_pmm_z2same",
+             # V24: the DAG-factorised exposure draw (dag_draw.R). A ladder in
+             # what the target conditions on -- no Y, Y, Y + the child factor --
+             # then `child_form` as the sensitivity axis over the one piece that
+             # is not identifiable below the LOD.
+             "dag_noY", "dag_Yonly", "dag_lin", "dag_quad", "dag_cubic",
+             "dag_true")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 
@@ -185,7 +192,10 @@ print_v4 <- function(s) {
     truth  <- make_truth(p = 3L, erf_form = sc$erf_form,
                          y_form = sc$y_form %||% "linear",
                          z_role = sc$z_role %||% "precision",
-                         nl_a = sc$nl_a, nl_c = sc$nl_c)
+                         nl_a = sc$nl_a, nl_c = sc$nl_c,
+                         # V24: `target` defaults to "direct", which is what
+                         # every pre-V24 scenario estimated, so no cell moves.
+                         target = sc$target %||% "direct")
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(
