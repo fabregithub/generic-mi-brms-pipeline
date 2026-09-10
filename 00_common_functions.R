@@ -715,12 +715,61 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
   # BART needs dbarts. Rather than break an upgraded install, fall back to the
   # v1.4.0 imputer with a loud warning -- the run completes, and which imputer
   # actually ran is visible in the log rather than silent.
+  #
+  # THE WARNING NAMES THE CONSEQUENCE, not just the substitution (2026-09-10).
+  # V19 measured `forest_boot` at -23% ASYMPTOTIC bias with coverage -> 0 when a
+  # covariate is a confounder or mediator, and identified this fallback as the
+  # path most likely to deliver it to someone who did not choose it. V19's own
+  # conclusion was NOT to change the fallback -- completing with a warning beats
+  # aborting, and it measured one DGP -- but to say so where the user will read
+  # it. A warning that mentions only a missing package invites being dismissed
+  # as an install nag. See validation/phase1/FINDINGS_v19.md.
+  warned_fallback <- FALSE
   if (identical(z_imp, "bart") && !requireNamespace("dbarts", quietly = TRUE)) {
+    warned_fallback <- TRUE
     warning("z_imputer = 'bart' needs the 'dbarts' package, which is not ",
-            "installed. Falling back to 'forest_boot' (the v1.4.0 imputer). ",
-            "Install dbarts, or set analysis_spec$imputation$z_imputer ",
-            "explicitly to silence this.", call. = FALSE, immediate. = TRUE)
+            "installed. Falling back to 'forest_boot' (the v1.4.0 imputer).\n",
+            "  !! This is not only an install issue. 'forest_boot' was measured ",
+            "at -23% bias in the exposure coefficient, which does NOT shrink as ",
+            "n grows, whenever a covariate is a cause of the exposure (a ",
+            "confounder) or an effect of it (a mediator). Interval coverage goes ",
+            "to 0 -- so this failure IS detectable, but only if you look.\n",
+            "  Install dbarts (install.packages('dbarts')), or set ",
+            "analysis_spec$imputation$z_imputer explicitly to accept this ",
+            "trade-off knowingly. See validation/phase1/FINDINGS_v19.md.",
+            call. = FALSE, immediate. = TRUE)
     z_imp <- "forest_boot"
+  }
+
+  # Any OTHER route to forest_boot gets the same statement once, with the route
+  # named. V19 listed TWO paths to this imputer, and the second is a config
+  # written against v1.4.0 that sets `proper_draw = TRUE` -- which
+  # resolve_z_imputer() honours silently for back-compatibility. A first draft of
+  # this warned only on an explicit z_imputer = "forest_boot", which exempted
+  # exactly the users who do not know they are on it. Warning a legacy config is
+  # the point, not a cost.
+  # The validation harness has arms whose PURPOSE is to be this imputer
+  # (`pipeline_properBoot` sets proper_draw = TRUE deliberately), so it sets this
+  # option and the warning stays out of every future validation log. A user
+  # never sets it -- it is not documented in 00_config.R and is not read from
+  # `analysis_spec`.
+  if (identical(z_imp, "forest_boot") && !isTRUE(warned_fallback) &&
+      !isTRUE(getOption("mi.quiet_imputer_warning", FALSE))) {
+    route <- if (!is.null(analysis_spec$imputation$z_imputer))
+      "z_imputer = 'forest_boot'"
+    else if (isTRUE(analysis_spec$imputation$proper_draw))
+      "proper_draw = TRUE (a pre-v1.5.0 setting, which maps to 'forest_boot')"
+    else "the resolved default"
+    warning("Z-block imputer is 'forest_boot', selected by ", route, ".\n",
+            "  !! It carries -23% bias in the exposure coefficient, which does ",
+            "NOT shrink as n grows, whenever a covariate is a cause of the ",
+            "exposure (a confounder) or an effect of it (a mediator). Interval ",
+            "coverage goes to 0.\n",
+            "  'bart' was measured at 1.29% against forest_boot's 2.67% in the ",
+            "same cells. Set analysis_spec$imputation$z_imputer <- 'bart' ",
+            "unless you have a specific reason not to. ",
+            "See validation/phase1/FINDINGS_v19.md.",
+            call. = FALSE, immediate. = TRUE)
   }
 
   log_msg("Z-block imputer:", z_imp)

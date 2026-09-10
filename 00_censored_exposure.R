@@ -353,6 +353,8 @@ ce_preflight_curvature <- function(data, analysis_spec, var_dict,
     lo_col <- paste0(x, lo_suffix); hi_col <- paste0(x, hi_suffix)
     b <- .ce_exposure_bounds(data, x, lo_col, hi_col, log_scale = log_for(x))
     bounds[[x]] <- b
+    # On the MODELLING scale (log where configured), which is the scale the Z
+    # block must see -- see the note at the end of the sweep loop.
     work[[x]] <- .ce_init_exposure(b)                 # complete predictor for the Z block
     drop_cols <- c(drop_cols, lo_col, hi_col)
   }
@@ -439,8 +441,27 @@ ce_preflight_curvature <- function(data, analysis_spec, var_dict,
       imp <- leftcens::impute_censored_conditional(
         y = b$y, x = xmat, lower = b$lower, upper = b$upper,
         m = 1L, margin = margin)[, 1]
-      work[[x]] <- if (isTRUE(b$log_scale)) exp(imp) else imp   # back to data scale
+      # STAY ON THE MODELLING SCALE UNTIL THE SWEEPS ARE DONE. This used to
+      # exponentiate here, inside the loop, which meant every LATER sweep's Z
+      # block regressed the covariates on `exp(log X)` while the analysis model
+      # -- and the truth -- are linear in `log X`. The Z-block imputation model
+      # was therefore misspecified in SCALE, and the whole block-FCS was
+      # incongenial with the analysis for exactly the documented configuration
+      # (`scale = "log"`).
+      #
+      # Measured 2026-09-10: both pipeline Z-block arms sat 3-5 pp above their
+      # harness equivalents with two entirely different Z engines, and changing
+      # only this scale in the harness reproduced it (+0.38% -> +5.38% under a
+      # confounder, -0.45% -> +5.44% under a mediator). See
+      # validation/phase1/derive_zblock_scale.R and ROADMAP.md.
+      work[[x]] <- imp
     }
+  }
+  # Back to the data scale ONCE, after the last sweep, so the returned dataset
+  # keeps the user-facing convention (a data-scale exposure column, which the
+  # analysis formula logs itself).
+  for (x in exposures) {
+    if (isTRUE(bounds[[x]]$log_scale)) work[[x]] <- exp(work[[x]])
   }
   work
 }

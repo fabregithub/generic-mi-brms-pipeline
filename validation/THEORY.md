@@ -305,6 +305,36 @@ estimand depending on `v`'s own coefficient, for which no such absorption exists
 number. The condition is a property of the imputation; whether violating it costs anything is
 a property of the imputation *and* the DAG *and* the estimand. All three have to be named.
 
+### 1a(ii). Congeniality is a statement about the SCALE too, not only the variables
+
+**Added 2026-09-10.** Clause (A) requires the imputation model to be able to represent the
+analysis model's conditional. That is usually read as a statement about which *variables* the
+imputation conditions on. It is equally a statement about which **functional** of them.
+
+If the analysis model is linear in `log X` and a block of the imputation regresses on `X`
+itself, clause (A) fails — a linear predictor in `X` cannot represent a conditional that is
+linear in `log X`, at any sample size. No new mechanism is involved; it is the same clause, and
+the consequence is the same attenuation-plus-borrowing of §0c.
+
+**This was a live defect in the shipped path, not a hypothetical.** `00_censored_exposure.R`
+returned the censored exposure to the data scale *inside* the block-FCS sweep loop, so every
+subsequent covariate block regressed on `exp(log X)` while the analysis model — and the DGP —
+were linear in `log X`. Measured: both covariate-block arms sat **3–5 pp** above their harness
+equivalents, with two entirely different imputation engines; moving the conversion out of the
+loop closed all four gaps to **≤ 0.20 pp** and moved the harness arms and the oracle by
+**0.00 pp**. (`ROADMAP.md`; `phase1/derive_zblock_scale.R`.)
+
+> **What is derived here and what is not.** That the scale must match is derived — it is clause
+> (A). *How much* bias a given mismatch produces is **not**. The natural closed form for a
+> log/exp mismatch, `Corr(L, R)² = s²/(e^{s²} − 1)` for `L ~ N(m, s²)`, `R = e^L`, predicts
+> 0.470 and 0.582 of the explainable variance retained where the measured values are 0.339 and
+> 0.447 — a consistent −0.13 miss at `n` = 4×10⁵, so a systematic error rather than noise. The
+> cause is identified: that form is the *marginal* retained fraction, while the covariate block
+> conditions on `Y`, which itself carries `log X`, making the governing quantity a *partial*
+> correlation under which `R` is no longer the exponential of the conditioning residual. Until
+> that is derived and propagated through §0c, the 3–5 pp is a measurement this section
+> **reproduces but does not predict**. Registered in `ROADMAP.md`.
+
 ### 1b(i). The adjustment set is an estimand choice, and it changes what propagates
 
 **Added 2026-09-09.** Condition (i) says "conditioned on by the analysis model" as though the
@@ -1066,10 +1096,34 @@ unrepresentable curvature; only the second has a `p(Z₁ | x)` that depends on `
 generator is **whether the child factor carries information**, and `u²` governs how much worse
 things get once it also cannot be represented — a modifier, not the mechanism.
 
-*Caveat on that comparison:* `cv000` was measured on the pipeline arms and `dag_pipe_*` on
-V24's harness draw, so the two numbers come from different instruments. V24 has **no
-arrow-absent cell of its own**, which is the clean within-instrument control this argument
-wants; it is listed as open in `ROADMAP.md`.
+**Confirmed within one instrument (2026-09-10).** The comparison above crossed instruments —
+`cv000` on the pipeline arms, `dag_pipe_*` on V24's harness draw — so a paired control was
+built: `dag_pipe_null`, which is the pipe cell with `delta_xz = 0`. `Z₁` is still present,
+observed and in the analysis model; it simply carries no information about the exposure.
+Setting the arrow to zero leaves the RNG consumption order untouched, so this cell sees
+**byte-identical exposures** to `dag_pipe_dir` (verified: correlation 1.000). Three cells, one
+arm set, 200 reps, `n` = 800:
+
+| arrow | `u` | `Z₁` informative? | `dag_Yonly` `bias/SE` (n = 800 → 3200) | rel. bias |
+|---|---|---|---|---|
+| **absent** (`delta_xz` = 0) | 0 | **no** | **−0.13 → +0.05** ± 0.08 | −1.39% → +0.28% |
+| **linear** | 0 | yes | **−0.60 → −0.86** | −7.72% → −5.45% |
+| **curved** (`pipe_nl`) | > 0 | yes | +0.45 → +1.26 | +7.14% → +9.77% |
+
+`u` = 0 in the first two rows and they differ by 6 pp, so **`u` cannot be the generator**. What
+separates them is whether `p(Z₁ | x)` depends on `x` at all. Under an absent arrow all four
+arms agree to within 0.05 pp — as they must, since the child factor then contributes nothing —
+and they stay at zero at **both** sample sizes, while the other two cells grow in `bias/SE` the
+way an asymptotic bias against a shrinking SE must.
+
+*(One artefact worth naming, because it misleads at the smaller size: every oracle in these
+cells sits near −1.2% at `n` = 800 and near +0.4% at `n` = 3200. That is the estimator's own
+finite-sample bias, not the imputation's — which the two-level run makes visible and a
+single-level run would have hidden inside the arm numbers.)*
+
+Cross-checking in the other direction: `dag_noY` is biased in **all three** cells at both sizes
+(−1.42/−2.61 absent, −1.96/−3.68 linear, −1.30/−2.40 curved) — confirming that the `Y`-omission
+bias of §1 is about `Y` and is independent of the covariate structure.
 
 **A more flexible child model is monotonically worse.** At `n` = 12800, `pipe_nl` direct:
 no child +8.82%, linear +25.75%, quadratic +31.07%, cubic +37.38%, true **−0.21%**; total:

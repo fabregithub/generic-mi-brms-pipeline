@@ -55,7 +55,7 @@ if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
 make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
                        y_form = "linear", z_role = "precision",
                        nl_a = NULL, nl_c = NULL, target = "direct",
-                       mu_x = 0.0, sd_x = 1.0) {
+                       mu_x = 0.0, sd_x = 1.0, delta_xz = NULL) {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -161,7 +161,16 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
   #             `mu_x`/`sd_x` must match what is passed to the simulator; the
   #             defaults are the ones every scenario uses.
   # Structural arrow strengths, needed here as well as in the returned list.
-  delta_zx <- 0.60; delta_xz <- 0.60; delta_yz <- 0.60; delta_xz2 <- 1.20
+  # `delta_xz` is overridable so a scenario can set it to ZERO: that removes the
+  # X1 -> Z1 arrow while leaving Z1 present, observed, and consuming the RNG in
+  # exactly the same order -- which makes such a cell PAIRED with the ordinary
+  # pipe cell on byte-identical exposures. That is the control V24 lacked (see
+  # THEORY.md 6b): it separates "an informative covariate is being discarded"
+  # from "the covariate's relationship cannot be represented", within one
+  # instrument. Both have u = 0; only the second has a p(Z1 | x) that depends on
+  # x at all.
+  delta_zx <- 0.60; delta_xz <- delta_xz %||% 0.60
+  delta_yz <- 0.60; delta_xz2 <- 1.20
   nl_a_v <- nl_a %||% 1.20; nl_b_v <- 1.80; nl_c_v <- nl_c %||% 0.35
 
   total_effect <- if (identical(z_role, "pipe")) {

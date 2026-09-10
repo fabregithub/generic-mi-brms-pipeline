@@ -449,6 +449,10 @@ proc_pipeline_properZ <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
 proc_pipeline_properBoot <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                      outer_sweeps = 3L, margin = "shash",
                                      project_root = NULL, quiet = TRUE) {
+  # This arm IS forest_boot by design, so silence the user-facing warning that
+  # 00_common_functions.R emits for it (added 2026-09-10). Suppressed here, at
+  # the one place that selects it knowingly, rather than weakening the warning.
+  op <- options(mi.quiet_imputer_warning = TRUE); on.exit(options(op), add = TRUE)
   proc_pipeline_block_fcs(bundle, m = m, seed = seed, n_cores = n_cores,
                           outer_sweeps = outer_sweeps, margin = margin,
                           project_root = project_root, quiet = quiet,

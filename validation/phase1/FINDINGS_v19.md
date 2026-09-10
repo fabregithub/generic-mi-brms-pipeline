@@ -115,6 +115,19 @@ is precisely why fifteen tracks measured it and found little.
 | V18: `bartMI` decays as n^−1/3 | **Replicated** at −0.311 under a different arm set |
 | "n^−1/3 is the nonparametric convergence rate showing up in the estimand" | **Unsupported.** A second nonparametric imputer shows no decay at all. `THEORY.md` keeps the exponent as measured-and-underived |
 | R8 / v1.5.0: BART as the Z-block default | **Vindicated far beyond its original evidence** — the only imputer whose bias and coverage survive scale under a causally active covariate |
+
+> **⚠️ CORRECTION, 2026-09-10 — `micePmm` and `properZ` were MIS-ATTRIBUTED.** This track read
+> `micePmm` at +2.4 to +3.9% and `properZ` at +4.5 to +6.3% as **properties of those imputers**.
+> They were not. Re-run with an identical arm set in one invocation against their harness
+> equivalents, both arms sat 3–5 pp high *with two entirely different Z engines* — so the bias
+> was in the block-FCS **wrapper**, which returned the exposure to the data scale inside the
+> sweep loop and so had every covariate block regressing on `exp(log X)` against a log-scale
+> analysis model. With that fixed: `micePmm` +3.07% → **−0.08%** and `properZ` +4.46% →
+> **+0.06%** under a confounder; +4.71% → **+1.45%** and +6.51% → **+1.15%** under a mediator.
+> **The `forest_boot` finding below is unaffected** — it was measured against the same wrapper,
+> and its −23% is far outside the 3–5 pp the wrapper contributed — but it should be re-measured
+> post-fix before being requoted. See `ROADMAP.md` and `phase1/derive_zblock_scale.R`.
+
 | `forest_boot` (v1.4.0 default, and the `dbarts`-missing fallback) | **New defect: −23% asymptotic bias under a confounder or mediator**, coverage → 0 |
 
 ---

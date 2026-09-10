@@ -195,7 +195,10 @@ print_v4 <- function(s) {
                          nl_a = sc$nl_a, nl_c = sc$nl_c,
                          # V24: `target` defaults to "direct", which is what
                          # every pre-V24 scenario estimated, so no cell moves.
-                         target = sc$target %||% "direct")
+                         target = sc$target %||% "direct",
+                         # V25: NULL keeps the standard 0.60 arrow, so no
+                         # pre-V25 scenario moves.
+                         delta_xz = sc$delta_xz)
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(

@@ -132,7 +132,7 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
                          y_form = "linear", z_role = "precision",
                          nl_a = NULL, nl_c = NULL, target = "direct",
-                         seed_as = NULL) {
+                         delta_xz = NULL, seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
        skew = skew, censor_all = censor_all, mcar_frac = mcar_frac,
@@ -146,6 +146,9 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
        # different numbers -- so this changes `estimand_true` and the analysis
        # model's adjustment set together, via make_truth(). See dgp.R.
        target = target,
+       # V25: the X1 -> Z1 arrow's strength. NULL keeps 0.60; 0 removes the arrow
+       # while keeping Z1 present and observed -- the arrow-absent control.
+       delta_xz = delta_xz,
        # `seed_as` makes this cell draw its data with ANOTHER cell's seed, so the
        # two see byte-identical exposures, covariates and outcome noise and differ
        # only in the feature under test. That turns a cell-vs-cell contrast from
@@ -361,7 +364,31 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("dag_pnl_tot",  "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
                  z_role = "pipe_nl", target = "total", seed_as = "dag_pipe_dir"),
     .v2_scenario("dag_collider", "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
-                 z_role = "collider")
+                 z_role = "collider"),
+
+    # ---- V25 item 1: the ARROW-ABSENT control -------------------------------
+    # THE GAP THIS CLOSES. V24 concluded that discarding an informative
+    # covariate is what generates the 6-7% asymptotic bias, and that `u`
+    # (unrepresentable curvature) only modifies it. The evidence was that `u` = 0
+    # in two situations 6 pp apart: V23's `cv000` (arrow absent) and V24's
+    # `dag_pipe_*` (arrow present but linear). But cv000 was measured on the
+    # PIPELINE arms and dag_pipe_* on V24's harness draw, so the contrast crossed
+    # instruments -- recorded as a caveat in THEORY.md 6b.
+    #
+    # `delta_xz = 0` closes it inside one instrument. Z1 is still there, still
+    # observed, still in the analysis model -- it simply carries no information
+    # about the exposure, so p(Z1 | x) = p(Z1) and the child factor has nothing
+    # to contribute. Every arm should therefore sit at ~0.
+    #
+    # AND IT IS GENUINELY PAIRED. Setting delta_xz = 0 leaves the RNG consumption
+    # order untouched, so this cell sees BYTE-IDENTICAL exposures to
+    # `dag_pipe_dir` (verified: cor(logX1, logX1) = 1.000). Note `seed_as` does
+    # NOT achieve that across different roles -- fork and pipe consume the stream
+    # in different orders and their exposures correlate 0.057 -- which is why the
+    # control had to be built inside the pipe structure rather than as a new role.
+    .v2_scenario("dag_pipe_null", "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
+                 z_role = "pipe", target = "direct", delta_xz = 0,
+                 seed_as = "dag_pipe_dir")
   )
 }
 
