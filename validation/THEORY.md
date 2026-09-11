@@ -324,16 +324,93 @@ equivalents, with two entirely different imputation engines; moving the conversi
 loop closed all four gaps to **≤ 0.20 pp** and moved the harness arms and the oracle by
 **0.00 pp**. (`ROADMAP.md`; `phase1/derive_zblock_scale.R`.)
 
-> **What is derived here and what is not.** That the scale must match is derived — it is clause
-> (A). *How much* bias a given mismatch produces is **not**. The natural closed form for a
-> log/exp mismatch, `Corr(L, R)² = s²/(e^{s²} − 1)` for `L ~ N(m, s²)`, `R = e^L`, predicts
-> 0.470 and 0.582 of the explainable variance retained where the measured values are 0.339 and
-> 0.447 — a consistent −0.13 miss at `n` = 4×10⁵, so a systematic error rather than noise. The
-> cause is identified: that form is the *marginal* retained fraction, while the covariate block
-> conditions on `Y`, which itself carries `log X`, making the governing quantity a *partial*
-> correlation under which `R` is no longer the exponential of the conditioning residual. Until
-> that is derived and propagated through §0c, the 3–5 pp is a measurement this section
-> **reproduces but does not predict**. Registered in `ROADMAP.md`.
+**How much is lost, derived.** Write `L = logX`, `W` for the block's other predictors, and split
+`L = μ_W + L̃` with `τ² = Var(μ_W)`, `σ̃² = Var(L̃)`, `s² = τ² + σ̃²`. Then `R = e^L = A·B` with
+`A = e^{μ_W}` independent of `B = e^{L̃}`. Residualising `R` on `W` and applying Stein's identity
+to `Cov(L̃, e^{L̃}) = σ̃²e^{σ̃²/2}`:
+
+> `Cov(L̃, R̃) = E[A]E[B]·σ̃²`,  `Var(R̃) = E[A]²E[B]²(e^{s²} − 1 − τ²)`
+>
+> ⟹ **`Corr(L, R | W)² = σ̃² / (e^{s²} − 1 − τ²)`**
+
+the fraction of the explainable *partial* variance a linear predictor in `R` can retain. It
+nests the marginal case: `τ² = 0` gives `s²/(e^{s²} − 1)`.
+
+| cell | `s²` | `τ²` | derived | measured | marginal form |
+|---|---|---|---|---|---|
+| `zr_fork` | 1.360 | 0.566 | **0.3408** | 0.3386 | 0.4696 |
+| `zr_pipe` | 1.000 | 0.420 | **0.4466** | 0.4473 | 0.5818 |
+| `zr_collider` | 1.000 | 0.314 | **0.4882** | 0.4869 | 0.5818 |
+
+No free parameters; agreement ≤0.002 across three different `(s², τ²)` pairs, with the collider
+out-of-sample. **Conditioning on `W` is what the marginal form was missing** — `Y` carries `log X`
+directly, so the governing quantity was always a partial correlation.
+
+**From the retained fraction to the block's error.** The fitted coefficient on `R̃` is
+`c = βσ̃² / [E[A]E[B](e^{s²} − 1 − τ²)]`, where `β` is the true partial coefficient of `L`. So
+`Cov(D, L̃) = βσ̃²f − βσ̃² = −βσ̃²(1 − f)`, and the imputation error's `L`-loading is
+
+> **`−β(1 − f)`**
+
+with `f` entering exactly once. Verified: −0.2208 / −0.2239 / −0.3061 derived against −0.2168 /
+−0.2211 / −0.3016 measured (~2%, with a consistent sign — the linearisation's second-order
+term). Carrying the exposure block too, an error `D` moves the censored draw by `λD`, giving the
+fixed point `D = a₀L̃/(1 − a₀λ)`; measured `a₀λ = −0.088`, an **8%** shrinkage.
+
+**The exposure block's response, and why truncation matters.** An error `D` in the covariate
+moves the censored exposure draw. The draw is `L | rest ~ N(m, σ_x²)` **truncated above at the
+LOD** `c`, so with `α = (c − m)/σ_x` and `h = φ/Φ`, `E[L | L ≤ c] = m − σ_x h(α)` and
+`h′ = −αh − h²`, giving
+
+> `∂E[L | L ≤ c] / ∂m = 1 − αh − h² = ` **`Var(L | L ≤ c) / σ_x²`**
+
+— the truncated-to-untruncated *variance ratio*. Truncation therefore attenuates the block's
+sensitivity, and heavily: measured **0.460** and **0.465** at 40% non-detects, so `λ_eff` is less
+than half `λ`. Ignoring this over-predicts the bias by ~30%.
+
+**The completed chain.** `f = σ̃²/(e^{s²} − 1 − τ²)` → error `L`-loading `−β(1 − f)` →
+`λ_eff = λ·Var(L|L≤c)/σ_x²` → fixed point `D = a₀L̃/(1 − a₀λ_eff)` → the imputation **replaces**
+the covariate (`Ẑ = m_wrong + e_wrong`, not truth-plus-noise) → the `L`-coefficient shift in the
+contaminated analysis. Against the measured wrapper effect:
+
+| cell | derived | measured | ratio |
+|---|---|---|---|
+| `zr_pipe` | **+5.42% ± 0.03** | +5.36 pp | **1.011** |
+| `zr_fork` | **+5.05% ± 0.03** | +4.40 pp | 1.147 |
+
+**One cell closed to 1%, the other 15% high** — and the 15% is outside the derivation's own
+Monte-Carlo error, so it is a real residual rather than noise.
+
+**The fork residual is NOT a linearisation error (tested 2026-09-11, refuted).** The obvious
+suspect was the chain's linearisation of `exp`: the fork has `Var(logX)` = 1.36 against 1.00, so
+`e^{s²}` is 3.90 against 2.72, and link 1's miss was already +0.004 in a consistent direction.
+That gives a falsifiable prediction — the agreement must *degrade* as `s²` grows. Swept over
+`s²` = 0.52 to 2.05 against an independent two-block simulation, the ratio moves the other way:
+**0.841 → 0.879 → 0.900 → 0.908**, i.e. steadily *toward* 1. The residual is therefore not the
+`exp` linearisation, and the fork's larger `s²` is not what distinguishes it.
+
+> **A caution on that sweep, which also applies to anyone extending it.** The two-block
+> simulation used for the comparison does **not** reproduce the pipeline's measured +4.40%
+> (it reads +5.76% at the matching `s²`, 31% high), so it can refute a hypothesis about the
+> closed form's *shape* but cannot adjudicate the pipeline's *level*. Its first version was worse
+> still (+17%), because the exposure block was fitted with an `lm` on the above-LOD rows — a
+> response-truncated regression, `σ` ~24% low, which is the same defect §6b documents for the
+> DAG draw's parent factor. It was caught only because one point of the sweep had an
+> independently measured value to check against; without that anchor, "roughly flat in `s²`"
+> would have read as a clean refutation for the wrong reason. **The fork residual remains
+> unexplained**, with the `exp`-linearisation hypothesis eliminated.
+> `phase1/derive_fork_residual.R`.
+
+> **Three wrong turns, recorded so they are not retried.** (i) That the exposure-block feedback
+> explained an earlier 2× overshoot — it is an 8% effect. (ii) That the draw's inflated residual
+> should be added as noise on top of the truth — that is the *classical measurement-error*
+> structure, and it double-counts the residual; an imputation **replaces** the value. (iii) That
+> Rubin pooling averages the noise contribution away — it does not, because attenuation is a bias
+> in each imputation's estimate, not variance (measured identical at `m` = 1, 5 and 30). What
+> actually closed most of the original gap was finding two errors in the projection step:
+> regressing the error on a design holding the *true* covariate rather than the imputed one, and
+> multiplying by the missing fraction when the error is already zero on observed rows.
+> `ROADMAP.md`.
 
 ### 1b(i). The adjustment set is an estimand choice, and it changes what propagates
 

@@ -55,7 +55,8 @@ if (!exists("%||%")) `%||%` <- function(a, b) if (is.null(a)) b else a
 make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
                        y_form = "linear", z_role = "precision",
                        nl_a = NULL, nl_c = NULL, target = "direct",
-                       mu_x = 0.0, sd_x = 1.0, delta_xz = NULL) {
+                       mu_x = 0.0, sd_x = 1.0, delta_xz = NULL,
+                       delta_zx = NULL, y_family = "gaussian") {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -169,7 +170,7 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
   # from "the covariate's relationship cannot be represented", within one
   # instrument. Both have u = 0; only the second has a p(Z1 | x) that depends on
   # x at all.
-  delta_zx <- 0.60; delta_xz <- delta_xz %||% 0.60
+  delta_zx <- delta_zx %||% 0.60; delta_xz <- delta_xz %||% 0.60
   delta_yz <- 0.60; delta_xz2 <- 1.20
   nl_a_v <- nl_a %||% 1.20; nl_b_v <- 1.80; nl_c_v <- nl_c %||% 0.35
 
@@ -190,6 +191,13 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     z_role = z_role, z_in_model = z_in_model,
     # Strengths of the new structural arrows. Sized against gamma[1] = 0.50 and
     # b[1] = 0.40 so each role is a real feature of the DGP, not a nudge.
+    # V26: the OUTCOME's family. Every track V0-V25 used a Gaussian outcome and
+    # estimated its coefficient by OLS, which is what made 500-rep runs feasible
+    # -- and which means none of the record has been shown to transfer to the
+    # model classes this pipeline actually targets. "binomial" draws Y from a
+    # logistic model on the SAME linear predictor, so the estimand is the log-OR
+    # of the focal exposure and every other structural feature is unchanged.
+    y_family = y_family,
     delta_zx = delta_zx,    # fork/mixed:     Z1 -> X1
     delta_xz = delta_xz,    # pipe/collider:  X1 -> Z1
     delta_yz = delta_yz,    # collider:        Y -> Z1
@@ -254,6 +262,21 @@ ef_unrep_curvature <- function(truth, nd_frac = 0.40, n_grid = 4000L) {
   g  <- truth$nl_a * tanh(truth$nl_b * xs) + truth$nl_c * (xs^2 - 1)
   if (stats::sd(g) == 0) return(0)
   sqrt(sum(wt * stats::residuals(stats::lm(g ~ xs, weights = wt))^2))
+}
+
+#' Draw the outcome for a given family.
+#'
+#' Gaussian reproduces every pre-V26 cell exactly. "binomial" puts the SAME
+#' linear predictor through a logit, so the structural coefficients keep their
+#' meaning as log-odds-ratios and nothing else about the cell changes -- which
+#' is what makes a Gaussian-vs-binomial contrast attributable to the family
+#' rather than to a different DGP.
+.dgp_draw_y <- function(eta, truth, n, sigma_y) {
+  fam <- truth$y_family %||% "gaussian"
+  if (identical(fam, "gaussian")) return(eta + stats::rnorm(n, 0, sigma_y))
+  if (identical(fam, "binomial"))
+    return(stats::rbinom(n, 1L, stats::plogis(eta)))
+  stop("unknown y_family: ", fam, call. = FALSE)
 }
 
 #' Simulate one complete (uncensored, fully observed) dataset from the ERF.
@@ -348,7 +371,7 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
     eta <- eta + (truth$b_zq %||% 0) * (Zmat[, 1]^2 - 1)
   }
 
-  Y <- eta + stats::rnorm(n, 0, sigma_y)
+  Y <- .dgp_draw_y(eta, truth, n, sigma_y)
 
   data <- data.frame(Y = Y, logX, Z, check.names = FALSE)
   list(data = data, truth = truth)
@@ -398,21 +421,21 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
     z2   <- stats::rbinom(n, 1, 0.5)
     logX <- draw_x(truth$delta_zx * z1)                       # Z1 -> logX1
     Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
-    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+    Y    <- .dgp_draw_y(eta_x(logX) + as.vector(Zm %*% truth$gamma), truth, n, sigma_y)
 
   } else if (z_role == "pipe") {
     z2   <- stats::rbinom(n, 1, 0.5)
     logX <- draw_x(0)
     z1   <- truth$delta_xz * logX[, 1] + stats::rnorm(n, 0, 0.8)   # logX1 -> Z1
     Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
-    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+    Y    <- .dgp_draw_y(eta_x(logX) + as.vector(Zm %*% truth$gamma), truth, n, sigma_y)
 
   } else if (z_role == "collider") {
     z2   <- stats::rbinom(n, 1, 0.5)
     logX <- draw_x(0)
     # gamma[1] is 0 here (make_truth enforces it), so Z1 is absent from Y.
     Zm0  <- cbind(Z1 = 0, Z2 = z2)[, seq_len(q), drop = FALSE]
-    Y    <- eta_x(logX) + as.vector(Zm0 %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+    Y    <- .dgp_draw_y(eta_x(logX) + as.vector(Zm0 %*% truth$gamma), truth, n, sigma_y)
     z1   <- truth$delta_xz * logX[, 1] + truth$delta_yz * Y +      # X1 -> Z1 <- Y
             stats::rnorm(n, 0, 0.8)
 
@@ -421,14 +444,14 @@ simulate_complete <- function(n, truth, rho = 0.4, sd_x = 1.0, mu_x = 0.0,
     logX <- draw_x(0)
     z1   <- ef_nl_g(logX[, 1], truth) + stats::rnorm(n, 0, truth$nl_sd)
     Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
-    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+    Y    <- .dgp_draw_y(eta_x(logX) + as.vector(Zm %*% truth$gamma), truth, n, sigma_y)
 
   } else {                                                    # mixed: fork + pipe
     z1   <- stats::rnorm(n)                                   # fork, drawn first
     logX <- draw_x(truth$delta_zx * z1)
     z2   <- stats::rbinom(n, 1, stats::plogis(truth$delta_xz2 * logX[, 1]))  # pipe
     Zm   <- cbind(Z1 = z1, Z2 = z2)[, seq_len(q), drop = FALSE]
-    Y    <- eta_x(logX) + as.vector(Zm %*% truth$gamma) + stats::rnorm(n, 0, sigma_y)
+    Y    <- .dgp_draw_y(eta_x(logX) + as.vector(Zm %*% truth$gamma), truth, n, sigma_y)
   }
 
   data <- data.frame(Y = Y, logX, Z1 = z1, Z2 = z2, check.names = FALSE)

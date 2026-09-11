@@ -81,7 +81,11 @@ getenv <- function(key, default) {
 }
 split_csv <- function(x) trimws(strsplit(x, ",")[[1]])
 
-V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
+V4_ARMS <- c(# Baselines that run_procedures() has always supported but that were
+             # never registered here, so no V4-family track could ask for them.
+             # `oracle` is added automatically by .v4_run_task().
+             "complete_case", "leftcens_prestep",
+             "pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              "pipeline_bartMI", "pipeline_bartMI_iter3", "pipeline_bartHarness",
              "pipeline_properZ",
              "pipeline_noMID", "pipeline_properZ_noMID",
@@ -105,7 +109,9 @@ V4_ARMS <- c("pipeline_block_fcs", "pipeline_properBoot", "pipeline_micePmm",
              # then `child_form` as the sensitivity axis over the one piece that
              # is not identifiable below the LOD.
              "dag_noY", "dag_Yonly", "dag_lin", "dag_quad", "dag_cubic",
-             "dag_true")
+             "dag_true",
+             # V26: the pre-v1.6.0 covariate-block scale defect, as paired arms.
+             "pipeline_properZ_ds", "pipeline_micePmm_ds")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 
@@ -198,7 +204,9 @@ print_v4 <- function(s) {
                          target = sc$target %||% "direct",
                          # V25: NULL keeps the standard 0.60 arrow, so no
                          # pre-V25 scenario moves.
-                         delta_xz = sc$delta_xz)
+                         delta_xz = sc$delta_xz, delta_zx = sc$delta_zx,
+                         # V26: Gaussian unless the cell says otherwise.
+                         y_family = sc$y_family %||% "gaussian")
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(

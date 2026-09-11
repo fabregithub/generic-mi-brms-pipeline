@@ -28,6 +28,8 @@ log|relative bias| on log `n`, pooled over `zr_fork` and `zr_pipe`:
 | `bartMI` | nonparametric | −1/3 | **−0.311 [−0.389, −0.234]** | **decays** |
 | `properBoot` | nonparametric | −1/3 | **−0.029 [−0.087, +0.028]** | asymptotic |
 | `micePmm` | parametric, correct | −1/2 | **+0.097 [−0.031, +0.225]** | asymptotic |
+
+> **⚠️ THE `micePmm` AND `properZ` DECAY RATES ARE WITHDRAWN, not merely restated (2026-09-11).** Their *levels* were contaminated by the covariate-block scale defect (−3.16 and −4.40 pp; see the correction above), so the rates fitted to those levels are **not measured** and must not be quoted. They are NOT re-run: the corrected levels are already known (`micePmm` −0.08% / +1.45%, `properZ` +0.06% / +1.15% on a confounder / mediator at n = 800), and re-measuring the rates would cost a full multi-`n` track for two arms that are no longer candidates. **Every other row in this table stands** — BART and forest-family arms are invariant to the defect (trees split on order statistics). If these rates are ever needed, the track must be re-run post-fix; until then treat the two cells as blank, not as zero.
 | `properZ` | parametric, correct | −1/2 | **+0.044 [−0.003, +0.091]** | asymptotic |
 
 **Every registered gate on the conjecture failed.** The families are not separated — the
@@ -124,9 +126,7 @@ is precisely why fifteen tracks measured it and found little.
 > sweep loop and so had every covariate block regressing on `exp(log X)` against a log-scale
 > analysis model. With that fixed: `micePmm` +3.07% → **−0.08%** and `properZ` +4.46% →
 > **+0.06%** under a confounder; +4.71% → **+1.45%** and +6.51% → **+1.15%** under a mediator.
-> **The `forest_boot` finding below is unaffected** — it was measured against the same wrapper,
-> and its −23% is far outside the 3–5 pp the wrapper contributed — but it should be re-measured
-> post-fix before being requoted. See `ROADMAP.md` and `phase1/derive_zblock_scale.R`.
+> **SCOPE, measured 2026-09-11: only the PARAMETRIC arms were affected.** Pre- vs post-fix with an identical arm set, `pipeline_bartMI` moved **+0.02 / +0.17 pp** and the legacy `forest` arm **+0.00 / −0.06 pp**, both inside Monte-Carlo error, while `micePmm` and `properZ` moved −3.16 and −4.40 pp. The reason is structural: **regression trees split on order statistics, so a tree ensemble is invariant to strictly monotone transforms of a predictor** — `exp()` is monotone, so BART never saw the defect. **So the `forest_boot` −23% finding stands as measured**, as do this track's BART conclusions; what needs restating is the `micePmm` and `properZ` rows **and their decay rates**, which were fitted to contaminated levels. See `ROADMAP.md` and `phase1/derive_zblock_scale.R`.
 
 | `forest_boot` (v1.4.0 default, and the `dbarts`-missing fallback) | **New defect: −23% asymptotic bias under a confounder or mediator**, coverage → 0 |
 

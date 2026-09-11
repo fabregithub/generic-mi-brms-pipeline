@@ -337,6 +337,8 @@ ce_preflight_curvature <- function(data, analysis_spec, var_dict,
   hi_suffix <- ce$hi_suffix %||% "_hi"
   sweeps <- as.integer(ce$outer_sweeps %||% 5L)
   margin <- ce$margin %||% "shash"
+  zb_scale <- match.arg(as.character(ce$zblock_scale %||% "model"),
+                        c("model", "data"))
 
   # Whether to impute on the log scale: an explicit config flag wins; otherwise
   # fall back to the dictionary `scale == "log"`. Keeping this separate from the
@@ -454,14 +456,25 @@ ce_preflight_curvature <- function(data, analysis_spec, var_dict,
       # only this scale in the harness reproduced it (+0.38% -> +5.38% under a
       # confounder, -0.45% -> +5.44% under a mediator). See
       # validation/phase1/derive_zblock_scale.R and ROADMAP.md.
-      work[[x]] <- imp
+      # `zblock_scale` exists so the pre-v1.6.0 defect stays REPRODUCIBLE as a
+      # configuration rather than as a patch: "model" (default) is correct,
+      # "data" restores the old in-loop conversion. Two reasons to keep it:
+      # measuring the defect needs both versions on identical data in ONE run,
+      # and a permanent switch is a regression guard -- a future refactor that
+      # reintroduces the conversion is caught by test/test_censored_exposure.R
+      # rather than by someone re-deriving it. NOT a user-facing knob; it is
+      # undocumented in 00_config.R and has no reason to be set.
+      work[[x]] <- if (identical(zb_scale, "data") && isTRUE(b$log_scale))
+        exp(imp) else imp
     }
   }
   # Back to the data scale ONCE, after the last sweep, so the returned dataset
   # keeps the user-facing convention (a data-scale exposure column, which the
   # analysis formula logs itself).
-  for (x in exposures) {
-    if (isTRUE(bounds[[x]]$log_scale)) work[[x]] <- exp(work[[x]])
+  if (!identical(zb_scale, "data")) {
+    for (x in exposures) {
+      if (isTRUE(bounds[[x]]$log_scale)) work[[x]] <- exp(work[[x]])
+    }
   }
   work
 }

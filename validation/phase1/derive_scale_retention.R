@@ -1,39 +1,43 @@
-# DERIVE the scale defect, then check the derivation -- not the other way round.
+# DERIVATION, then test. Retained fraction of Z1's explainable variance when the
+# exposure enters the covariate block as R = e^L instead of L = logX1, GIVEN the
+# other predictors W = (logX2, logX3, Z2, Y).
 #
-# For a fork, logX1 is Gaussian and Z1 is jointly Gaussian with it, so the true
-# conditional E[Z1 | logX1, ...] is LINEAR in L = logX1. The pipeline regressed
-# on R = exp(L). For L ~ N(m, s^2):
-#     Cov(L, R) = s^2 e^{m + s^2/2},   Var(R) = e^{2m + s^2}(e^{s^2} - 1)
-#  => Corr(L, R)^2 = s^2 / (e^{s^2} - 1)
-# which is the fraction of the explainable variance a linear predictor in R can
-# retain. Everything else is lost into the residual, so the imputed Z1 is
-# attenuated toward its marginal by exactly that factor.
+#   L = mu_W + Ltilde,  tau^2 = Var(mu_W),  sigt^2 = Var(Ltilde),  s^2 = tau^2 + sigt^2
+#   R = e^L = A*B,  A = e^{mu_W},  B = e^{Ltilde},  A independent of B
 #
-# PREDICTIONS, before looking:
-#   (1) retained R^2 ratio = s^2/(e^{s^2}-1)
-#   (2) the Z1 residual SD inflates by 1/sqrt(1 - rho^2(1 - that ratio))
+#   Cov(Ltilde, Rtilde) = E[A]E[B] sigt^2            (Stein on Cov(X, e^X))
+#   Var(Rtilde)         = E[A]^2 E[B]^2 (e^{s^2} - 1 - tau^2)
+#   => retained = Corr(L, R | W)^2 = sigt^2 / (e^{s^2} - 1 - tau^2)
+#
+# Nests the marginal form: tau^2 = 0 gives s^2/(e^{s^2} - 1).
+#
+# TWO REGISTERED PREDICTIONS, stated before looking:
+#   P1  retained = sigt^2 / (e^{s^2} - 1 - tau^2), against the measured partial-R2 ratio
+#   P2  the marginal form s^2/(e^{s^2}-1) must OVER-predict, since tau^2 > 0 shrinks
+#       the numerator and the -tau^2 in the denominator does not compensate
 suppressMessages(for (f in c("dgp.R","censoring.R","robustness.R")) source(file.path("R",f)))
 `%||%` <- function(a,b) if (is.null(a)) b else a
-for (cell in c("zr_fork","zr_pipe")) {
-  sc <- Filter(function(s) s$name == cell, v2_scenarios())[[1]]
+oth <- c("logX2","logX3","Z2","Y")
+cat(sprintf("%-9s %7s %7s %7s | %9s %9s | %9s %8s\n",
+            "cell","s^2","tau^2","sigt^2","P1 deriv","measured","miss","marginal"))
+for (cell in c("zr_fork","zr_pipe","zr_collider")) {
+  sc <- Filter(function(s) s$name == cell, v2_scenarios())
+  if (!length(sc)) next
+  sc <- sc[[1]]
   tr <- make_truth(p = 3L, erf_form = sc$erf_form, z_role = sc$z_role)
   set.seed(21); d <- simulate_complete(400000L, tr)$data
   L <- d$logX1; s2 <- var(L)
-  pred_ratio <- s2 / (exp(s2) - 1)
-  # measured: variance of Z1 explained by R, relative to that explained by L,
-  # holding the other predictors fixed in both models
-  oth <- c("logX2", "logX3", "Z2", "Y")
-  f_L <- lm(reformulate(c("L", oth), response = "Z1"), data = transform(d, L = L))
-  f_R <- lm(reformulate(c("R", oth), response = "Z1"), data = transform(d, R = exp(L)))
-  # partial R^2 of the exposure term in each
-  f_0 <- lm(reformulate(oth, response = "Z1"), data = d)
-  pr <- function(f) 1 - sum(residuals(f)^2) / sum(residuals(f_0)^2)
-  meas_ratio <- pr(f_R) / pr(f_L)
-  cat(sprintf("%-8s Var(logX1) = %.3f\n", cell, s2))
-  cat(sprintf("   predicted retained fraction  s^2/(e^{s^2}-1) = %.4f\n", pred_ratio))
-  cat(sprintf("   MEASURED  partial-R2(R) / partial-R2(L)      = %.4f   (miss %+.4f)\n",
-              meas_ratio, meas_ratio - pred_ratio))
-  cat(sprintf("   predicted residual-SD inflation = %.4f, measured = %.4f\n\n",
-              sqrt((1 - pr(f_L) * pred_ratio) / (1 - pr(f_L))),
-              sigma(f_R) / sigma(f_L)))
+  # tau^2 / sigt^2 from the projection of L on W
+  fL <- lm(reformulate(oth, response = "L"), data = transform(d, L = L))
+  sigt2 <- sum(residuals(fL)^2)/nrow(d); tau2 <- s2 - sigt2
+  pred  <- sigt2 / (exp(s2) - 1 - tau2)
+  marg  <- s2 / (exp(s2) - 1)
+  # measured: partial R^2 of the exposure term, R vs L, other predictors held in
+  f0 <- lm(reformulate(oth, response = "Z1"), data = d)
+  fa <- lm(reformulate(c("L", oth), response = "Z1"), data = transform(d, L = L))
+  fb <- lm(reformulate(c("R", oth), response = "Z1"), data = transform(d, R = exp(L)))
+  pr <- function(f) 1 - sum(residuals(f)^2)/sum(residuals(f0)^2)
+  meas <- pr(fb)/pr(fa)
+  cat(sprintf("%-9s %7.3f %7.3f %7.3f | %9.4f %9.4f | %+9.4f %8.4f\n",
+              cell, s2, tau2, sigt2, pred, meas, meas - pred, marg))
 }

@@ -206,6 +206,41 @@ study design, as noted above.
 
 ---
 
+## v1.6.0 — the covariate block conditioned on the wrong scale ⚠️ behaviour change
+
+**Fixed 2026-09-10.** The block-FCS loop returned the censored exposure to the **data** scale
+after each exposure draw, so every subsequent covariate block regressed on `X` while the
+analysis model — and the exposure draw itself — worked in `log X`. The covariate imputation
+model was therefore misspecified *in scale*, and incongenial with the analysis for exactly the
+documented `scale = "log"` configuration.
+
+The exposure now stays on the modelling scale across the sweeps and is converted once at the
+end, so the returned dataset keeps the same user-facing convention as before.
+
+**Who was affected.** Only configurations whose covariate block uses a **linear** imputation
+model — `z_imputer = "forest"`/`"forest_boot"` are unaffected, and so is the default
+`z_imputer = "bart"`. The reason is structural: regression trees split on order statistics, so
+a tree ensemble is invariant to any strictly monotone transform of a predictor, and `exp()` is
+monotone — BART never saw the defect. Measured pre- vs post-fix on a confounder and a mediator
+cell at 200 replications:
+
+| covariate-block imputer | change in the exposure coefficient |
+|---|---|
+| `bart` (the default) | +0.02 / +0.17 pp — no change |
+| `forest` | +0.00 / −0.06 pp — no change |
+| `mice` pmm (parametric) | **−3.16 / −3.26 pp** |
+| parametric proper draw | **−4.40 / −5.36 pp** |
+
+**So if you ran with the default `z_imputer`, your results are unchanged.** If you used a
+parametric covariate imputer on a logged exposure, the exposure coefficient was biased away
+from the null by roughly 3–5 percentage points, and re-running is worthwhile. Cite the pipeline
+version either way.
+
+Details and the derivation: [`validation/THEORY.md` §1a(ii)](../validation/THEORY.md) and
+[`validation/ROADMAP.md`](../validation/ROADMAP.md).
+
+---
+
 ## What changed on 2026-09-09, and why
 
 Two changes to this path, both driven by Track V24

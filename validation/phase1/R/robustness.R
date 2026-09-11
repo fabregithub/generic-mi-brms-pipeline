@@ -132,7 +132,8 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
                          y_form = "linear", z_role = "precision",
                          nl_a = NULL, nl_c = NULL, target = "direct",
-                         delta_xz = NULL, seed_as = NULL) {
+                         delta_xz = NULL, delta_zx = NULL,
+                         y_family = "gaussian", seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
        skew = skew, censor_all = censor_all, mcar_frac = mcar_frac,
@@ -148,7 +149,9 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
        target = target,
        # V25: the X1 -> Z1 arrow's strength. NULL keeps 0.60; 0 removes the arrow
        # while keeping Z1 present and observed -- the arrow-absent control.
-       delta_xz = delta_xz,
+       delta_xz = delta_xz, delta_zx = delta_zx,
+       # V26: the outcome's family. Gaussian everywhere before V26.
+       y_family = y_family,
        # `seed_as` makes this cell draw its data with ANOTHER cell's seed, so the
        # two see byte-identical exposures, covariates and outcome noise and differ
        # only in the feature under test. That turns a cell-vs-cell contrast from
@@ -388,7 +391,30 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     # control had to be built inside the pipe structure rather than as a new role.
     .v2_scenario("dag_pipe_null", "dag_draw", nd_frac = 0.4, mcar_frac = 0.0,
                  z_role = "pipe", target = "direct", delta_xz = 0,
-                 seed_as = "dag_pipe_dir")
+                 seed_as = "dag_pipe_dir"),
+
+    # ---- V26: does the record transfer to a NON-GAUSSIAN estimand? ----------
+    # Every track V0-V25 estimated a Gaussian linear coefficient by OLS. The
+    # pipeline's real targets are logistic, ordinal, spline and mixed models, so
+    # the transfer of 25 tracks' conclusions to those classes is an ASSUMPTION.
+    #
+    # These cells are the binomial twins of three whose Gaussian answers are
+    # already known, so the contrast is family and nothing else: the structural
+    # coefficients, the covariate roles, the missingness and the censoring are
+    # all unchanged, and the same seed gives BYTE-IDENTICAL exposures (only Y
+    # differs, since Y is drawn last). The estimand becomes the focal exposure's
+    # log-odds-ratio, still 0.40.
+    #
+    # Registered comparison, per cell: does the arm ORDERING survive, and does
+    # the defect's SIZE in bias/SE units survive? A logistic coefficient is on a
+    # different scale, so relative bias is not comparable across families --
+    # bias/SE is, which is why V18's currency matters here.
+    .v2_scenario("bin_base",  "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 y_family = "binomial", seed_as = "mcar_z40"),
+    .v2_scenario("bin_fork",  "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "fork", y_family = "binomial", seed_as = "zr_fork"),
+    .v2_scenario("bin_pipe",  "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "pipe", y_family = "binomial", seed_as = "zr_pipe")
   )
 }
 

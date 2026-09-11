@@ -173,7 +173,8 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
                                      mid = TRUE, proper_draw = FALSE,
                                      bart_inner_iter = NULL, z_imputer = NULL,
                                      y_in_x = TRUE, y_in_z = TRUE,
-                                     z_aux = FALSE, auto_x_preds = FALSE) {
+                                     z_aux = FALSE, auto_x_preds = FALSE,
+                                     zblock_scale = "model") {
   d <- bundle$censored
   truth <- bundle$truth
   p <- length(truth$b)
@@ -271,6 +272,9 @@ v1_load_pipeline <- function(project_root = NULL, quiet = TRUE,
     lo_suffix            = "_lo",
     hi_suffix            = "_hi",
     mid_delete_imputed_y = isTRUE(mid),
+    # V26: "data" restores the pre-v1.6.0 covariate-block scale defect, so the
+    # defective and corrected draws can be measured on IDENTICAL data in one run.
+    zblock_scale         = zblock_scale,
     n_cores              = as.integer(n_cores)
   )
 
@@ -334,7 +338,8 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                     bart_z = FALSE, bart_inner_iter = NULL,
                                     z_imputer = NULL, y_in_x = TRUE,
                                     y_in_z = TRUE, z_aux = FALSE,
-                                    auto_x_preds = FALSE, label = NULL) {
+                                    auto_x_preds = FALSE, zblock_scale = "model",
+                                    label = NULL) {
   label <- label %||% "pipeline_block_fcs"
 
   if (!requireNamespace("leftcens", quietly = TRUE) ||
@@ -359,7 +364,8 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                   bart_inner_iter = bart_inner_iter,
                                   z_imputer = z_imputer,
                                   y_in_x = y_in_x, y_in_z = y_in_z,
-                                  z_aux = z_aux, auto_x_preds = auto_x_preds)
+                                  z_aux = z_aux, auto_x_preds = auto_x_preds,
+                                  zblock_scale = zblock_scale)
 
   imputed <- tryCatch(
     env$run_censored_exposure_block_fcs(
@@ -463,6 +469,25 @@ proc_pipeline_properBoot <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
 #' Track 05 arm: Z block replaced by `mice`'s parametric proper draws (pmm /
 #' logreg). The counterpart to `properBoot` -- proper by construction but linear,
 #' so it is the arm that a non-linear covariate DGP can finally penalise.
+#' V26 arms: the pre-v1.6.0 covariate-block scale defect, as a configuration.
+#'
+#' Paired with their corrected twins so the CONTRAST is measured on identical
+#' data within one run -- which is what makes the scale effect an anchor rather
+#' than a number to be reproduced by a rebuilt instrument. Three attempts at
+#' such a rebuild missed the anchor by 31% to 4x (see ROADMAP), which is why
+#' this is done as a toggle instead.
+proc_pipeline_properZ_ds <- function(bundle, ...) {
+  proc_pipeline_block_fcs(bundle, ..., mid = TRUE, proper_z = TRUE,
+                          zblock_scale = "data",
+                          label = "pipeline_properZ_ds")
+}
+proc_pipeline_micePmm_ds <- function(bundle, ...) {
+  proc_pipeline_block_fcs(bundle, ..., mid = TRUE, proper_z = FALSE,
+                          proper_draw = FALSE, mice_z = TRUE,
+                          zblock_scale = "data",
+                          label = "pipeline_micePmm_ds")
+}
+
 proc_pipeline_micePmm <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                   outer_sweeps = 3L, margin = "shash",
                                   project_root = NULL, quiet = TRUE) {

@@ -23,11 +23,26 @@
 #' @return named numeric c(est, se) or c(NA, NA) on failure.
 fit_lm_estimand <- function(data, truth) {
   fm <- dgp_formula(truth)
-  fit <- tryCatch(stats::lm(fm, data = data), error = function(e) NULL)
+  # V26: dispatch on the OUTCOME's family. Gaussian keeps stats::lm(), so every
+  # pre-V26 cell is bit-identical; "binomial" fits the matched logistic model and
+  # the estimand becomes the focal exposure's log-odds-ratio. One change here
+  # covers every arm, because they all pool through this function -- which is
+  # also why it must stay a drop-in: same return names, same NA behaviour.
+  fam <- truth$y_family %||% "gaussian"
+  fit <- tryCatch(
+    if (identical(fam, "gaussian")) stats::lm(fm, data = data)
+    else suppressWarnings(stats::glm(fm, data = data,
+                                     family = stats::binomial())),
+    error = function(e) NULL)
   if (is.null(fit)) return(c(est = NA_real_, se = NA_real_))
+  # A logistic fit can separate on a bad imputation; that is a real failure of
+  # the arm and must surface as NA rather than as a huge coefficient with a
+  # huge SE quietly widening the pooled interval.
+  if (!identical(fam, "gaussian") && !isTRUE(fit$converged))
+    return(c(est = NA_real_, se = NA_real_))
   cf <- stats::coef(fit); vc <- stats::vcov(fit)
   nm <- "logX1"
-  if (!nm %in% names(cf)) return(c(est = NA_real_, se = NA_real_))
+  if (!nm %in% names(cf) || is.na(cf[nm])) return(c(est = NA_real_, se = NA_real_))
   c(est = unname(cf[nm]), se = unname(sqrt(vc[nm, nm])))
 }
 
@@ -372,6 +387,9 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   # four cases that need it (fork, pipe-direct, pipe-total, collider) in one
   # sweep. `child_form` is the SENSITIVITY AXIS, not a tuning knob -- THEORY.md
   # 0b measures that the child model is not identifiable below the LOD.
+  # V26: the pre-v1.6.0 covariate-block scale defect, as paired arms.
+  if ("pipeline_properZ_ds" %in% which)     out$pzds  <- .ce_args(proc_pipeline_properZ_ds)
+  if ("pipeline_micePmm_ds" %in% which)     out$mpds  <- .ce_args(proc_pipeline_micePmm_ds)
   if ("dag_noY" %in% which)                 out$dgn   <- .ef_args(proc_dag_noY)
   if ("dag_Yonly" %in% which)               out$dgy   <- .ef_args(proc_dag_Yonly)
   if ("dag_lin" %in% which)                 out$dgl   <- .ef_args(proc_dag_lin)
