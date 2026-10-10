@@ -1,6 +1,6 @@
 # What we learned, and what the pipeline now does about it
 
-**2026-09-09.** A synthesis of 24 validation tracks, the theory they produced, and the changes
+**2026-10-10.** A synthesis of 26 validation tracks, the theory they produced, and the changes
 that theory justified in the pipeline. Written to be readable without the other documents;
 every number is a measurement with a named source.
 
@@ -172,7 +172,28 @@ silent on a linear DGP and fires on a curved one.
 It is a screen, not a guarantee: it cannot see below the LOD, and it cannot tell a confounder
 from a mediator — only the analyst can.
 
-### 5.3 The child factor does **not** ship, and the reason is measured
+### 5.3 The covariate block conditioned on the wrong scale *(fix, v1.6.0 — behaviour change)*
+
+The block-FCS loop returned the censored exposure to the **data** scale after each exposure
+draw, so every subsequent covariate block regressed on `X` while the analysis model — and the
+exposure draw itself — worked in `log X`. Congeniality clause (A) is a statement about the
+*functional* of a variable, not only about which variables, so this was a genuine violation:
+a model linear in `X` cannot represent a conditional linear in `log X`.
+
+**Who was affected: only LINEAR covariate imputers.** Regression trees split on order
+statistics, so a tree ensemble is invariant to any strictly monotone transform of a predictor
+— `exp()` is monotone, and BART never saw the defect. Measured pre/post fix:
+
+| covariate imputer | change |
+|---|---|
+| `bart` (the default), `forest` | +0.02 / −0.06 pp — none |
+| `mice` pmm, parametric proper | **−3.16 to −5.36 pp** |
+
+So the shipped default and V17/V20/V23 are unaffected; what needed restating was V19's two
+parametric arms. The magnitude is derived in `THEORY.md` §1a(ii) — retained fraction
+`σ̃²/(e^{s²} − 1 − τ²)` verified to ≤0.002, and the full chain predicts one cell to 1.1%.
+
+### 5.4 The child factor does **not** ship, and the reason is measured
 
 The validated algorithm is a **grid sampler**: build the product of the three factors on a grid
 over the censored interval and inverse-CDF sample it. That lands at −0.09% to −0.63% in every
@@ -270,16 +291,31 @@ assumption cost. Not a fix — 9% is still 9% — but strictly better than the d
 
 ## 7. What is still open
 
-- **Both blocks missing at once.** Every V24 cell has fully observed covariates, to isolate the
-  exposure draw from the covariate-draw ladder V21 settled. The realistic case needs the child
-  factor inside the block alternation.
-- **Where the declared shape comes from.** We can say a wrong shape is harmful and the right one
-  is exact. We cannot tell a user how to choose, beyond §3's finding that the data cannot.
-- **No arrow-absent control in V24.** The claim that "unrepresentable curvature" modifies rather
-  than generates the defect currently rests on a comparison across two instruments. One extra
-  scenario would close it.
-- **Every result is on a Gaussian linear estimand.** All 24 tracks use OLS for the estimand, and
-  the pipeline's real targets are logistic, ordinal `mo()`, spline and mixed models. Step 6's
-  pooling machinery — the transform and its bimodality gate — **has never fired**, because no
-  validation cell produces a non-Gaussian pooled posterior. This is arguably the largest
-  remaining gap in the programme.
+Grouped by what kind of work would close it.
+
+### Theory not yet closed
+
+| | state |
+|---|---|
+| The `u²` law's exponent and constant | still a **fit**, not derived (`THEORY.md` §4). V23's exponent CI was [0.99, 2.28] — no power. V25 narrowed the role: `u` **modifies** the defect, it does not generate it |
+| The link from `‖r‖` to `T₂` | why a misspecified conditional *over-borrows* by an amount `u²` happens to track. This is the step that would fix the exponent |
+| The scale defect's fork residual | the chain predicts `zr_pipe` to **1.1%** and `zr_fork` to **15%**; the `exp`-linearisation hypothesis is refuted, cause unknown |
+| Why logistic defects attenuate by ~0.474 | explicable (a binary outcome carries less information per observation) but **not derived** |
+
+### Build work
+
+| | state |
+|---|---|
+| The DAG-factorised exposure draw in the pipeline | algorithm **validated** (`\|bias/SE\|` ≤ 0.13 across four cases, three `n`); a cheap SIR implementation was built, measured and **removed** — it cannot work in the curved case it exists for. A faithful version needs the analysis model's linear predictor as a function of a candidate exposure value |
+| Both blocks missing at once | depends on the above; `dag_impute_datasets()` refuses it rather than returning `NA` |
+| A shippable covariate-block fix | V22 removed the objection (a parametric draw wins on both sides); still not a proposal |
+| Item 07 | blocked — gates **A07-1/2/3** all currently fail; its grid draw inverts to +142% under a non-linear covariate arrow |
+
+### Validation coverage
+
+| | state |
+|---|---|
+| ~~Step 6's pooling machinery~~ | ✅ **closed 2026-10-10 — and it was wrong in two independent ways.** The finite-`m` correction was **nullified** by a denominator mismatch (missing Rubin's total by up to 22% at `m` = 3, an interval ~12% too narrow), and the **logit branch was unreachable** so probability-scale parameters were corrected on the log scale. Both fixed and now exact; first test at `test/test_step6_pooling.R`. **Behaviour change — pooled intervals get wider** |
+| Ordinal `mo()`, spline, mixed families | untested. V26 covered binomial only; the mechanism suggests the same direction, which is a conjecture |
+| The shipped default under a confounder or mediator | documented and attributed (+5% to +10.4%), **no fix** |
+| The MAR conjecture | open, small — does a flexible covariate draw recover `Y` from proxies? |

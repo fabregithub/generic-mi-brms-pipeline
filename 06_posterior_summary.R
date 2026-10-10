@@ -135,18 +135,23 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
   # Choose a support-respecting transform so the correction (which
   # assumes rough symmetry) is applied on a scale where that
   # assumption is defensible.
+  # ORDER MATTERS HERE. The (0,1) test must come FIRST: if every draw lies in
+  # (0,1) then `all(x > 0)` is also TRUE, so testing log first made the logit
+  # branch unreachable and a probability-scale parameter was corrected on the
+  # log scale -- which respects the lower bound but not the upper one, so the
+  # inflation could push an interval through 1. Found by test/test_step6_pooling.R.
   choose_transform_ <- function(x) {
-    if (all(x > 0)) {
-      list(
-        name = "log",
-        fwd = log,
-        inv = exp
-      )
-    } else if (all(x > 0 & x < 1)) {
+    if (all(x > 0 & x < 1)) {
       list(
         name = "logit",
         fwd = function(v) log(v / (1 - v)),
         inv = function(v) 1 / (1 + exp(-v))
+      )
+    } else if (all(x > 0)) {
+      list(
+        name = "log",
+        fwd = log,
+        inv = exp
       )
     } else {
       list(
@@ -221,9 +226,8 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     bc <- bimodality_coefficient_(df$value, df$weight)
     unimodal <- is.finite(bc) && bc <= 0.555
 
-    scale_factor <- if (is.finite(V_mix) && V_mix > 0) sqrt(T_var / V_mix) else NA_real_
-
-    apply_correction <- unimodal && is.finite(scale_factor) && m > 1
+    apply_correction <- unimodal && m > 1
+    scale_factor <- NA_real_
 
     transform_used <- "none"
     corrected_value <- df$value
@@ -233,10 +237,44 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
       y <- tr$fwd(df$value)
 
       if (all(is.finite(y))) {
-        ybar <- weighted_mean_(y, df$weight)
-        y_corrected <- ybar + scale_factor * (y - ybar)
-        corrected_value <- tr$inv(y_corrected)
-        transform_used <- tr$name
+        # THE SCALE FACTOR IS COMPUTED ON THE SCALE WHERE IT IS APPLIED, AND
+        # AGAINST THE DRAWS' OWN VARIANCE.
+        #
+        # It used to be sqrt(T_var / V_mix) with T_var and V_mix built from
+        # UNBIASED moment estimates (n-1 and m-1 denominators) on the ORIGINAL
+        # scale, then applied to deviations of the TRANSFORMED draws, whose
+        # weighted variance uses an /n denominator. That weighted variance is
+        # smaller than V_mix by roughly 1/Kbar + (B/m)/V_mix -- and the second
+        # term is exactly the inflation being applied, so the two cancelled and
+        # the correction achieved essentially nothing. Measured before the fix:
+        # the corrected variance landed within 0.1-5% of the UNCORRECTED
+        # mixture, missing Rubin's total by up to 22% at m = 3 with a large
+        # between-imputation component (test/test_step6_pooling.R).
+        #
+        # Rubin's quantities are therefore recomputed on the transform scale,
+        # and the factor is taken against the empirical weighted variance of the
+        # values actually being scaled, so the corrected draws hit the target by
+        # construction rather than approximately.
+        per_imp_y <- tibble::tibble(imputation = df$imputation, y = y) %>%
+          dplyr::group_by(.data$imputation) %>%
+          dplyr::summarise(Q = mean(.data$y), U = stats::var(.data$y),
+                           .groups = "drop")
+        Ubar_y <- mean(per_imp_y$U, na.rm = TRUE)
+        B_y    <- if (m > 1) stats::var(per_imp_y$Q) else 0
+        T_y    <- Ubar_y + (1 + 1 / m) * B_y
+        V_emp  <- weighted_var_(y, df$weight)
+
+        scale_factor <- if (is.finite(T_y) && is.finite(V_emp) && V_emp > 0)
+          sqrt(T_y / V_emp) else NA_real_
+
+        if (is.finite(scale_factor)) {
+          ybar <- weighted_mean_(y, df$weight)
+          y_corrected <- ybar + scale_factor * (y - ybar)
+          corrected_value <- tr$inv(y_corrected)
+          transform_used <- tr$name
+        } else {
+          apply_correction <- FALSE
+        }
       } else {
         apply_correction <- FALSE
       }

@@ -267,6 +267,37 @@ models could be checkpointed and restarted independently.
 XX warm-up iterations, yielding XX post-warm-up draws per chain per
 imputed dataset (XX total post-warm-up draws pooled across XX imputations).
 
+> ### ⚠️ v1.6.1 — the finite-imputation variance correction was not working
+>
+> **Fixed 2026-10-10. Pooled intervals get wider; this is a behaviour change affecting every
+> analysis, not only censored-exposure ones.**
+>
+> Step 6 inflates the pooled posterior to carry Rubin's total variance,
+> `T = Ūbar + (1 + 1/m)·B`. The inflation factor was computed from unbiased moment estimates
+> but applied to draws whose variance is computed with a different denominator — and the gap
+> between the two was almost exactly the size of the inflation, so the correction cancelled
+> itself out. Measured against the target it was meant to reach:
+>
+> | m | between/within variance | shortfall vs Rubin's total |
+> |---|---|---|
+> | 3 | 2.0 | **−22%** |
+> | 5 | 0.5 | −6.7% |
+> | 20 | 0.5 | −1.7% |
+>
+> A 22% shortfall in variance is an interval roughly **12% too narrow** — and the error was
+> worst exactly where the finite-`m` correction matters most: few imputations with substantial
+> between-imputation variance. With `m` = 50–100 and modest between-imputation variance the
+> effect was under 1%.
+>
+> **Separately, the logit transform was unreachable.** A parameter whose draws all lie in
+> (0, 1) was corrected on the log scale, which respects the lower bound but not the upper, so
+> the inflation could in principle push an interval above 1.
+>
+> **What to do.** If you reported intervals from `m` < 10 with noticeable between-imputation
+> variability (check `between_var` against `within_var` in `results/parameter_summary.csv`),
+> the intervals were too narrow and re-running is worthwhile. Point estimates are unaffected —
+> the correction only ever touched the spread. Cite the pipeline version either way.
+
 **Posterior pooling across imputations.** Worth including given the corrected pooling method (see [Adapting the pipeline to your data](../README.md#adapting-the-pipeline-to-private-study-data), "How Step 6 pools draws across imputations"):
 
 > Posterior draws were pooled across imputed datasets with equal weight per
