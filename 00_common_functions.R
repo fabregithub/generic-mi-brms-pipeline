@@ -1548,6 +1548,128 @@ summarise_missing_y_draws <- function(pred_draws_long, analysis_spec, summary_sp
 }
 
 # ------------------------------------------------------------
+# MI pooling of posterior draws -- the single source of truth
+# ------------------------------------------------------------
+#
+# Step 6 pools the model's own parameters; Step 10 pools quantities DERIVED
+# from those parameters (monotonic odds ratios). Both need the same three
+# things, and before 2026-10-10 only Step 6 had them -- Step 10 took raw
+# unweighted quantiles over concatenated draws, so a published OR table did not
+# carry the MI variance correction that the parameter table beside it did.
+# Measured understatement of the OR interval: 0.8% at FMI 0.1 / m = 5, rising
+# to 8.5% at FMI 0.9 / m = 5, and under 1% for m >= 50.
+#
+# Having the logic in one place is the point. Two copies is how they diverged.
+#
+#   1. EQUAL WEIGHT PER IMPUTATION. Draw j from imputation i carries weight
+#      1/(m * K_i), so each imputation contributes 1/m however many finite
+#      draws it produced.
+#   2. THE FINITE-m VARIANCE CORRECTION. Rubin's total is
+#      T = Ubar + (1 + 1/m) B. The pooled draws carry only Ubar + B, so they
+#      are inflated about their weighted mean to reach T.
+#   3. GATED, AND ON A SUPPORT-RESPECTING SCALE. A symmetric inflation would
+#      smear genuinely distinct modes, so it is skipped when Sarle's bimodality
+#      coefficient exceeds 0.555; and it is applied on a log or logit scale
+#      where the parameter is bounded, so the correction cannot push a value
+#      through its support boundary.
+#
+# The scale factor is computed ON THE SCALE WHERE IT IS APPLIED and against the
+# draws' OWN weighted variance. Computing it from unbiased moment estimates on
+# the original scale instead -- which is what Step 6 did until 2026-10-10 --
+# makes the inflation cancel against the denominator mismatch and achieve
+# essentially nothing (it missed Rubin's total by up to 22% at m = 3).
+# See test/test_step6_pooling.R.
+
+mi_weighted_mean <- function(x, w) sum(x * w) / sum(w)
+
+mi_weighted_var <- function(x, w) {
+  mu <- mi_weighted_mean(x, w)
+  sum(w * (x - mu)^2) / sum(w)
+}
+
+mi_weighted_quantile <- function(x, w, probs) {
+  ord <- order(x); x <- x[ord]; w <- w[ord]
+  cw <- (cumsum(w) - 0.5 * w) / sum(w)
+  as.numeric(stats::approx(cw, x, xout = probs, rule = 2)$y)
+}
+
+#' Sarle's bimodality coefficient. > ~0.555 (the uniform-distribution value)
+#' flags a bimodal or multimodal shape.
+mi_bimodality_coefficient <- function(x, w) {
+  mu <- mi_weighted_mean(x, w); s2 <- mi_weighted_var(x, w)
+  if (!is.finite(s2) || s2 <= 0) return(NA_real_)
+  skew <- mi_weighted_mean((x - mu)^3, w) / s2^1.5
+  kurt <- mi_weighted_mean((x - mu)^4, w) / s2^2
+  (skew^2 + 1) / kurt
+}
+
+#' Choose a support-respecting transform.
+#'
+#' ORDER MATTERS: the (0,1) test must come first, because draws in (0,1) also
+#' satisfy `all(x > 0)` and testing log first made the logit branch unreachable.
+mi_choose_transform <- function(x) {
+  if (all(x > 0 & x < 1)) {
+    list(name = "logit", fwd = function(v) log(v / (1 - v)),
+         inv = function(v) 1 / (1 + exp(-v)))
+  } else if (all(x > 0)) {
+    list(name = "log", fwd = log, inv = exp)
+  } else {
+    list(name = "identity", fwd = identity, inv = identity)
+  }
+}
+
+#' Pool posterior draws across imputations, with the finite-m correction.
+#'
+#' @param value Numeric draws, stacked across imputations.
+#' @param imputation Imputation id for each draw, same length.
+#' @return A list with `value` (corrected draws), `weight`, and the audit
+#'   fields Step 6 reports: `between_var`, `within_var`, `variance_corrected`,
+#'   `transform_used`, `bimodality_coef`, `m`.
+mi_pool_draws <- function(value, imputation) {
+  keep <- is.finite(value)
+  value <- value[keep]; imputation <- imputation[keep]
+  if (!length(value)) {
+    return(list(value = numeric(0), weight = numeric(0), m = 0L,
+                between_var = NA_real_, within_var = NA_real_,
+                variance_corrected = FALSE, transform_used = NA_character_,
+                bimodality_coef = NA_real_))
+  }
+  K <- table(imputation)
+  m <- length(K)
+  w <- 1 / (m * as.numeric(K[as.character(imputation)]))
+
+  Q <- tapply(value, imputation, mean)
+  U <- tapply(value, imputation, stats::var)
+  B <- if (m > 1) stats::var(as.numeric(Q)) else 0
+  Ubar <- mean(as.numeric(U), na.rm = TRUE)
+
+  bc <- mi_bimodality_coefficient(value, w)
+  apply_correction <- is.finite(bc) && bc <= 0.555 && m > 1
+  transform_used <- "none"; out <- value
+
+  if (apply_correction) {
+    tr <- mi_choose_transform(value)
+    y <- tr$fwd(value)
+    if (all(is.finite(y))) {
+      # Rubin's quantities on the scale where the scaling happens.
+      Qy <- tapply(y, imputation, mean); Uy <- tapply(y, imputation, stats::var)
+      By <- if (m > 1) stats::var(as.numeric(Qy)) else 0
+      Ty <- mean(as.numeric(Uy), na.rm = TRUE) + (1 + 1 / m) * By
+      Vemp <- mi_weighted_var(y, w)
+      sf <- if (is.finite(Ty) && is.finite(Vemp) && Vemp > 0) sqrt(Ty / Vemp) else NA_real_
+      if (is.finite(sf)) {
+        ybar <- mi_weighted_mean(y, w)
+        out <- tr$inv(ybar + sf * (y - ybar))
+        transform_used <- tr$name
+      } else apply_correction <- FALSE
+    } else apply_correction <- FALSE
+  }
+  list(value = out, weight = w, m = m, between_var = B, within_var = Ubar,
+       variance_corrected = apply_correction, transform_used = transform_used,
+       bimodality_coef = bc)
+}
+
+# ------------------------------------------------------------
 # Imputation-count stability: lightweight two-batch check
 # ------------------------------------------------------------
 #

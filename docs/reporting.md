@@ -293,10 +293,25 @@ imputed dataset (XX total post-warm-up draws pooled across XX imputations).
 > (0, 1) was corrected on the log scale, which respects the lower bound but not the upper, so
 > the inflation could in principle push an interval above 1.
 >
+> **The monotonic odds-ratio tables had a related, separate problem.** Step 10 derives `mo()`
+> odds ratios from the same posterior draws, and it was summarising them with plain unweighted
+> quantiles — so the OR table carried **neither** the equal-weight-per-imputation rule **nor**
+> the finite-imputation correction that the parameter table beside it did. The two now share one
+> implementation. The OR understatement was smaller: 0.8% at FMI 0.1 with `m` = 5, 8.5% at FMI
+> 0.9 with `m` = 5, and **under 1% for `m` ≥ 50**. The OR point estimates and the underlying
+> `mo()` arithmetic were correct throughout — only the interval width changes.
+>
 > **What to do.** If you reported intervals from `m` < 10 with noticeable between-imputation
-> variability (check `between_var` against `within_var` in `results/parameter_summary.csv`),
-> the intervals were too narrow and re-running is worthwhile. Point estimates are unaffected —
-> the correction only ever touched the spread. Cite the pipeline version either way.
+> variability (check `between_var` against `within_var` in `results/parameter_summary.csv`, and
+> now also in the `mo()` OR summary), the intervals were too narrow and re-running is worthwhile.
+> Point estimates are unaffected — the correction only ever touched the spread. Cite the
+> pipeline version either way.
+>
+> **Not changed: posterior predictions (Step 7).** Predicted values for missing outcomes are
+> still summarised as a plain mixture across imputations. That quantity already carries the
+> outcome's residual variance, so the between-imputation share is much smaller, and whether
+> Rubin's finite-imputation correction applies to a predictive distribution at all — rather
+> than to a parameter being estimated — is a real statistical question we have not settled.
 
 **Posterior pooling across imputations.** Worth including given the corrected pooling method (see [Adapting the pipeline to your data](../README.md#adapting-the-pipeline-to-private-study-data), "How Step 6 pools draws across imputations"):
 

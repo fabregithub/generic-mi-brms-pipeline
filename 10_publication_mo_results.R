@@ -283,6 +283,12 @@ compute_mo_or_draws <- function(draws, var, levels, label = var,
                                 time_var = NULL, time_values = NULL) {
   cols <- find_mo_parameter_cols(draws, var = var, time_var = time_var)
 
+  # The imputation label must survive into the DERIVED draws, or the MI
+  # pooling below has nothing to group by. Before 2026-10-10 it was dropped
+  # here and the OR table was summarised as one undifferentiated pile.
+  imp_vec <- if ("imputation" %in% names(draws)) draws$imputation else
+    rep(1L, nrow(draws))
+
   b_main <- draws[[cols$b_main_col]]
   zeta_main <- as.matrix(draws[, cols$simo_main_cols, drop = FALSE])
 
@@ -339,9 +345,9 @@ compute_mo_or_draws <- function(draws, var, levels, label = var,
 
     adjacent_draws <- as_tibble(log_or_adj, .name_repair = "minimal") %>%
       setNames(adjacent_contrast) %>%
-      mutate(.draw_id = row_number()) %>%
+      mutate(.draw_id = row_number(), .imputation = imp_vec) %>%
       pivot_longer(
-        cols = -.draw_id,
+        cols = -c(.draw_id, .imputation),
         names_to = "contrast",
         values_to = "log_or"
       ) %>%
@@ -360,9 +366,9 @@ compute_mo_or_draws <- function(draws, var, levels, label = var,
 
     cumulative_draws <- as_tibble(log_or_cum, .name_repair = "minimal") %>%
       setNames(cumulative_contrast) %>%
-      mutate(.draw_id = row_number()) %>%
+      mutate(.draw_id = row_number(), .imputation = imp_vec) %>%
       pivot_longer(
-        cols = -.draw_id,
+        cols = -c(.draw_id, .imputation),
         names_to = "contrast",
         values_to = "log_or"
       ) %>%
@@ -389,6 +395,7 @@ compute_mo_or_draws <- function(draws, var, levels, label = var,
       contrast = "average_adjacent_category_increase",
       contrast_label = "Average adjacent category increase",
       .draw_id = seq_along(avg_log_or),
+      .imputation = imp_vec,
       log_or = avg_log_or,
       or = exp(avg_log_or)
     )
@@ -453,23 +460,46 @@ compute_mo_or_draws <- function(draws, var, levels, label = var,
   )
 }
 
+#' Summarise derived OR draws WITH the MI machinery Step 6 applies to the
+#' model's own parameters.
+#'
+#' Until 2026-10-10 this took raw unweighted quantiles over draws concatenated
+#' across imputations, so a published OR table carried neither the equal-weight-
+#' per-imputation rule nor the finite-m variance correction that the parameter
+#' table beside it did -- intervals understated by 0.8% (FMI 0.1, m = 5) to
+#' 8.5% (FMI 0.9, m = 5), and under 1% for m >= 50. `mi_pool_draws()` in
+#' 00_common_functions.R is the shared implementation; Step 6 uses the same one.
+#'
+#' The correction is applied to log_or (unbounded, so the identity transform),
+#' and OR is recomputed as exp() of the corrected log_or rather than corrected
+#' separately -- correcting both independently would let them disagree.
 summarise_or_draws <- function(df) {
   df %>%
     group_by(variable, variable_label, effect_context, time_value,
              effect_type, contrast, contrast_label) %>%
-    summarise(
-      n_draws = n(),
-      log_or_median = median(log_or, na.rm = TRUE),
-      log_or_lower = quantile(log_or, alpha, na.rm = TRUE),
-      log_or_upper = quantile(log_or, 1 - alpha, na.rm = TRUE),
-      OR_median = median(or, na.rm = TRUE),
-      OR_lower = quantile(or, alpha, na.rm = TRUE),
-      OR_upper = quantile(or, 1 - alpha, na.rm = TRUE),
-      Pr_OR_gt_1 = mean(or > 1, na.rm = TRUE),
-      Pr_OR_lt_1 = mean(or < 1, na.rm = TRUE),
-      p_direction = pmax(Pr_OR_gt_1, Pr_OR_lt_1),
-      .groups = "drop"
-    )
+    group_modify(function(g, key) {
+      imp <- if (".imputation" %in% names(g)) g$.imputation else rep(1L, nrow(g))
+      pooled <- mi_pool_draws(g$log_or, imp)
+      lo <- pooled$value; w <- pooled$weight
+      o  <- exp(lo)
+      tibble::tibble(
+        n_draws = nrow(g),
+        m_imputations = pooled$m,
+        variance_corrected = pooled$variance_corrected,
+        between_var = pooled$between_var,
+        within_var = pooled$within_var,
+        log_or_median = mi_weighted_quantile(lo, w, 0.5),
+        log_or_lower = mi_weighted_quantile(lo, w, alpha),
+        log_or_upper = mi_weighted_quantile(lo, w, 1 - alpha),
+        OR_median = exp(mi_weighted_quantile(lo, w, 0.5)),
+        OR_lower = exp(mi_weighted_quantile(lo, w, alpha)),
+        OR_upper = exp(mi_weighted_quantile(lo, w, 1 - alpha)),
+        Pr_OR_gt_1 = sum(w[o > 1]) / sum(w),
+        Pr_OR_lt_1 = sum(w[o < 1]) / sum(w),
+        p_direction = pmax(Pr_OR_gt_1, Pr_OR_lt_1)
+      )
+    }) %>%
+    ungroup()
 }
 
 summarise_simplex_draws <- function(df) {

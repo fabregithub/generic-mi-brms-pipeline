@@ -27,13 +27,22 @@
 suppressMessages({library(dplyr); library(tibble)})
 root <- dirname(dirname(normalizePath(
   sub("^--file=", "", commandArgs(FALSE)[grep("^--file=", commandArgs(FALSE))]))))
+# The pooling logic now lives in 00_common_functions.R as mi_pool_draws(), the
+# single source of truth shared by Step 6 (model parameters) and Step 10
+# (derived monotonic odds ratios). Step 6's pool_one_parameter() is still
+# extracted from its own file by marker so BOTH layers are covered: the shared
+# arithmetic, and Step 6's use of it.
+paths <- list(cache = tempdir(), logs = tempdir(), objects = tempdir())
+suppressMessages(suppressWarnings(source(file.path(root, "00_common_functions.R"))))
 src <- readLines(file.path(root, "06_posterior_summary.R"))
 
-i0 <- grep("^  weighted_mean_ <- function", src)
+
+i0 <- grep("^  weighted_mean_ +<- mi_weighted_mean", src)
 i1 <- grep("^  pool_one_parameter <- function", src)
 if (length(i0) != 1L || length(i1) != 1L)
   stop("cannot locate Step 6's pooling helpers -- 06_posterior_summary.R has been ",
-       "refactored and this test must be updated rather than skipped.")
+       "refactored and this test must be updated rather than skipped. ",
+       "(This firing is the test working: it refuses to silently check a stale copy.)")
 # pool_one_parameter ends at the first line that is exactly "  }" after the
 # tibble it returns; find it by brace balance from i1.
 depth <- 0L; i2 <- NA_integer_

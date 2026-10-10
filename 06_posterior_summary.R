@@ -101,66 +101,13 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
   # draws it happened to produce (fixes unequal-K_i weighting).
   # ------------------------------------------------------------
 
-  weighted_mean_ <- function(x, w) sum(x * w) / sum(w)
-
-  weighted_var_ <- function(x, w) {
-    mu <- weighted_mean_(x, w)
-    sum(w * (x - mu)^2) / sum(w)
-  }
-
-  weighted_quantile_ <- function(x, w, probs) {
-    ord <- order(x)
-    x <- x[ord]
-    w <- w[ord]
-    cw <- (cumsum(w) - 0.5 * w) / sum(w)
-    as.numeric(stats::approx(cw, x, xout = probs, rule = 2)$y)
-  }
-
-  # Sarle's bimodality coefficient (no extra package dependency).
-  # BC > ~0.555 (uniform-distribution threshold) flags likely
-  # bimodal/multimodal shape, in which case we must NOT apply a
-  # symmetric variance-inflation correction (it would smear distinct
-  # modes instead of preserving genuine between-imputation structure).
-  bimodality_coefficient_ <- function(x, w) {
-    mu <- weighted_mean_(x, w)
-    s2 <- weighted_var_(x, w)
-    if (!is.finite(s2) || s2 <= 0) {
-      return(NA_real_)
-    }
-    skew <- weighted_mean_((x - mu)^3, w) / s2^1.5
-    kurt <- weighted_mean_((x - mu)^4, w) / s2^2
-    (skew^2 + 1) / kurt
-  }
-
-  # Choose a support-respecting transform so the correction (which
-  # assumes rough symmetry) is applied on a scale where that
-  # assumption is defensible.
-  # ORDER MATTERS HERE. The (0,1) test must come FIRST: if every draw lies in
-  # (0,1) then `all(x > 0)` is also TRUE, so testing log first made the logit
-  # branch unreachable and a probability-scale parameter was corrected on the
-  # log scale -- which respects the lower bound but not the upper one, so the
-  # inflation could push an interval through 1. Found by test/test_step6_pooling.R.
-  choose_transform_ <- function(x) {
-    if (all(x > 0 & x < 1)) {
-      list(
-        name = "logit",
-        fwd = function(v) log(v / (1 - v)),
-        inv = function(v) 1 / (1 + exp(-v))
-      )
-    } else if (all(x > 0)) {
-      list(
-        name = "log",
-        fwd = log,
-        inv = exp
-      )
-    } else {
-      list(
-        name = "identity",
-        fwd = identity,
-        inv = identity
-      )
-    }
-  }
+  # These now delegate to 00_common_functions.R, which is the single source of
+  # truth for MI pooling -- Step 10 pools DERIVED quantities and must use the
+  # same machinery. Two copies is how the two diverged: before 2026-10-10 Step
+  # 10 applied no weighting and no finite-m correction at all.
+  weighted_mean_     <- mi_weighted_mean
+  weighted_var_      <- mi_weighted_var
+  weighted_quantile_ <- mi_weighted_quantile
 
   pool_one_parameter <- function(parameter_draws, param, ci, alpha, rope_range, m_total) {
     df <- tibble::tibble(
@@ -220,65 +167,12 @@ safe_step("STEP 6: Posterior parameter summaries and draws", {
     Qbar <- sum(per_imp$Q_i) / m
     Ubar <- mean(per_imp$U_i, na.rm = TRUE)
     B <- if (m > 1) stats::var(per_imp$Q_i) else 0
-    V_mix <- Ubar + B
-    T_var <- V_mix + B / m
 
-    bc <- bimodality_coefficient_(df$value, df$weight)
-    unimodal <- is.finite(bc) && bc <= 0.555
-
-    apply_correction <- unimodal && m > 1
-    scale_factor <- NA_real_
-
-    transform_used <- "none"
-    corrected_value <- df$value
-
-    if (apply_correction) {
-      tr <- choose_transform_(df$value)
-      y <- tr$fwd(df$value)
-
-      if (all(is.finite(y))) {
-        # THE SCALE FACTOR IS COMPUTED ON THE SCALE WHERE IT IS APPLIED, AND
-        # AGAINST THE DRAWS' OWN VARIANCE.
-        #
-        # It used to be sqrt(T_var / V_mix) with T_var and V_mix built from
-        # UNBIASED moment estimates (n-1 and m-1 denominators) on the ORIGINAL
-        # scale, then applied to deviations of the TRANSFORMED draws, whose
-        # weighted variance uses an /n denominator. That weighted variance is
-        # smaller than V_mix by roughly 1/Kbar + (B/m)/V_mix -- and the second
-        # term is exactly the inflation being applied, so the two cancelled and
-        # the correction achieved essentially nothing. Measured before the fix:
-        # the corrected variance landed within 0.1-5% of the UNCORRECTED
-        # mixture, missing Rubin's total by up to 22% at m = 3 with a large
-        # between-imputation component (test/test_step6_pooling.R).
-        #
-        # Rubin's quantities are therefore recomputed on the transform scale,
-        # and the factor is taken against the empirical weighted variance of the
-        # values actually being scaled, so the corrected draws hit the target by
-        # construction rather than approximately.
-        per_imp_y <- tibble::tibble(imputation = df$imputation, y = y) %>%
-          dplyr::group_by(.data$imputation) %>%
-          dplyr::summarise(Q = mean(.data$y), U = stats::var(.data$y),
-                           .groups = "drop")
-        Ubar_y <- mean(per_imp_y$U, na.rm = TRUE)
-        B_y    <- if (m > 1) stats::var(per_imp_y$Q) else 0
-        T_y    <- Ubar_y + (1 + 1 / m) * B_y
-        V_emp  <- weighted_var_(y, df$weight)
-
-        scale_factor <- if (is.finite(T_y) && is.finite(V_emp) && V_emp > 0)
-          sqrt(T_y / V_emp) else NA_real_
-
-        if (is.finite(scale_factor)) {
-          ybar <- weighted_mean_(y, df$weight)
-          y_corrected <- ybar + scale_factor * (y - ybar)
-          corrected_value <- tr$inv(y_corrected)
-          transform_used <- tr$name
-        } else {
-          apply_correction <- FALSE
-        }
-      } else {
-        apply_correction <- FALSE
-      }
-    }
+    pooled <- mi_pool_draws(df$value, df$imputation)
+    bc <- pooled$bimodality_coef
+    apply_correction <- pooled$variance_corrected
+    transform_used <- pooled$transform_used
+    corrected_value <- pooled$value
 
     w <- df$weight
     x <- corrected_value

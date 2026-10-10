@@ -315,6 +315,8 @@ Grouped by what kind of work would close it.
 
 | | state |
 |---|---|
+| Posterior predictions (Step 7) pool as a plain mixture | open, and it is a **question before it is a bug**: the quantity already carries the outcome's residual variance, so the between-imputation share is small, and whether Rubin's finite-`m` correction applies to a *predictive* distribution rather than to a parameter estimate is unsettled |
+| ~~Step 10's monotonic OR tables bypassed the MI machinery~~ | ✅ **closed 2026-10-10.** Read the same draws as Step 6 but summarised them unweighted and uncorrected, so the OR table was narrower than the parameter table beside it (0.8–8.5% depending on FMI and `m`; <1% at `m` ≥ 50). Both now share `mi_pool_draws()`. The `mo()` arithmetic itself was correct and is now pinned by `test/test_step10_mo.R` |
 | ~~Step 6's pooling machinery~~ | ✅ **closed 2026-10-10 — and it was wrong in two independent ways.** The finite-`m` correction was **nullified** by a denominator mismatch (missing Rubin's total by up to 22% at `m` = 3, an interval ~12% too narrow), and the **logit branch was unreachable** so probability-scale parameters were corrected on the log scale. Both fixed and now exact; first test at `test/test_step6_pooling.R`. **Behaviour change — pooled intervals get wider** |
 | Ordinal `mo()`, spline, mixed families | untested. V26 covered binomial only; the mechanism suggests the same direction, which is a conjecture |
 | The shipped default under a confounder or mediator | documented and attributed (+5% to +10.4%), **no fix** |
