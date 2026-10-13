@@ -132,7 +132,7 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
                          y_form = "linear", z_role = "precision",
                          nl_a = NULL, nl_c = NULL, target = "direct",
-                         delta_xz = NULL, delta_zx = NULL,
+                         delta_xz = NULL, delta_zx = NULL, sd_x = 1.0,
                          y_family = "gaussian", seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
@@ -143,6 +143,14 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
        z_role = z_role,
        # V23: the non-linear arrow's shape, swept to test bias ~ u^2.
        nl_a = nl_a, nl_c = nl_c,
+       # V29: the exposure's own SD. In a fork Var(logX1) = sd_x^2 + delta_zx^2,
+       # so this moves s^2 with the arrow -- and therefore the exposure
+       # conditional's Z1 coefficient -- held FIXED. V28 found the chain's
+       # derived/measured ratio trending with the arrow in the fork sweep but
+       # flat in the pipe sweep, which implicates Var(logX1) rather than the
+       # coefficient; only sd_x can test that channel on its own. Default 1.0,
+       # the value every pre-V29 cell used, so no existing cell moves.
+       sd_x = sd_x,
        # V24: WHICH ESTIMAND. Only a pipe has a choice, and the two answers are
        # different numbers -- so this changes `estimand_true` and the analysis
        # model's adjustment set together, via make_truth(). See dgp.R.
@@ -414,7 +422,70 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("bin_fork",  "y_family", nd_frac = 0.4, mcar_frac = 0.4,
                  z_role = "fork", y_family = "binomial", seed_as = "zr_fork"),
     .v2_scenario("bin_pipe",  "y_family", nd_frac = 0.4, mcar_frac = 0.4,
-                 z_role = "pipe", y_family = "binomial", seed_as = "zr_pipe")
+                 z_role = "pipe", y_family = "binomial", seed_as = "zr_pipe"),
+
+    # ---- V28: what is fork-specific about the scale defect's residual? ------
+    # The propagation chain (THEORY.md 1a(ii)) predicts the pipe cell to 1.1%
+    # and the fork cell to 15%. The exp-linearisation hypothesis was tested and
+    # REFUTED (the agreement improves with s^2, not degrades). Three rebuilt
+    # instruments all missed the pipeline's own anchor by 31%-4x, so this sweep
+    # uses the REAL pipeline arms -- `pipeline_properZ` against
+    # `pipeline_properZ_ds`, which differ only by the pre-v1.6.0 scale defect
+    # and run on identical data. The anchor is then hit by construction.
+    #
+    # THE DESIGN SEPARATES TWO THINGS THE FORK CONFOUNDS. Under a fork,
+    # delta_zx moves BOTH Var(logX1) = 1 + delta^2 AND the exposure
+    # conditional's Z1 coefficient. Under a pipe, delta_xz moves the Z1-X1
+    # relationship while Var(logX1) stays 1. So a ratio that tracks the arrow
+    # in the PIPE sweep implicates the coefficient; one that tracks it only in
+    # the FORK sweep implicates Var(logX1).
+    .v2_scenario("fkd02", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.2),
+    .v2_scenario("fkd04", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.4),
+    .v2_scenario("fkd06", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.6),
+    .v2_scenario("fkd08", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.8),
+    .v2_scenario("ppd02", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.2),
+    .v2_scenario("ppd04", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.4),
+    .v2_scenario("ppd06", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6),
+    .v2_scenario("ppd08", "arrow", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.8),
+
+    # ---- V29: s^2 ON ITS OWN, at a FIXED arrow -----------------------------
+    # V28 (n = 12800, delta >= 0.4) found the chain's derived/measured ratio
+    # TRENDING with the arrow in the fork sweep -- 0.944, 0.992, 1.112 -- and
+    # FLAT in the pipe sweep -- 0.942, 0.953, 0.952. Under a fork the arrow
+    # moves both Var(logX1) = sd_x^2 + delta_zx^2 and the exposure
+    # conditional's Z1 coefficient; under a pipe it moves only the coefficient,
+    # and Var(logX1) = sd_x^2 regardless. So the flat pipe sweep ACQUITS the
+    # coefficient and the trending fork sweep implicates Var(logX1).
+    #
+    # `sd_x` tests that channel directly, because it moves s^2 in BOTH roles
+    # while the arrow stays at 0.60. s^2 = 0.85 / 1.36 / 2.05 (fork) and
+    # 0.49 / 1.00 / 1.69 (pipe) -- the fork's middle cell reproduces the
+    # canonical `zr_fork` geometry as a within-run anchor.
+    #
+    # REGISTERED PREDICTION (2026-10-13, before the run):
+    #   P1  the ratio rises with sd_x in BOTH roles
+    #         -> s^2 is the driver; the chain's linearisation of exp() is what
+    #            degrades, and V28's fork/pipe contrast is a consequence of the
+    #            fork's arrow moving s^2 rather than of the role.
+    #   P2  the ratio rises with sd_x in the FORK ONLY
+    #         -> something fork-specific survives, and s^2 is not sufficient.
+    #   P3  flat in both -> s^2 is NOT the driver and V28's fork trend needs
+    #            another explanation entirely.
+    # P1 and P2 are distinguishable because the pipe cells move s^2 over a
+    # range (0.49 -> 1.69) WIDER than the fork sweep's own (1.16 -> 1.64),
+    # so a pipe that stays flat cannot be dismissed as too small a lever.
+    #
+    # This re-opens a question THEORY.md records as refuted. The refutation
+    # swept s^2 = 0.52 -> 2.05 and found the ratio moving TOWARD 1
+    # (0.841 -> 0.908) -- but on a two-block simulation that misses the
+    # pipeline's own level by 31%, a limitation THEORY states explicitly. These
+    # cells use the real pipeline arms, so they hit the anchor by construction.
+    .v2_scenario("sxf07", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.6, sd_x = 0.7),
+    .v2_scenario("sxf10", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.6, sd_x = 1.0),
+    .v2_scenario("sxf13", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.6, sd_x = 1.3),
+    .v2_scenario("sxp07", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 0.7),
+    .v2_scenario("sxp10", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 1.0),
+    .v2_scenario("sxp13", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 1.3)
   )
 }
 
@@ -442,6 +513,7 @@ v2_procedures_for <- function(sc) {
 #' Build one bundle for a scenario (simulate -> censor -> thin).
 v2_make_bundle <- function(sc, truth) {
   comp <- simulate_complete(sc$n, truth, rho = sc$rho, skew = sc$skew,
+                            sd_x = sc$sd_x %||% 1.0,
                             z_form = sc$z_form %||% "linear")
   p <- length(truth$b)
   which_cens <- if (isTRUE(sc$censor_all)) seq_len(p) else 1L

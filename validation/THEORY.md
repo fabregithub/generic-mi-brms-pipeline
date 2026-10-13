@@ -401,6 +401,83 @@ That gives a falsifiable prediction — the agreement must *degrade* as `s²` gr
 > unexplained**, with the `exp`-linearisation hypothesis eliminated.
 > `phase1/derive_fork_residual.R`.
 
+**⚠️ SUPERSEDED BY V28 (2026-10-13). The fork residual at the canonical arrow does not exist,
+and the refutation above is not established.** Two corrections, in order of importance:
+
+**(i) The 1.147 / 1.011 contrast is an artefact of `n = 800`.** The chain is an *asymptotic*
+statement; the measured wrapper effect at finite `n` is not, and it climbs with `n` toward the
+asymptote. Measured against the real pipeline arms (paired, byte-identical data) at the
+canonical `delta = 0.6`:
+
+| | n = 800 | n = 3200 | n = 12800 | derived |
+|---|---|---|---|---|
+| fork | ratio **1.103** (+4.55) | 1.006 (+4.99) | **0.992** (+5.06) | +5.02 |
+| pipe | ratio **0.992** (+5.63) | 0.943 (+5.92) | **0.953** (+5.86) | +5.58 |
+
+At `n = 800` this reproduces the recorded contrast; at `n = 12800` **the fork agrees better than
+the pipe**. Every derived-vs-measured comparison in this programme up to V28 was made at
+`n = 800`, so this caveat is not specific to the fork — *any* of them may be reading a
+finite-sample gap as a structural one, and the asymptotic ones should be re-read at a larger `n`
+before being treated as residuals.
+
+**(ii) What survives is a trend in the arrow, fork-only.** At `n = 12800`, ratio by `delta`
+(`0.2` cells excluded — their measured effect is ~0.4 pp, so the ratio is a near-zero
+denominator):
+
+| `delta` | fork | pipe |
+|---|---|---|
+| 0.4 | 0.944 ± 0.018 | 0.942 ± 0.043 |
+| 0.6 | 0.992 ± 0.017 | 0.953 ± 0.029 |
+| 0.8 | **1.112 ± 0.023** | 0.952 ± 0.022 |
+
+The arrow moves the exposure conditional's `Z1` coefficient in both roles but moves
+`Var(logX1) = sd_x² + delta_zx²` only in the fork. **The flat pipe acquits the coefficient; the
+trending fork implicates `Var(logX1)`** — which is the `exp`-linearisation channel the sweep
+above claimed to eliminate. That sweep's instrument misses the pipeline's level by 31%, as its
+own caution says, so it could not have settled this. The hypothesis is **re-opened, not
+re-confirmed**: in a fork sweep `s²` and the coefficient move together, so V28 shows only that
+the coefficient is not responsible. `phase1/FINDINGS_v28.md`.
+
+**(iii) V29 settles it: the error is a function of `s²`, and the role is irrelevant.** Moving
+`s²` via `sd_x` with the arrow fixed at 0.60 — the one lever that works in *both* roles — the
+ratio rises in both (`n` = 12800, 200 reps, paired arms):
+
+| role | `s²` 0.49 | 0.85 | 1.00 | 1.36 | 1.69 | 2.04 | slope per unit `s²` |
+|---|---|---|---|---|---|---|---|
+| fork | | 0.924 | | 0.998 | | 1.077 | **+0.128 ± 0.010** (t = 13.0) |
+| pipe | 0.709 | | 0.935 | | 1.057 | | **+0.242 ± 0.074** (t = 3.3) |
+
+Fitting one line to all six cells, **the role adds nothing** — offset p = 0.79, role-specific
+slope p = 0.21 — and five of six sit within 0.023 of it. Slope **+0.161 ± 0.033**, crossing 1 at
+**`s²` ≈ 1.42**. So V28's fork/pipe contrast was never about the role: the fork's arrow moves
+`s² = sd_x² + delta_zx²` and the pipe's does not. **There is no fork-specific mechanism.**
+
+**And the 2026-09-11 refutation was a level artefact.** Its numbers (0.841 → 0.879 → 0.900 →
+0.908 over `s²` = 0.52 → 2.05) *rise with `s²`*, exactly as V29's do. The two sweeps agree on
+direction and differ only in level — and level is what decides whether a monotone rise reads as
+"converging to 1" or "crossing 1". The two-block instrument sits wholly below 1 because it misses
+the pipeline's level by 31%, so crossing looked like converging. The caution attached to that
+sweep was load-bearing and correct.
+
+**But `exp`-linearisation is still not shown to be the mechanism.** A linearisation error must
+vanish as `s² → 0`; V29's ratio instead falls to **0.709** at `s²` = 0.489 and crosses 1 at
+`s²` ≈ 1.42. A pure linearisation term cannot put the ratio *below* 1 at small `s²`. The
+defensible statement is: **the chain's error is a monotone function of `s²` passing through zero
+near 1.4**, so at least two `s²`-dependent effects of opposite sign are in play, or one link is
+mis-scaled in an `s²`-dependent way — the truncation factor `Var(L|L≤c)/σ_x²` being the obvious
+suspect, since the LOD is a quantile of `L` and moves with `s²` by construction.
+`phase1/FINDINGS_v29.md`.
+
+> **A third wrong turn, of a different kind: evaluating an asymptotic closed form at too small
+> an `N`.** V28's first pass computed the derived column at `N = 20000` and read the pipe 15%
+> above the chain's own established +5.42 while the fork agreed — a textbook role-specific
+> defect, and entirely an artefact of the evaluation. The closed form's finite-`N` bias is
+> **+0.87 pp for a pipe against +0.27 pp for a fork** at `N = 20000`; at `N = 300000` it returns
+> +5.44 / +5.04, reproducing `derive_scale_propagation.R`. Two implementations of the same chain
+> disagreeing is a fact about the implementations until proven otherwise — and here the
+> disagreement was *role-dependent*, which is exactly the shape of the finding it would have
+> produced.
+
 > **Three wrong turns, recorded so they are not retried.** (i) That the exposure-block feedback
 > explained an earlier 2× overshoot — it is an 8% effect. (ii) That the draw's inflated residual
 > should be added as noise on top of the truth — that is the *classical measurement-error*
@@ -691,6 +768,38 @@ simulation.
 of a non-linear target. That approximation stays wrong at every `n`, so the bias does not
 decay — which is what V22 measured (+20.8 / +20.3 / +20.3% across a 16× range of `n`).
 
+### Why the law is QUADRATIC — derived 2026-10-11
+
+Until now this section asserted that `u` "enters squared because it is an L²-projection
+residual". That is a restatement, not a derivation. The square follows from the algebra, and
+the mechanism is more specific than the assertion suggests.
+
+Write `r(x) = g(x) − ĝ(x)` for the part of the arrow a linear draw cannot express. The
+log-density error of using `ĝ` instead of `g` is
+
+> `(Z−g)² − (Z−ĝ)² = −2r(Z−ĝ) + r²`,  so  `Δ log p = r(Z−ĝ)/s² − r²/2s²`
+
+The first term looks first-order in `r`. It is not, in expectation: since `Z = g(x) + ε`, the
+residual `(Z − ĝ)` is **itself displaced by `r`**, so `E_Z[r(Z−ĝ)] = r²`. Hence
+
+> `E_Z[Δ log p] = r²/s² − r²/2s² = ` **`r²/(2s²)`**
+
+**Both** pieces are quadratic, and the square comes from the linear draw's residual being
+off-centre by exactly the amount it failed to represent. Verified numerically to 0.6%
+(`phase1/derive_u2_square.R`).
+
+> **A correction worth recording.** A first pass at this claimed the first-order term has mean
+> zero and therefore drops out. It does not — it equals `r²/s²`, and the measurement said so
+> (2.861 against 2.861). The conclusion survived the error, which is exactly why the check was
+> run rather than the algebra trusted.
+
+**And it predicts something never tested.** The tilt is `u²/(2s²)`, so the defect should scale
+as **`1/s²`** in the covariate conditional's residual SD — halving `s` should quadruple the
+bias at fixed `u`. Every V23 cell held `s` = `nl_sd` = 0.80 fixed and swept only `u`, so this
+is a free, falsifiable prediction on a dimension the law has never been exercised on. It is
+also the sharper test of the whole `u²` account, because `s` and `u` can be varied
+independently and a law that only tracks `u` would fail it.
+
 **What governs its size.** Not the amplitude of `g` but **how much of `g` a straight line
 cannot express where the censored mass sits**: the density-weighted residual SD of `g` after
 its best linear fit below the LOD. Write it `u` (`ef_unrep_curvature()` in
@@ -820,6 +929,44 @@ regardless of the exposure draw); the +15–17% BKMR oracle floor on `curv_X1` (
 to be chain length or the GPP approximation; and why MAR is *easier* than MCAR (V10).
 
 ---
+
+## 4a. Where `n^{-1/3}` comes from — and a prediction registered before the run
+
+**Added 2026-10-11, while V27 is running and before its results exist.**
+
+§4 records two exponents the theory cannot produce. One of them is now derivable.
+
+**The argument.** A tree ensemble fits a **piecewise-constant** function. Over a leaf of width
+`h`, a Lipschitz target varies by `O(h)` while the tree returns a single value, so the squared
+approximation bias is `~ h²`; the leaf holds `~ n·h^d` points, so the variance is `~ σ²/(n·h^d)`.
+Minimising `L²h² + σ²/(n h^d)` over `h`:
+
+> `h ∝ n^{−1/(d+2)}`,  so  bias `∝ h ∝ n^{−1/(d+2)}`
+
+With **`d` = 1** that is exactly **`n^{−1/3}`** — V18's measured rate for the covariate-draw
+bias under a causally active covariate. The exponent is a property of the imputer's **function
+class**, not of the DGP, the covariate's causal role, or the missingness mechanism.
+
+> **On the strength of this.** Matching one exponent is weak evidence by itself — there are
+> not many plausible exponents, and `n^{−1/3}` is among the commonest. What would make it
+> convincing is that it predicts things that need not be true:
+
+**P1 (testable by V27, which is running now).** A correctly specified **parametric** imputer has
+no approximation bias at all, so its bias should be ≈ 0 at **every** `n` — not a shallower decay,
+but no decay to measure. V27 runs `bart` and `mice` at `n` = 800 / 3200 / 12800 on the same
+cells. P1 fails if `mice` shows a bias that decays with `n`.
+
+**P2 (not yet tested).** The exponent is `1/(d+2)` in the number of continuous predictors driving
+the smoothing. Adding continuous covariates to the Z-block predictor set should **flatten** the
+decay: `d` = 2 gives `n^{−1/4}`, `d` = 3 gives `n^{−1/5}`. This is the sharper test, because the
+exponent would have to move in a specific way for a reason unrelated to anything else measured.
+
+**A consistency check it already passes.** V19 measured `forest_boot` at **−23% asymptotic** —
+it does *not* decay. That looks like a contradiction and is not: the derivation covers the
+**smoothing** component of a tree imputer's bias. `forest_boot`'s defect is an improper draw,
+a different mechanism with no reason to shrink with `n`. So the prediction is specifically that
+BART's *flexibility* bias decays at `n^{−1/3}` while an improper-draw bias does not — which is
+the pattern V18 and V19 measured separately without connecting them.
 
 ## 4b. Two rates, not one — and why the currency of a claim matters
 
@@ -1272,6 +1419,43 @@ for the total effect. There is no shortcut: the child factor has to be modelled,
 disclosed.
 
 ---
+
+## 6c. Why a defect reads smaller under a logistic outcome — derived
+
+**Added 2026-10-11.** V26 measured that every imputation defect attenuates to a
+median **0.474** of its Gaussian `bias/SE` under a binary outcome (IQR 0.445–0.493 over 30
+cell × arm combinations). That was reported as explicable but not derived. It is derivable, and
+in one line of Fisher information.
+
+For a Gaussian outcome the focal coefficient's standard error is `SE_g = σ / √(n·V)` with
+`V = Var(X₁ | rest)`. For a logistic outcome the information carries the Bernoulli weight
+`p(1−p)`, so `SE_l = 1 / √(n·V·E[p(1−p)])`. Hence
+
+> `SE_g / SE_l = σ · √E[p(1−p)]`
+
+If a given imputation defect produces the same **absolute** bias in the coefficient under both
+families — plausible, since the structural coefficient is the same number on both scales — then
+the ratio of `bias/SE` is exactly that factor. With `σ` = 1:
+
+| cell | `Var(η)` | `E[p(1−p)]` | **derived** | measured | miss |
+|---|---|---|---|---|---|
+| `bin_base` | 0.584 | 0.2203 | **0.4692** | 0.4822 | +0.013 |
+| `bin_fork` | 0.885 | 0.2095 | **0.4576** | 0.4731 | +0.016 |
+| `bin_pipe` | 0.902 | 0.2090 | **0.4570** | 0.4527 | −0.004 |
+
+No free parameters, each cell to ≤0.016, and the cell-to-cell **ordering** is reproduced — the
+derivation predicts a *different* ratio per cell because `E[p(1−p)]` depends on `Var(η)`, and
+that is what it gets right. *(With only three cells, matching the ordering alone would happen
+1 time in 6 by chance; the magnitude agreement is the evidence, the ordering is corroboration.)*
+
+**What this means for using the record.** The attenuation is not a property of imputation at
+all — it is the information content of the outcome. So the conservative-transfer result of V26
+is not a lucky empirical regularity to be re-measured for every new family: for any GLM, the
+factor is `σ·√E[w]` with `w` the family's variance weight. That predicts, for example, that a
+**Poisson** outcome attenuates by `√E[μ]`-ish rather than needing its own track — a prediction
+this document is now committed to and which the ordinal/spline/mixed work can test.
+
+`phase1/derive_logistic_attenuation.R`.
 
 ## 7. What would make this stronger
 

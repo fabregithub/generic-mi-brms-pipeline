@@ -701,12 +701,31 @@ make_row_level_imputation_spec <- function(data, analysis_spec, var_dict) {
 resolve_z_imputer <- function(analysis_spec) {
   sel <- analysis_spec$imputation$z_imputer
   if (!is.null(sel)) {
-    sel <- match.arg(as.character(sel), c("bart", "forest_boot", "forest"))
+    sel <- match.arg(as.character(sel), c("bart", "mice", "forest_boot", "forest"))
     return(sel)
   }
   pd <- analysis_spec$imputation$proper_draw
   if (!is.null(pd)) return(if (isTRUE(pd)) "forest_boot" else "forest")
-  "bart"
+  # DEFAULT since v1.7.0: "mice" (was "bart" from v1.5.0).
+  #
+  # The bart default carried +5% to +10.4% in the exposure coefficient whenever
+  # a covariate CAUSES the exposure or is caused by it, and coverage did not
+  # detect it (0.93-0.97). V21 attributed 100% of that to BART's flexibility.
+  # The objection that had blocked a parametric draw -- V6 measured `mice pmm`
+  # at -4.70% where the covariate's conditional is NON-LINEAR -- was tested
+  # head-on by V27 on exactly that ground and did not reproduce: across four
+  # inert and non-linear-covariate cells mice's |bias/SE| was WITHIN 0.09 of
+  # bart's and on the right side of it, at every n.
+  #
+  # V27, 11 cells x 3 n x 500 reps. Relative bias, bart -> mice:
+  #     zrmar_pipe  10.21% -> 2.95% (n=800)   3.50% -> 0.66% (n=12800)
+  #     zrmar_fork   8.02% -> 0.84%           2.66% -> 0.08%
+  #     zr_fork      5.23% -> 0.79%           1.45% -> 0.00%
+  # mice was better or equal in EVERY cell at EVERY n; coverage never worse by
+  # more than 0.008. See validation/phase1/FINDINGS_v27.md.
+  #
+  # `z_imputer = "bart"` reproduces a v1.5.0-v1.6.x analysis exactly.
+  "mice"
 }
 
 run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
@@ -724,6 +743,8 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
   # aborting, and it measured one DGP -- but to say so where the user will read
   # it. A warning that mentions only a missing package invites being dismissed
   # as an install nag. See validation/phase1/FINDINGS_v19.md.
+  # Since v1.7.0 the default is "mice", so this fires only when a user asks for
+  # bart explicitly and dbarts is absent -- it is no longer on the default path.
   warned_fallback <- FALSE
   if (identical(z_imp, "bart") && !requireNamespace("dbarts", quietly = TRUE)) {
     warned_fallback <- TRUE
@@ -776,6 +797,9 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
 
   if (identical(z_imp, "bart")) {
     return(run_row_level_imputation_bart(data, imputation_spec, analysis_spec))
+  }
+  if (identical(z_imp, "mice")) {
+    return(run_row_level_imputation_mice(data, imputation_spec, analysis_spec))
   }
   if (identical(z_imp, "forest_boot")) {
     return(run_row_level_imputation_proper(data, imputation_spec, analysis_spec))
@@ -1530,21 +1554,174 @@ predict_missing_y_draws_one <- function(fit_i, pred_i, analysis_spec, model_spec
     mutate(!!row_id := as.integer(sub("^row_", "", .data[[row_id]])))
 }
 
+#' Summarise predicted draws for missing outcomes, pooled across imputations.
+#'
+#' WHY THE FINITE-m CORRECTION BELONGS HERE TOO (settled 2026-10-11). The
+#' mixture over imputations IS the right object for the predictive SHAPE -- it
+#' is a Monte-Carlo estimate of p(y_mis | data_obs), and inflating the shape
+#' would be wrong. That argument is half of it. The other half: the interval is
+#' centred on Qbar, which estimates the infinite-m centre with variance B/m, so
+#' covering a future y needs Var(y - Qbar) = Ubar + B + B/m -- Rubin's formula,
+#' for the same reason as a parameter. The target being a future observation
+#' rather than an estimand does not remove the term.
+#'
+#' The MAGNITUDE is small, because U here contains the outcome's residual
+#' variance and so dwarfs B. Measured coverage of a 95% predictive interval
+#' against the known true value, 300 reps:
+#'
+#'     m      uncorrected      corrected
+#'     3    0.9446 +/-0.0014  0.9469 +/-0.0014
+#'     5    0.9467           0.9484
+#'    10    0.9497           0.9505
+#'    20    0.9508           0.9513
+#'
+#' So it is a correctness-and-consistency fix, not a material one: ~0.5 pp of
+#' coverage at m = 3 and nothing measurable by m = 10. Applied anyway so that
+#' every pooled quantity in the pipeline goes through one implementation.
+#' `validation/phase1/derive_step7_prediction.R`.
 summarise_missing_y_draws <- function(pred_draws_long, analysis_spec, summary_spec) {
   row_id <- analysis_spec$data$row_id_var
   if (nrow(pred_draws_long) == 0) return(tibble())
+  has_imp <- "imputation" %in% names(pred_draws_long)
   pred_draws_long %>%
     group_by(.data[[row_id]]) %>%
     group_split() %>%
     map_dfr(function(df_i) {
+      y <- df_i$y_draw
+      corrected <- FALSE
+      if (has_imp) {
+        imp <- df_i$imputation
+        pooled <- mi_pool_draws(y, imp)
+        # Step 7 draws a FIXED ndraws per imputation, so the 1/(m*K_i) weights
+        # are uniform and describe_posterior's unweighted summary is exact.
+        # Guard it rather than assume it: an imputation that produced fewer
+        # finite draws would otherwise be silently over-weighted.
+        if (length(unique(table(imp))) == 1L && length(pooled$value) == length(y)) {
+          y <- pooled$value
+          corrected <- pooled$variance_corrected
+        }
+      }
       suppressWarnings(bayestestR::describe_posterior(
-        df_i$y_draw,
+        y,
         centrality = summary_spec$centrality,
         ci = summary_spec$ci,
         ci_method = summary_spec$ci_method,
         verbose = FALSE
-      )) %>% as_tibble() %>% mutate(!!row_id := unique(df_i[[row_id]]), .before = 1)
+      )) %>% as_tibble() %>%
+        mutate(!!row_id := unique(df_i[[row_id]]), .before = 1) %>%
+        mutate(variance_corrected = corrected)
     })
+}
+
+# ------------------------------------------------------------
+# Parametric (mice) Z-block imputer -- z_imputer = "mice"
+# ------------------------------------------------------------
+#
+# WHY IT IS HERE. Under a causally active covariate -- one that CAUSES the
+# exposure (confounder) or is caused by it (mediator) -- the BART Z block
+# carries bias that coverage does not detect. Measured post-v1.6.1 on matched
+# cells, 200 reps, n = 800:
+#
+#     Z-block imputer   confounder   mediator
+#     bart (default)      +4.83%      +6.03%
+#     mice (this one)     -0.08%      +1.45%
+#
+# V21 attributed 100% of that bias to BART's FLEXIBILITY: a correctly specified
+# estimated parametric draw is +0.26%/+0.58%, and improper and donor-matched
+# versions are too, so properness moves the interval and not the bias.
+#
+# THE OBJECTION THAT USED TO BLOCK THIS, AND WHY IT NO LONGER DOES. A
+# parametric Z block is misspecified when the covariate's conditional is
+# NON-LINEAR, and V6 measured `mice pmm` at -4.70% in exactly that case -- which
+# is why BART was adopted. But every cell in V6/V21 had a linear-Gaussian
+# conditional, so no cell could test both sides. V22 built the deciding cell (a
+# non-linear covariate conditional, on an X-Y path) and the parametric draw won
+# THERE TOO: the analysis conditions on the exposure, so a linear draw's error
+# in approximating the arrow is absorbed by the exposure's own coefficient,
+# while `Y` enters the exact conditional linearly and a linear fit gets that
+# part exactly right.
+#
+# ⚠️ NOT THE DEFAULT. `z_imputer` still defaults to "bart". Switching the
+# default is a larger behaviour change than adding an option and wants evidence
+# across every cell family, not just the two above -- see ROADMAP.md.
+#
+# Uses `pmm` for continuous targets and `logreg` for binary ones; both draw the
+# imputation model's parameters from their posterior, which is what makes them
+# proper. The predictor matrix is built from the SAME `vars` list the pipeline
+# hands miceRanger, so the two imputers condition on identical variables and
+# only the imputation MODEL differs.
+
+run_row_level_imputation_mice <- function(data, imputation_spec, analysis_spec) {
+  # Self-contained on purpose. The port originally called the validation
+  # harness's `.v4_is_binary()`, which does not exist in shipped code -- the
+  # end-to-end suite caught it immediately, but V27's C4 ("the shipped option
+  # reproduces the harness arm to 0.00 MC errors") did NOT, because the harness
+  # defines that helper and so the dependency was satisfied there. A port can
+  # only be verified against the environment it will actually run in.
+  #
+  # NOT `is_binary_like()`, which is already in this file: that accepts ANY
+  # two-level variable, while this requires {0,1}. They agree on every cell V27
+  # measured, and substituting the broader predicate would silently route
+  # additional variables through `logreg` on evidence that never covered them.
+  .mice_is_binary <- function(x) {
+    u <- unique(x[!is.na(x)])
+    length(u) <= 2L && all(u %in% c(0, 1))
+  }
+  if (!requireNamespace("mice", quietly = TRUE)) {
+    stop("z_imputer = 'mice' requires the 'mice' package. Install it, or set analysis_spec$imputation$z_imputer to 'bart'.", call. = FALSE)
+  }
+
+  vars <- imputation_spec$vars
+  m <- as.integer(imputation_spec$m %||% 1L)
+
+  vars <- vars[names(vars) %in% names(data)]
+  vars <- purrr::map(vars, ~ intersect(.x, names(data)))
+  vars <- vars[vapply(vars, length, integer(1)) > 0]
+
+  if (length(vars) == 0L) {
+    return(rep(list(tibble::as_tibble(data)), m))
+  }
+
+  targets <- names(vars)
+  work <- as.data.frame(data)
+
+  # mice's logreg needs a factor; the harness carries binary covariates as
+  # numeric 0/1. Convert those targets on the way in and back on the way out, so
+  # the completed datasets match what every other arm returns.
+  binary_targets <- targets[vapply(targets, function(v) .mice_is_binary(work[[v]]), logical(1))]
+  for (v in binary_targets) work[[v]] <- factor(work[[v]], levels = c(0, 1))
+
+  nm <- names(work)
+  pred <- matrix(0L, length(nm), length(nm), dimnames = list(nm, nm))
+  for (v in targets) pred[v, intersect(vars[[v]], nm)] <- 1L
+
+  meth <- stats::setNames(rep("", length(nm)), nm)
+  for (v in targets) {
+    meth[v] <- if (v %in% binary_targets) "logreg" else "pmm"
+  }
+
+  imp <- tryCatch(
+    mice::mice(
+      work, m = m, method = meth, predictorMatrix = pred,
+      maxit = imputation_spec$maxiter %||% 5L,
+      seed = imputation_spec$seed %||% NA_integer_,
+      printFlag = FALSE
+    ),
+    error = function(e) NULL,
+    warning = function(w) NULL
+  )
+
+  if (is.null(imp)) {
+    stop("mice() failed in the Z block; no fallback is attempted so the failure ",
+         "is visible rather than silently improper.", call. = FALSE)
+  }
+
+  completed <- mice::complete(imp, action = "all")
+
+  lapply(completed, function(d) {
+    for (v in binary_targets) d[[v]] <- as.numeric(as.character(d[[v]]))
+    tibble::as_tibble(d)
+  })
 }
 
 # ------------------------------------------------------------

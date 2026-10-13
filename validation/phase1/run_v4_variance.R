@@ -111,7 +111,9 @@ V4_ARMS <- c(# Baselines that run_procedures() has always supported but that wer
              "dag_noY", "dag_Yonly", "dag_lin", "dag_quad", "dag_cubic",
              "dag_true",
              # V26: the pre-v1.6.0 covariate-block scale defect, as paired arms.
-             "pipeline_properZ_ds", "pipeline_micePmm_ds")
+             "pipeline_properZ_ds", "pipeline_micePmm_ds",
+             # V27: the shipped z_imputer = "mice" option.
+             "pipeline_miceShipped")
 
 V4_SCENARIOS <- c("base", "mcar_z40", "missing_y20", "combined")
 

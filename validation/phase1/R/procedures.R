@@ -388,6 +388,8 @@ run_procedures <- function(bundle, which = c("oracle", "complete_case",
   # sweep. `child_form` is the SENSITIVITY AXIS, not a tuning knob -- THEORY.md
   # 0b measures that the child model is not identifiable below the LOD.
   # V26: the pre-v1.6.0 covariate-block scale defect, as paired arms.
+  # V27: the shipped z_imputer = "mice" option.
+  if ("pipeline_miceShipped" %in% which)    out$msh   <- .ce_args(proc_pipeline_miceShipped)
   if ("pipeline_properZ_ds" %in% which)     out$pzds  <- .ce_args(proc_pipeline_properZ_ds)
   if ("pipeline_micePmm_ds" %in% which)     out$mpds  <- .ce_args(proc_pipeline_micePmm_ds)
   if ("dag_noY" %in% which)                 out$dgn   <- .ef_args(proc_dag_noY)

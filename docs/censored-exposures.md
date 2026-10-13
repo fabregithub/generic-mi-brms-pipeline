@@ -206,6 +206,48 @@ study design, as noted above.
 
 ---
 
+## v1.7.0 — the covariate imputer now defaults to `mice` ⚠️ behaviour change
+
+**Changed 2026-10-13.** `analysis_spec$imputation$z_imputer` now defaults to **`"mice"`**
+(a parametric proper draw: `pmm` for continuous covariates, `logreg` for binary). It defaulted
+to `"bart"` from v1.5.0.
+
+**Why.** The `bart` default carried **+5% to +10.4%** in the exposure coefficient whenever a
+covariate is a *cause* of the exposure (confounder) or an *effect* of it (mediator) — and
+**coverage did not detect it** (0.93–0.97). The bias decays only as `n^−1/3`, so 2–3.6% of it
+survived to n = 12,800.
+
+**Why not sooner.** A parametric covariate imputer is misspecified when the covariate's own
+conditional is non-linear, and that was measured at −4.70% in 2026 — which is exactly why BART
+was adopted. V27 re-ran that ground directly. It did not reproduce: across four inert and
+non-linear-covariate cells, `mice`'s bias was **within 0.09 standard errors of `bart`'s and on
+the right side of it**, at every sample size.
+
+**What changes for you.** Relative bias in the exposure coefficient, `bart` → `mice`:
+
+| cell | n = 800 | n = 12,800 |
+|---|---|---|
+| mediator, covariates MAR | 10.21% → **2.95%** | 3.50% → **0.66%** |
+| confounder, covariates MAR | 8.02% → **0.84%** | 2.66% → **0.08%** |
+| confounder, covariates MCAR | 5.23% → **0.79%** | 1.45% → **0.00%** |
+| inert covariate | no change | no change |
+
+`mice` was better or equal in **every** cell at **every** sample size, and interval coverage
+was never worse by more than 0.008.
+
+**If your covariates are all inert** — none causes the exposure, none is caused by it — this
+changes essentially nothing, and your previous results stand.
+
+**If any covariate is causally active**, your previous exposure coefficient was biased away
+from zero by roughly the amounts above, and re-running is worthwhile.
+
+**To reproduce a v1.5.0–v1.6.x analysis exactly**, set
+`analysis_spec$imputation$z_imputer <- "bart"`. Cite the pipeline version either way.
+
+Evidence: [`validation/phase1/FINDINGS_v27.md`](../validation/phase1/FINDINGS_v27.md).
+
+---
+
 ## v1.6.0 — the covariate block conditioned on the wrong scale ⚠️ behaviour change
 
 **Fixed 2026-09-10.** The block-FCS loop returned the censored exposure to the **data** scale

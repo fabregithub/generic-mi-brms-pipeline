@@ -488,6 +488,17 @@ proc_pipeline_micePmm_ds <- function(bundle, ...) {
                           label = "pipeline_micePmm_ds")
 }
 
+#' V27: the SHIPPED `z_imputer = "mice"` option, as a user would get it.
+#'
+#' Distinct from `pipeline_micePmm`, which overrides `run_row_level_imputation`
+#' with the harness's own `.v5_mice_row_imputation`. This arm sets the real
+#' config field and exercises the ported implementation in 00_common_functions.R,
+#' so a difference between the two rows is the PORT, not the method.
+proc_pipeline_miceShipped <- function(bundle, ...) {
+  proc_pipeline_block_fcs(bundle, ..., mid = TRUE, z_imputer = "mice",
+                          label = "pipeline_miceShipped")
+}
+
 proc_pipeline_micePmm <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
                                   outer_sweeps = 3L, margin = "shash",
                                   project_root = NULL, quiet = TRUE) {

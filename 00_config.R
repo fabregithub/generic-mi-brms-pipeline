@@ -281,23 +281,35 @@ analysis_spec <- list(
 
     # ----------------------------------------------------------
     # Which imputer the Z block (covariates + outcome) uses.
-    # Default "bart" since v1.5.0.
+    # Default "mice" since v1.7.0 (was "bart" from v1.5.0).
     # ----------------------------------------------------------
-    #   "bart"        BART posterior draws. Proper AND flexible: best bias of
-    #                 any variant tested (max 1.29% vs 2.67%), coverage
-    #                 0.937-0.963, robust to tree count, ~4% of runtime.
-    #                 Intervals run 3-8% WIDE in some cells -- conservative.
-    #                 Requires the `dbarts` package.
-    #   "forest_boot" Bootstrapped random forest -- the v1.4.0 default. Use to
-    #                 reproduce a v1.4.0 analysis.
+    #   "mice"        Parametric proper draws -- `pmm` for continuous
+    #                 covariates, `logreg` for binary. THE DEFAULT. Unbiased
+    #                 where a covariate is a CAUSE of the exposure or an
+    #                 EFFECT of it, which is where "bart" is not: relative
+    #                 bias 0.79% vs 5.23% (confounder) and 2.95% vs 10.21%
+    #                 (mediator, covariates MAR) at n = 800. Better or equal
+    #                 in every cell tested, at every n, with coverage never
+    #                 worse by more than 0.008. Requires the `mice` package.
+    #   "bart"        BART posterior draws. Proper and flexible, and the
+    #                 v1.5.0-v1.6.x default -- use it to reproduce one of those
+    #                 analyses exactly. ⚠️ Carries +5% to +10.4% in the exposure
+    #                 coefficient when a covariate is causally active, which
+    #                 COVERAGE DOES NOT DETECT (0.93-0.97) and which decays only
+    #                 as n^-1/3. Requires the `dbarts` package.
+    #   "forest_boot" Bootstrapped random forest -- the v1.4.0 default.
+    #                 ⚠️ -23% ASYMPTOTIC bias under a causally active covariate,
+    #                 coverage -> 0. Use only to reproduce a v1.4.0 analysis.
     #   "forest"      Plain miceRanger. IMPROPER: intervals too narrow
     #                 (coverage to 0.893 under heavy imputation). Pre-v1.4.0
     #                 behaviour; use only to reproduce an old analysis.
     #
-    # If "bart" is selected but dbarts is missing, the pipeline warns loudly and
-    # falls back to "forest_boot" rather than failing the run.
-    # Evidence: validation/phase1/FINDINGS_v7.md
-    z_imputer = "bart",
+    # Why the default changed: a parametric covariate draw was long rejected
+    # because it is misspecified when the covariate's own conditional is
+    # NON-LINEAR (measured at -4.70%). V27 re-ran exactly that ground and it did
+    # not reproduce -- mice came within 0.09 SE of bart there, on the right side.
+    # Evidence: validation/phase1/FINDINGS_v27.md (and FINDINGS_v7.md for bart).
+    z_imputer = "mice",
 
     # BART tuning (only used when z_imputer = "bart"). Defaults validated.
     bart_ntree = 50,

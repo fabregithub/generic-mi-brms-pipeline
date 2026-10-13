@@ -1,6 +1,6 @@
 # What we learned, and what the pipeline now does about it
 
-**2026-10-10.** A synthesis of 26 validation tracks, the theory they produced, and the changes
+**2026-10-13.** A synthesis of 29 validation tracks, the theory they produced, and the changes
 that theory justified in the pipeline. Written to be readable without the other documents;
 every number is a measurement with a named source.
 
@@ -103,6 +103,26 @@ interval, not the point. [V20, V21]
 
 **A parametric covariate draw is not a trade.** It wins on both sides, including where it is
 misspecified, because the analysis model absorbs the error. [V22]
+
+**So the default became a parametric draw.** The objection that had blocked it for months — a
+measured −4.70% where the covariate's conditional is non-linear [V6] — was re-run on exactly
+that ground and **did not reproduce**: mice came within 0.09 SE of bart and on the right side of
+it, at every `n`. Relative bias fell 10.21% → **2.95%** in the worst cell, and mice was better or
+equal in every cell at every `n`. `z_imputer` now defaults to `"mice"` (v1.7.0). [V27]
+
+**A derived-vs-measured ratio taken at one `n` can be measuring the sample size.** The chain
+below is an *asymptotic* statement; the measured effect climbs with `n` toward it. The
+"fork residual" — recorded for a month as the chain closing on one causal role (1.011) and
+missing on the other (1.147) — is an artefact of both having been measured at `n = 800`. At
+`n = 12,800` the fork reads **0.992** and the pipe **0.953**: the fork agrees *better*. ⚠️ Every
+derived-vs-measured comparison in this programme predates V28 and was taken at `n = 800`. [V28]
+
+**And the residual that did survive is governed by `s²`, not by the causal role.** Moving
+`Var(logX1)` with the arrow held fixed, the chain's `derived/measured` ratio rises in *both*
+roles, and one line fits all six cells — the role adds nothing (offset p = 0.79, slope p = 0.21),
+crossing 1 at `s²` ≈ 1.42. The fork/pipe contrast was a parameterisation artefact: only the
+fork's arrow moves `s² = sd_x² + delta_zx²`. The chain is accurate near `s²` ≈ 1.4 and degrades
+in both directions, ~0.16 in ratio per unit `s²`. [V29]
 
 **Bias/SE, not relative bias, is the right currency.** Bias decays like `n^−1/3` while the SE
 decays like `n^−1/2`, so bias/SE *grows* like `n^(1/6)`: an arm that just passes at `n` = 800
@@ -299,8 +319,8 @@ Grouped by what kind of work would close it.
 |---|---|
 | The `u²` law's exponent and constant | still a **fit**, not derived (`THEORY.md` §4). V23's exponent CI was [0.99, 2.28] — no power. V25 narrowed the role: `u` **modifies** the defect, it does not generate it |
 | The link from `‖r‖` to `T₂` | why a misspecified conditional *over-borrows* by an amount `u²` happens to track. This is the step that would fix the exponent |
-| The scale defect's fork residual | the chain predicts `zr_pipe` to **1.1%** and `zr_fork` to **15%**; the `exp`-linearisation hypothesis is refuted, cause unknown |
-| Why logistic defects attenuate by ~0.474 | explicable (a binary outcome carries less information per observation) but **not derived** |
+| The scale defect's residual, **after V29** | **resolved as to shape, open as to mechanism.** The error is a monotone function of `s²` crossing zero near `s²` ≈ 1.4 (slope +0.161 ± 0.033 in ratio per unit `s²`); the causal role is irrelevant (p = 0.79 / 0.21), so there is no "fork residual". But it is **not** the `exp`-linearisation: that must vanish as `s² → 0`, and the ratio instead falls to 0.709 at `s²` = 0.489. At least two `s²`-dependent effects of opposite sign, or one `s²`-dependent mis-scaling — the truncation factor `Var(L\|L≤c)/σ_x²` is the suspect, since the LOD is a quantile of `L`. Separately, the chain under-predicts the pipe by a flat ~5% at `n` = 12,800 |
+| ~~Why logistic defects attenuate by ~0.474~~ | ✅ **derived 2026-10-11** — it is Fisher information, not imputation: `SE_g/SE_l = σ·√E[p(1−p)]`, predicting each cell to ≤0.016 with no free parameters. **Generalises to any GLM** as `σ·√E[w]`, so V26's conservative-transfer result need not be re-measured per family. `THEORY.md` §6c |
 
 ### Build work
 
@@ -315,7 +335,7 @@ Grouped by what kind of work would close it.
 
 | | state |
 |---|---|
-| Posterior predictions (Step 7) pool as a plain mixture | open, and it is a **question before it is a bug**: the quantity already carries the outcome's residual variance, so the between-imputation share is small, and whether Rubin's finite-`m` correction applies to a *predictive* distribution rather than to a parameter estimate is unsettled |
+| ~~Posterior predictions (Step 7) pool as a plain mixture~~ | ✅ **settled 2026-10-11 — the correction applies.** The mixture is right for the predictive *shape*, but the interval is centred on an estimate of the infinite-`m` centre, so Rubin's `B/m` term still belongs. Measured coverage: **0.9446** uncorrected at `m` = 3 against nominal 0.95, 0.9508 by `m` = 20. Effect is ~0.5 pp at `m` = 3 and nil by `m` = 10, so it ships for consistency rather than impact |
 | ~~Step 10's monotonic OR tables bypassed the MI machinery~~ | ✅ **closed 2026-10-10.** Read the same draws as Step 6 but summarised them unweighted and uncorrected, so the OR table was narrower than the parameter table beside it (0.8–8.5% depending on FMI and `m`; <1% at `m` ≥ 50). Both now share `mi_pool_draws()`. The `mo()` arithmetic itself was correct and is now pinned by `test/test_step10_mo.R` |
 | ~~Step 6's pooling machinery~~ | ✅ **closed 2026-10-10 — and it was wrong in two independent ways.** The finite-`m` correction was **nullified** by a denominator mismatch (missing Rubin's total by up to 22% at `m` = 3, an interval ~12% too narrow), and the **logit branch was unreachable** so probability-scale parameters were corrected on the log scale. Both fixed and now exact; first test at `test/test_step6_pooling.R`. **Behaviour change — pooled intervals get wider** |
 | Ordinal `mo()`, spline, mixed families | untested. V26 covered binomial only; the mechanism suggests the same direction, which is a conjecture |
