@@ -56,7 +56,7 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
                        y_form = "linear", z_role = "precision",
                        nl_a = NULL, nl_c = NULL, target = "direct",
                        mu_x = 0.0, sd_x = 1.0, delta_xz = NULL,
-                       delta_zx = NULL, y_family = "gaussian") {
+                       delta_zx = NULL, y_family = "gaussian", y_tau = NULL) {
   b <- rep(0.0, p)
   b[1] <- 0.40                      # focal exposure main effect (the estimand)
   if (p >= 2L) b[2] <- 0.20
@@ -198,6 +198,12 @@ make_truth <- function(p = 3L, q = 2L, erf_form = "additive",
     # logistic model on the SAME linear predictor, so the estimand is the log-OR
     # of the focal exposure and every other structural feature is unchanged.
     y_family = y_family,
+    # V30: cumulative-logit cutpoints, as FIXED LITERALS. They are constants of
+    # the DGP, not recomputed per replicate -- deriving them here by simulation
+    # would consume RNG inside the task's seeded stream and change the data
+    # every pre-V30 cell sees, destroying byte-identical comparability with V2,
+    # V26 and the Gaussian twins this track is measured against.
+    y_tau = y_tau,
     delta_zx = delta_zx,    # fork/mixed:     Z1 -> X1
     delta_xz = delta_xz,    # pipe/collider:  X1 -> Z1
     delta_yz = delta_yz,    # collider:        Y -> Z1
@@ -276,6 +282,24 @@ ef_unrep_curvature <- function(truth, nd_frac = 0.40, n_grid = 4000L) {
   if (identical(fam, "gaussian")) return(eta + stats::rnorm(n, 0, sigma_y))
   if (identical(fam, "binomial"))
     return(stats::rbinom(n, 1L, stats::plogis(eta)))
+  if (identical(fam, "ordinal")) {
+    # Latent formulation: Y* = eta + Logistic(0,1), Y = k iff tau_{k-1} < Y* <= tau_k.
+    # Equivalent to the proportional-odds model P(Y<=k|eta) = plogis(tau_k - eta),
+    # which is what MASS::polr fits -- so the focal coefficient is the SAME
+    # number (0.40) on the same latent scale as the Gaussian twin, exactly as
+    # V26's binomial estimand was still 0.40 as a log-odds-ratio.
+    tau <- truth$y_tau
+    if (is.null(tau) || !length(tau))
+      stop("y_family = 'ordinal' needs y_tau (the cutpoints); none supplied. ",
+           "They are DGP constants -- see the V30 cells in robustness.R.",
+           call. = FALSE)
+    # NUMERIC 1..K on purpose, not a factor. The imputation blocks must see Y the
+    # way they see it in the Gaussian and binomial cells, or this track would
+    # confound the outcome FAMILY with a change in how Y enters the imputation.
+    # fit_one() converts to an ordered factor for the analysis fit only.
+    ystar <- eta + stats::rlogis(n)
+    return(as.numeric(cut(ystar, breaks = c(-Inf, tau, Inf), labels = FALSE)))
+  }
   stop("unknown y_family: ", fam, call. = FALSE)
 }
 

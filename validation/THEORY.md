@@ -415,10 +415,7 @@ canonical `delta = 0.6`:
 | pipe | ratio **0.992** (+5.63) | 0.943 (+5.92) | **0.953** (+5.86) | +5.58 |
 
 At `n = 800` this reproduces the recorded contrast; at `n = 12800` **the fork agrees better than
-the pipe**. Every derived-vs-measured comparison in this programme up to V28 was made at
-`n = 800`, so this caveat is not specific to the fork — *any* of them may be reading a
-finite-sample gap as a structural one, and the asymptotic ones should be re-read at a larger `n`
-before being treated as residuals.
+the pipe**. Up to V28, the **end-to-end** comparisons — a closed form against a *pipeline-measured* effect — were made at `n = 800`. (The component-level links are not affected: the retained fraction, the error `L`-loading, the truncation factor and the feedback shrinkage are each verified at `N = 300000` on **both** sides, so `n` never enters. The at-risk set is small, and V28 re-ran its main member.) So the caveat is not specific to the fork — any *end-to-end* ratio may be reading a finite-sample gap as a structural one, and should be re-read at a larger `n` before its residual is treated as real.
 
 **(ii) What survives is a trend in the arrow, fork-only.** At `n = 12800`, ratio by `delta`
 (`0.2` cells excluded — their measured effect is ~0.4 pp, so the ratio is a near-zero

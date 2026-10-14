@@ -208,7 +208,9 @@ print_v4 <- function(s) {
                          # pre-V25 scenario moves.
                          delta_xz = sc$delta_xz, delta_zx = sc$delta_zx,
                          # V26: Gaussian unless the cell says otherwise.
-                         y_family = sc$y_family %||% "gaussian")
+                         y_family = sc$y_family %||% "gaussian",
+                         # V30: ordinal cutpoints (NULL for every other cell)
+                         y_tau = sc$y_tau)
     bundle <- v2_make_bundle(sc, truth)
 
     out <- run_procedures(

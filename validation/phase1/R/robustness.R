@@ -132,7 +132,7 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
                          z_form = "linear", mar_frac = 0.0, mar_strength = 1.0,
                          y_form = "linear", z_role = "precision",
                          nl_a = NULL, nl_c = NULL, target = "direct",
-                         delta_xz = NULL, delta_zx = NULL, sd_x = 1.0,
+                         delta_xz = NULL, delta_zx = NULL, sd_x = 1.0, y_tau = NULL,
                          y_family = "gaussian", seed_as = NULL) {
   list(name = name, axis = axis, erf_form = erf_form, nd_frac = nd_frac,
        n = as.integer(n), m = as.integer(m), n_rep = n_rep, rho = rho,
@@ -160,6 +160,9 @@ inject_mar_covariates <- function(data, mar_frac = 0.0, cols = c("Z1", "Z2"),
        delta_xz = delta_xz, delta_zx = delta_zx,
        # V26: the outcome's family. Gaussian everywhere before V26.
        y_family = y_family,
+       # V30: cumulative-logit cutpoints, carried to make_truth(). Literals on
+       # purpose -- see the note in dgp.R's make_truth().
+       y_tau = y_tau,
        # `seed_as` makes this cell draw its data with ANOTHER cell's seed, so the
        # two see byte-identical exposures, covariates and outcome noise and differ
        # only in the feature under test. That turns a cell-vs-cell contrast from
@@ -485,7 +488,114 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
     .v2_scenario("sxf13", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "fork", delta_zx = 0.6, sd_x = 1.3),
     .v2_scenario("sxp07", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 0.7),
     .v2_scenario("sxp10", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 1.0),
-    .v2_scenario("sxp13", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 1.3)
+    .v2_scenario("sxp13", "sdx", nd_frac = 0.4, mcar_frac = 0.4, z_role = "pipe", delta_xz = 0.6, sd_x = 1.3),
+
+    # ---- V30: does the record transfer to an ORDINAL outcome? ---------------
+    # V26 showed the Gaussian record transfers to a BINARY outcome in direction
+    # and ordering but at ~0.474x in bias/SE, and THEORY.md then derived that
+    # factor as Fisher information rather than anything about imputation:
+    # SE_gauss/SE_fam = sigma * sqrt(E[w]), with w = p(1-p) for a binomial.
+    #
+    # The cumulative-logit generalisation has NO free parameters:
+    #   w_ord(eta) = sum_k [f(tau_k-eta) - f(tau_{k-1}-eta)]^2 / pi_k,  f = F(1-F)
+    # It reduces to p(1-p) at K=2 to machine precision, and E[w_ord] -> 1/3 as
+    # K -> inf (the location information of a standard logistic -- the latent
+    # observed exactly). See derive_ordinal_information.R.
+    #
+    # sqrt(E[w_ord]) IS NOT THE RATIO. Measuring the complete-data SE ratio
+    # BEFORE launching caught two separate errors in it, both one-signed:
+    #   (a) the information for beta is E[w*xtilde^2], not E[w]*E[xtilde^2]
+    #       (w peaks mid-range, eta rises in X1, so the covariance is negative);
+    #   (b) polr ESTIMATES the K-1 cutpoints, and unlike the Gaussian twin's
+    #       nuisance parameters they are not orthogonal to beta -- so the
+    #       variance is the (1,1) element of the INVERSE full (beta,tau)
+    #       information, not 1/I_bb. Flat in n (+0.0073/+0.0061/+0.0071 at
+    #       n = 2k/8k/32k), so asymptotic, not finite-sample.
+    # With both included the prediction is EXACT: validated against the
+    # complete-data SE ratio in six cells, misses -0.0000..+0.0005, mixed
+    # signs, no free parameters. See derive_ordinal_information.R.
+    #
+    # REGISTERED PREDICTIONS (2026-10-14, before the run):
+    #   P1 LEVEL  each cell's measured |bias/SE| ratio against its Gaussian
+    #             twin matches the exact value:
+    #                 K=2  fork 0.4459  pipe 0.4488    (bin_* -- the anchor)
+    #                 K=3  fork 0.5091  pipe 0.5120
+    #                 K=5  fork 0.5449  pipe 0.5477
+    #                 K=7  fork 0.5559  pipe 0.5586
+    #   P2 TREND  the ratio RISES with K, concavely, toward 0.5774.
+    #   P3 ANCHOR bin_fork/bin_pipe reproduce V26's measured 0.4731 / 0.4527.
+    #
+    # WHAT WOULD FALSIFY P2, and why it is resolvable: the predicted span
+    # K=2 -> K=7 is 0.446 -> 0.559, about 2x V26's across-arm IQR (0.445-0.493).
+    # It is resolvable but NOT large, so the gate is on the TREND across K with
+    # arms pooled, not on any single cell-arm ratio.
+    #
+    # NOT A GATE: the cell-to-cell contrast. At K=5 fork and pipe differ by
+    # 0.0002, far under any achievable MC error, because E[w_ord] -> 1/3
+    # regardless of Var(eta). Registering "reproduces the cell ordering" here
+    # would be a criterion that cannot fail for the reason it names -- the sixth
+    # such trap in this programme. The two roles are REPLICATION of the K trend,
+    # nothing more.
+    #
+    # tau are the K-quantiles of the latent Y* = eta + Logistic(0,1), so the
+    # categories are balanced; they are DGP constants, computed once at
+    # N = 2e6 and written here as literals.
+    .v2_scenario("ord3_fork", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "fork", y_family = "ordinal", seed_as = "zr_fork",
+                 y_tau = c(-0.9732, 0.6698)),
+    .v2_scenario("ord5_fork", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "fork", y_family = "ordinal", seed_as = "zr_fork",
+                 y_tau = c(-1.7753, -0.6340, 0.3302, 1.4724)),
+    .v2_scenario("ord7_fork", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "fork", y_family = "ordinal", seed_as = "zr_fork",
+                 y_tau = c(-2.2329, -1.2354, -0.4944, 0.1897, 0.9312, 1.9282)),
+    .v2_scenario("ord3_pipe", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "pipe", y_family = "ordinal", seed_as = "zr_pipe",
+                 y_tau = c(-0.9740, 0.6719)),
+    .v2_scenario("ord5_pipe", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "pipe", y_family = "ordinal", seed_as = "zr_pipe",
+                 y_tau = c(-1.7773, -0.6354, 0.3303, 1.4776)),
+    .v2_scenario("ord7_pipe", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "pipe", y_family = "ordinal", seed_as = "zr_pipe",
+                 y_tau = c(-2.2346, -1.2351, -0.4950, 0.1897, 0.9347, 1.9334)),
+
+    # ---- V30b: UNBALANCED categories, at FIXED K ---------------------------
+    # The cells above vary only K, so a measured rise is consistent with the
+    # derivation but ALSO with "ratios happen to rise with K". Unbalanced
+    # cutpoints move the prediction with K HELD FIXED, which the second story
+    # cannot do -- so these are what make the formula earn its keep.
+    #
+    # The separation is larger than the whole balanced K sweep: at K = 3 the
+    # prediction spans 0.509 -> 0.431 -> 0.336 (span 0.173) against 0.446 ->
+    # 0.556 for K = 2 -> 7 (span 0.110).
+    #
+    # And it is COUNTERINTUITIVE, which is the point: a 3-category outcome
+    # split 85/10/05 is predicted to carry LESS information than a balanced
+    # BINARY one (0.336 vs 0.446). More categories is not more information if
+    # they are in the wrong places. Nothing but the formula predicts that.
+    #
+    # REGISTERED (2026-10-14, before the run):
+    #   P4  at K = 3, the ratio FALLS as the split gets more unbalanced, and
+    #       the 85/10/05 cell falls BELOW its own K = 2 cell:
+    #         balanced   fork 0.5091  pipe 0.5121
+    #         70/20/10   fork 0.4306  pipe 0.4327
+    #         85/10/05   fork 0.3358  pipe 0.3382   <- below bin_* (0.446/0.449)
+    # An unbalanced K = 5 cell (fork 0.5055 / pipe 0.5080) was designed and
+    # validated but NOT included: it separates from balanced K = 5 by 0.039,
+    # under the +/-0.05 gate, so it could not fail informatively -- two cells
+    # of cost for no discrimination. The K = 3 fan carries this test.
+    .v2_scenario("ord3u_fork", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "fork", y_family = "ordinal", seed_as = "zr_fork",
+                 y_tau = c(0.8557, 2.3818)),
+    .v2_scenario("ord3v_fork", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "fork", y_family = "ordinal", seed_as = "zr_fork",
+                 y_tau = c(1.8754, 3.1807)),
+    .v2_scenario("ord3u_pipe", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "pipe", y_family = "ordinal", seed_as = "zr_pipe",
+                 y_tau = c(0.8544, 2.3787)),
+    .v2_scenario("ord3v_pipe", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
+                 z_role = "pipe", y_family = "ordinal", seed_as = "zr_pipe",
+                 y_tau = c(1.8644, 3.1854))
   )
 }
 

@@ -114,8 +114,7 @@ equal in every cell at every `n`. `z_imputer` now defaults to `"mice"` (v1.7.0).
 below is an *asymptotic* statement; the measured effect climbs with `n` toward it. The
 "fork residual" — recorded for a month as the chain closing on one causal role (1.011) and
 missing on the other (1.147) — is an artefact of both having been measured at `n = 800`. At
-`n = 12,800` the fork reads **0.992** and the pipe **0.953**: the fork agrees *better*. ⚠️ Every
-derived-vs-measured comparison in this programme predates V28 and was taken at `n = 800`. [V28]
+`n = 12,800` the fork reads **0.992** and the pipe **0.953**: the fork agrees *better*. ⚠️ Pre-V28, the **end-to-end** comparisons — a closed form against a *pipeline-measured* effect — were all taken at `n = 800`. The component-level links are unaffected, being verified at `N = 300000` on both sides. [V28]
 
 **And the residual that did survive is governed by `s²`, not by the causal role.** Moving
 `Var(logX1)` with the arrow held fixed, the chain's `derived/measured` ratio rises in *both*
@@ -328,7 +327,7 @@ Grouped by what kind of work would close it.
 |---|---|
 | The DAG-factorised exposure draw in the pipeline | algorithm **validated** (`\|bias/SE\|` ≤ 0.13 across four cases, three `n`); a cheap SIR implementation was built, measured and **removed** — it cannot work in the curved case it exists for. A faithful version needs the analysis model's linear predictor as a function of a candidate exposure value |
 | Both blocks missing at once | depends on the above; `dag_impute_datasets()` refuses it rather than returning `NA` |
-| A shippable covariate-block fix | V22 removed the objection (a parametric draw wins on both sides); still not a proposal |
+| ~~A shippable covariate-block fix~~ | ✅ **delivered 2026-10-13 (v1.7.0)** — it is `z_imputer = "mice"`, now the default. V22 removed the objection in principle; V27 tested it on the ground that had blocked it (a non-linear covariate conditional, where V6 measured a parametric draw at −4.70%) and it did not reproduce. Better or equal in every cell at every `n`; worst-cell relative bias 10.21% → **2.95%** |
 | Item 07 | blocked — gates **A07-1/2/3** all currently fail; its grid draw inverts to +142% under a non-linear covariate arrow |
 
 ### Validation coverage

@@ -29,17 +29,30 @@ fit_lm_estimand <- function(data, truth) {
   # covers every arm, because they all pool through this function -- which is
   # also why it must stay a drop-in: same return names, same NA behaviour.
   fam <- truth$y_family %||% "gaussian"
+  # V30: "ordinal" fits the matched proportional-odds model. MASS::polr
+  # parameterises logit P(Y<=k|x) = zeta_k - x'beta, which is exactly the DGP's
+  # latent form, so coef()["logX1"] estimates the same 0.40 on the same latent
+  # scale -- no rescaling, and directly comparable to the Gaussian twin.
   fit <- tryCatch(
     if (identical(fam, "gaussian")) stats::lm(fm, data = data)
+    else if (identical(fam, "ordinal"))
+      suppressWarnings(MASS::polr(stats::update(fm, ordered(.) ~ .),
+                                  data = data, Hess = TRUE, method = "logistic"))
     else suppressWarnings(stats::glm(fm, data = data,
                                      family = stats::binomial())),
     error = function(e) NULL)
   if (is.null(fit)) return(c(est = NA_real_, se = NA_real_))
   # A logistic fit can separate on a bad imputation; that is a real failure of
   # the arm and must surface as NA rather than as a huge coefficient with a
-  # huge SE quietly widening the pooled interval.
-  if (!identical(fam, "gaussian") && !isTRUE(fit$converged))
+  # huge SE quietly widening the pooled interval. polr reports convergence in
+  # `convergence` (0 = converged) rather than `converged`, and an imputation bad
+  # enough to empty a category makes it fail the same way -- also an NA, not a
+  # number to be pooled.
+  if (identical(fam, "ordinal")) {
+    if (!isTRUE(fit$convergence == 0L)) return(c(est = NA_real_, se = NA_real_))
+  } else if (!identical(fam, "gaussian") && !isTRUE(fit$converged)) {
     return(c(est = NA_real_, se = NA_real_))
+  }
   cf <- stats::coef(fit); vc <- stats::vcov(fit)
   nm <- "logX1"
   if (!nm %in% names(cf) || is.na(cf[nm])) return(c(est = NA_real_, se = NA_real_))

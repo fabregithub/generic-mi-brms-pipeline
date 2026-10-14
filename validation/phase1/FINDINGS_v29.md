@@ -93,6 +93,27 @@ LOD is a quantile of `L` and therefore moves with `s²` by construction.
 The practical reading is unchanged and now better supported: **the chain is accurate near
 `s²` ≈ 1.4 and degrades in both directions away from it**, by about 0.16 in ratio per unit `s²`.
 
+## 5a. An out-of-sample check that came free
+
+V29's pooled line was fitted on the `sd_x` cells alone. Applied to V28's cells — which it never
+saw — it predicts:
+
+| V28 cells | `s²` | curve says | measured |
+|---|---|---|---|
+| pipe, `delta` = 0.4 / 0.6 / 0.8 | 1.00 (all three) | **0.933** | 0.942 / 0.953 / 0.952 |
+| fork, `delta` = 0.4 | 1.16 | **0.958** | 0.944 |
+| fork, `delta` = 0.6 | 1.36 | **0.991** | 0.992 |
+| fork, `delta` = 0.8 | 1.64 | **1.036** | **1.112** |
+
+**This retires V28's "the chain under-predicts the pipe by a flat ~5%" as a separate finding.**
+It is the `s²` curve at `s²` = 1 — every V28 pipe cell has `Var(logX1) = sd_x² = 1`, since
+`delta_xz` does not move it, which is why the offset is there *and* why it is flat.
+
+⚠️ **One cell does not fit: `fkd08`, at +0.076 (~3σ) above the curve** — the fork's strongest
+arrow. Every other cell in both tracks sits within 0.023. Whether that is curvature in `s²` at
+the top of the range or something specific to a strong fork arrow is open. It is one cell; worth
+a note, not a track.
+
 ## 6. Reproduce
 
 ```bash
