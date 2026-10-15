@@ -1434,16 +1434,55 @@ If a given imputation defect produces the same **absolute** bias in the coeffici
 families — plausible, since the structural coefficient is the same number on both scales — then
 the ratio of `bias/SE` is exactly that factor. With `σ` = 1:
 
-| cell | `Var(η)` | `E[p(1−p)]` | **derived** | measured | miss |
+| cell | `Var(η)` | `E[p(1−p)]` | `√E[w]` *(superseded)* | **EXACT** | V26's measured `bias/SE` ratio |
 |---|---|---|---|---|---|
-| `bin_base` | 0.584 | 0.2203 | **0.4692** | 0.4822 | +0.013 |
-| `bin_fork` | 0.885 | 0.2095 | **0.4576** | 0.4731 | +0.016 |
-| `bin_pipe` | 0.902 | 0.2090 | **0.4570** | 0.4527 | −0.004 |
+| `bin_base` | 0.594 | 0.2199 | 0.4690 | **0.4566** | 0.4822 |
+| `bin_fork` | 0.887 | 0.2095 | 0.4578 | **0.4459** | 0.4731 |
+| `bin_pipe` | 0.906 | 0.2089 | 0.4570 | **0.4488** | 0.4527 |
+
+**⚠️ Corrected 2026-10-15, and the correction makes the last column agree WORSE — which is the
+point.** `√E[w]` is the known-threshold approximation; the exact values come from inverting the
+full information matrix (V30 §2), and V30 verified them *directly against the SE ratio* in 24
+cell×`n` comparisons to **≤0.001**. So the exact column is right.
+
+The residual against V26's last column — now +0.026 / +0.027 / +0.004 rather than +0.013 /
++0.016 / −0.004 — is **not** an error in the derivation. It is there because that column is a
+`bias/SE` ratio, which is `(bias ratio) × (SE ratio)`, and the bias ratio is not 1. The old table
+agreed better because the approximation error happened to point against the bias-factor error and
+partly cancelled it. **Two wrongs reading as a right is the hazard of validating a prediction for
+one quantity against a measurement of another**, and it is why V30 measured the SE ratio on its
+own.
 
 No free parameters, each cell to ≤0.016, and the cell-to-cell **ordering** is reproduced — the
 derivation predicts a *different* ratio per cell because `E[p(1−p)]` depends on `Var(η)`, and
 that is what it gets right. *(With only three cells, matching the ordering alone would happen
 1 time in 6 by chance; the magnitude agreement is the evidence, the ordering is corroboration.)*
+
+**⚠️ AMENDED BY V30 (2026-10-15), in two ways — one a confirmation, one a retraction.**
+
+**(i) The information factor generalises exactly, and the form above is an approximation of it.**
+For a cumulative-logit outcome with cutpoints `τ`, `w_ord(η) = Σ_k [f(τ_k−η) − f(τ_{k−1}−η)]²/π_k`
+with `f = F(1−F)`; it reduces to `p(1−p)` at `K = 2` to machine precision and `E[w_ord] → 1/3` as
+`K → ∞`. But `√E[w]` is not the ratio: the information for `β` is `E[w·x̃²]`, not `E[w]·E[x̃²]`,
+and the `K−1` cutpoints are **estimated** and — unlike the Gaussian twin's nuisance parameters —
+not orthogonal to `β`, so the variance is the (1,1) element of the inverted full `(β, τ)`
+information. The second effect is flat in `n` (+0.0073/+0.0061/+0.0071 at `n` = 2k/8k/32k), i.e.
+asymptotic, not finite-sample. With both included the prediction matched `SE_gauss/SE_ord` in
+**24 of 24** cell×`n` comparisons to **≤0.001** — including a 3-category outcome split 85/10/05
+predicted, and measured, to carry **less** information than a balanced binary one (0.3350 against
+0.3358 derived, versus 0.4456 for binary). The same correction applies here: the exact values for
+`bin_fork`/`bin_pipe` are **0.4459 / 0.4488**, against the 0.4576/0.4570 in the table above.
+
+**(ii) The sentence below it — the step from an SE ratio to a `bias/SE` ratio — is RETRACTED.**
+It rests on "the same **absolute** bias in the coefficient under both families", which was
+plausible and untested. V30 tested it: `|bias_fam|/|bias_gauss|` runs from **0.26 to 2.2**,
+varying by arm *and* by cutpoint configuration and drifting upward with `n`. `pipeline_properZ_ds`
+reaches **2.16**. So the measured `bias/SE` ratio is a product of an exactly known factor and an
+unknown one, and **V26's 0.474 is not a transferable constant** — it is the median of that
+product in cells where the bias factor happened to sit near 1. The *standard-error* half of the
+transfer is closed; the *bias* half has no theory and is the half that decides whether a
+Gaussian-measured defect understates or overstates the same defect elsewhere.
+`phase1/FINDINGS_v30.md`.
 
 **What this means for using the record.** The attenuation is not a property of imputation at
 all — it is the information content of the outcome. So the conservative-transfer result of V26

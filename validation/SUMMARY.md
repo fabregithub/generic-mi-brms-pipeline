@@ -1,6 +1,6 @@
 # What we learned, and what the pipeline now does about it
 
-**2026-10-13.** A synthesis of 29 validation tracks, the theory they produced, and the changes
+**2026-10-13.** A synthesis of 30 validation tracks, the theory they produced, and the changes
 that theory justified in the pipeline. Written to be readable without the other documents;
 every number is a measurement with a named source.
 
@@ -115,6 +115,15 @@ below is an *asymptotic* statement; the measured effect climbs with `n` toward i
 "fork residual" — recorded for a month as the chain closing on one causal role (1.011) and
 missing on the other (1.147) — is an artefact of both having been measured at `n = 800`. At
 `n = 12,800` the fork reads **0.992** and the pipe **0.953**: the fork agrees *better*. ⚠️ Pre-V28, the **end-to-end** comparisons — a closed form against a *pipeline-measured* effect — were all taken at `n = 800`. The component-level links are unaffected, being verified at `N = 300000` on both sides. [V28]
+
+**The outcome-family attenuation is exactly the outcome's Fisher information — but that is only
+half of a transfer.** The cumulative-logit generalisation predicted `SE_gauss/SE_ord` in 24 of 24
+cell×`n` comparisons to ≤0.001, including a 3-category outcome split 85/10/05 that carries *less*
+information than a balanced binary one. ⚠️ A `bias/SE` ratio is `(bias ratio)×(SE ratio)` though,
+and V26's assumption that a defect's *absolute* bias is the same under both families — never
+tested until now — is false: it runs **0.26 to 2.2**. **So ~0.474× is not a transferable
+constant**, and whether a Gaussian-measured defect is conservative elsewhere is not yet knowable.
+[V30]
 
 **And the residual that did survive is governed by `s²`, not by the causal role.** Moving
 `Var(logX1)` with the arrow held fixed, the chain's `derived/measured` ratio rises in *both*
