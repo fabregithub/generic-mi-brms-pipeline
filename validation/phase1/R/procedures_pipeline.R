@@ -389,6 +389,12 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
   mid_ok <- TRUE
 
   ests <- vars <- rep(NA_real_, length(imputed))
+  # The `d` instrument. OFF unless options(v4.record_d = TRUE), and it never
+  # touches the RNG or any returned estimate -- with the option off this block
+  # does not execute at all, so instrumented and uninstrumented runs are
+  # byte-identical.
+  rec_d <- isTRUE(getOption("v4.record_d", FALSE)) && !is.null(bundle$complete)
+  dmat <- if (rec_d) matrix(NA_real_, length(imputed), 4L) else NULL
 
   for (i in seq_along(imputed)) {
     di <- as.data.frame(imputed[[i]])
@@ -404,6 +410,9 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
     e <- fit_lm_estimand(di, truth)
     ests[i] <- e["est"]
     vars[i] <- e["se"]^2
+    if (rec_d)
+      dmat[i, ] <- tryCatch(d_predicted_bias(bundle$complete, di, truth),
+                            error = function(err) rep(NA_real_, 4L))
   }
 
   pooled <- rubin_pool(ests, vars)
@@ -425,9 +434,13 @@ proc_pipeline_block_fcs <- function(bundle, m = 20L, seed = NULL, n_cores = 1L,
   n_bad <- sum(!is.finite(ests))
   if (n_bad > 0) note <- paste0(note, sprintf("; %d/%d fits failed", n_bad, length(ests)))
 
+  # The pooled estimate is the mean over imputations, so its predicted bias is
+  # the mean of the per-imputation predictions.
+  dm <- if (rec_d) colMeans(dmat, na.rm = TRUE) else rep(NA_real_, 4L)
   one_row(label, pooled["est"], pooled["se"], pooled["ci_lo"], pooled["ci_hi"],
           substr(note, 1, 120),
-          ubar = pooled["ubar"], b = pooled["b"], fmi = pooled["fmi"])
+          ubar = pooled["ubar"], b = pooled["b"], fmi = pooled["fmi"],
+          pred_b = dm[1], borrow = dm[2], atten = dm[3], d_rms = dm[4])
 }
 
 # ---- Track V4 isolating variants --------------------------------------------

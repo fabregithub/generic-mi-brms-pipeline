@@ -84,10 +84,18 @@ rubin_pool <- function(est, var, conf = 0.95) {
 }
 
 one_row <- function(procedure, est, se, ci_lo, ci_hi, note = "",
-                    ubar = NA_real_, b = NA_real_, fmi = NA_real_) {
+                    ubar = NA_real_, b = NA_real_, fmi = NA_real_,
+                    pred_b = NA_real_, borrow = NA_real_, atten = NA_real_,
+                    d_rms = NA_real_) {
+  # pred_b/borrow/atten/d_rms are the `d` instrument (R/instrument_d.R), NA
+  # unless options(v4.record_d = TRUE). They are columns on EVERY arm, not just
+  # the instrumented ones, because run_procedures() rbinds arms together and a
+  # ragged set of columns would fail the bind rather than carry an NA.
   data.frame(procedure = procedure, estimate = est, se = se,
              ci_lo = ci_lo, ci_hi = ci_hi, note = note,
              ubar = unname(ubar), b = unname(b), fmi = unname(fmi),
+             pred_b = unname(pred_b), borrow = unname(borrow),
+             atten = unname(atten), d_rms = unname(d_rms),
              stringsAsFactors = FALSE)
 }
 

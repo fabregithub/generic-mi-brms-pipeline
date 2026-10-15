@@ -71,7 +71,7 @@ if (is.null(.here) || !nzchar(.here)) {
 suppressMessages(library(survival))   # dag_draw.R's interval-censored parent fit
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
             "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
-            "bart_impute.R", "smc_impute.R", "exact_fork.R", "dag_draw.R")) {
+            "bart_impute.R", "smc_impute.R", "exact_fork.R", "dag_draw.R", "instrument_d.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -158,6 +158,13 @@ summarise_v4 <- function(raw) {
       claimed_se     = mean(df$se, na.rm = TRUE),
       se_deficit     = 1 - mean(df$se, na.rm = TRUE) / emp_se,
       coverage       = mean(df$ci_lo <= truth & truth <= df$ci_hi, na.rm = TRUE),
+      # The `d` instrument (R/instrument_d.R). All NA unless the run set
+      # options(v4.record_d = TRUE); carried here so the predicted bias can be
+      # compared with the MEASURED bias (mean_est - truth) in the same row.
+      pred_b         = mean(df$pred_b, na.rm = TRUE),
+      borrow         = mean(df$borrow, na.rm = TRUE),
+      atten          = mean(df$atten, na.rm = TRUE),
+      d_rms          = mean(df$d_rms, na.rm = TRUE),
       stringsAsFactors = FALSE
     )
   })
@@ -229,6 +236,8 @@ print_v4 <- function(s) {
                ci_lo = NA_real_, ci_hi = NA_real_,
                note = substr(conditionMessage(e), 1, 120),
                ubar = NA_real_, b = NA_real_, fmi = NA_real_,
+               pred_b = NA_real_, borrow = NA_real_, atten = NA_real_,
+               d_rms = NA_real_,
                estimand_true = NA_real_, stringsAsFactors = FALSE)
   })
 
@@ -410,6 +419,10 @@ if (sys.nframe() == 0L) {
   n_rep  <- as.integer(getenv("N_REP", 150L))
   m      <- as.integer(getenv("M", 30L))
   seed   <- as.integer(getenv("SEED", 20260825L))
+  # RECORD_D=1 turns on the `d` instrument. Default OFF: with it off the
+  # recording block never executes, and two runs are byte-identical to a run
+  # from before the instrument existed (verified).
+  options(v4.record_d = identical(getenv("RECORD_D", "0"), "1"))
   ncores <- as.integer(getenv("NCORES", max(1L, parallel::detectCores() - 2L)))
   sweeps <- as.integer(getenv("SWEEPS", 3L))
   margin <- getenv("MARGIN", "shash")

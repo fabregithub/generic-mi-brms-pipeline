@@ -595,7 +595,44 @@ v2_scenarios <- function(big_n = 20000L, big_n_rep = 50L) {
                  y_tau = c(0.8544, 2.3787)),
     .v2_scenario("ord3v_pipe", "y_family", nd_frac = 0.4, mcar_frac = 0.4,
                  z_role = "pipe", y_family = "ordinal", seed_as = "zr_pipe",
-                 y_tau = c(1.8644, 3.1854))
+                 y_tau = c(1.8644, 3.1854)),
+
+    # ---- V31: is the expansion merely TOO LOW-ORDER? -----------------------
+    # The `d` instrument (R/instrument_d.R) is exact on contamination of known
+    # size -- self-tested to 0.99-1.10 at |d| <= 0.15 across gaussian, binomial
+    # and ordinal, both channels. On the real arms it is not: median
+    # |pred/meas - 1| = 0.59, with qualitative failures where `borrow` and
+    # `atten` are large and opposite and nearly cancel (properZ_ds under
+    # binomial: -0.063 + 0.066, measured +0.045).
+    #
+    # Two explanations, and they are distinguishable:
+    #   (E1) the expansion is right but TOO LOW-ORDER at the real |d|. Measured
+    #        d_rms ~ 0.53 against an exposure SD of 1.17 -- the error is ~45% of
+    #        the signal, well past where the self-test began to strain (1.21 at
+    #        |d| = 0.40).
+    #   (E2) the structure is wrong, and order will not save it.
+    #
+    # Shrinking the MISSING FRACTION shrinks the effective |d| without touching
+    # the mechanism, so:
+    #   REGISTERED PREDICTION (2026-10-15, before the run): under E1 the ratio
+    #   pred/meas rises toward 1 as the fraction falls, in EVERY family; under
+    #   E2 it stays off 1, or moves inconsistently across families.
+    #
+    # The 0.40 cells already exist (zr_fork, bin_fork, ord3_fork), so only the
+    # 0.10 and 0.20 rungs are new. tau is a property of the eta distribution,
+    # not of missingness, so the ordinal cutpoints are unchanged.
+    .v2_scenario("fr10_gau", "dfrac", nd_frac = 0.10, mcar_frac = 0.10, z_role = "fork"),
+    .v2_scenario("fr20_gau", "dfrac", nd_frac = 0.20, mcar_frac = 0.20, z_role = "fork"),
+    .v2_scenario("fr10_bin", "dfrac", nd_frac = 0.10, mcar_frac = 0.10, z_role = "fork",
+                 y_family = "binomial", seed_as = "fr10_gau"),
+    .v2_scenario("fr20_bin", "dfrac", nd_frac = 0.20, mcar_frac = 0.20, z_role = "fork",
+                 y_family = "binomial", seed_as = "fr20_gau"),
+    .v2_scenario("fr10_or3", "dfrac", nd_frac = 0.10, mcar_frac = 0.10, z_role = "fork",
+                 y_family = "ordinal", seed_as = "fr10_gau",
+                 y_tau = c(-0.9732, 0.6698)),
+    .v2_scenario("fr20_or3", "dfrac", nd_frac = 0.20, mcar_frac = 0.20, z_role = "fork",
+                 y_family = "ordinal", seed_as = "fr20_gau",
+                 y_tau = c(-0.9732, 0.6698))
   )
 }
 
