@@ -66,13 +66,20 @@
 #   Rscript analyze_v31.R
 # =============================================================================
 set -uo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+# Resolve to an ABSOLUTE path BEFORE the cd, and re-invoke through it. Using
+# "$0" here is a trap: the cd below changes the working directory, so a relative
+# "$0" no longer resolves and the detached child dies instantly -- while the
+# parent still prints "detached (pid N)" and writes a .pid, so the launch looks
+# successful and nothing runs. Latent until someone launches from the repo root
+# instead of from phase1/ (found 2026-10-15).
+SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+cd "$(dirname "$SELF")"
 TAG=v31
 STAMP="$(date '+%Y%m%d-%H%M%S')"
 mkdir -p logs results
 
 if [[ -z "${V31_DETACHED:-}" ]]; then
-  V31_DETACHED=1 V31_STAMP="$STAMP" nohup bash "$0" "$@" >/dev/null 2>&1 &
+  V31_DETACHED=1 V31_STAMP="$STAMP" nohup bash "$SELF" "$@" >/dev/null 2>&1 &
   PID=$!
   echo "$PID" > "logs/${TAG}_${STAMP}.pid"
   command -v caffeinate >/dev/null 2>&1 && nohup caffeinate -i -w "$PID" >/dev/null 2>&1 &
