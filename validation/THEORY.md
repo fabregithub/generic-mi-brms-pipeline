@@ -182,6 +182,39 @@ congenial draw), `n` = 3,000, 100 reps:
 
 The net bias crosses zero at `k` = 1 (+0.0005). Congeniality is not "the draw happens to be
 unbiased" — it is the exact point at which outcome-borrowing offsets censoring attenuation.
+
+> **V31 measured `T₁` and `T₂` separately on the real arms (2026-10-15), and the decomposition
+> holds.** Recording the imputation error `d` directly and predicting each term
+> (`R/instrument_d.R`), a Gaussian-outcome fit of `measured = a·T₂ + b·T₁` gives
+> **`a` = 0.947 ± 0.016, `b` = 1.028 ± 0.020, χ²/df = 1.1** across four structurally different
+> arms and three missingness fractions — 0.1 at the cleanest rung. This is the first direct
+> measurement of the two terms rather than a derivation of their sum.
+>
+> **Three consequences.**
+>
+> **(i) The arms differ in how far they sit from congeniality, and it is now measurable.** The
+> surviving fraction `|T₁+T₂| / (|T₁|+|T₂|)` is 0.19 for `pipeline_properZ_ds`, 0.24 for
+> `pipeline_bartMI`, 0.73 for `pipeline_noYx`. The first two are near-congenial in exactly this
+> sense; `noYx` is far from it, which is the same fact V16 measured as "`Y` in the imputation
+> model is worth −13.1 pp" — omitting `Y` leaves `d` anti-correlated with `Y`'s component of
+> `X`, so `T₂` dominates and nothing cancels it.
+>
+> **(ii) Near-congeniality makes the bias small and any PREDICTION of it ill-conditioned.** A
+> per-channel error `ε` enters a prediction of the net bias multiplied by
+> `(|T₁|+|T₂|)/|T₁+T₂|` — ×3.8 for `properZ_ds` against ×1.4 for `noYx`. Measured: 6% channel
+> errors become 23% / 19% / 9% errors in the net. **Any theory of a near-congenial arm must be
+> accurate term by term; being right about the sum is not available there.**
+>
+> **(iii) Only `T₂` fails to transfer across outcome families.** `b` (attenuation) is
+> 0.94–1.03 under gaussian, binomial and ordinal alike, so V26's "same absolute bias under both
+> families" assumption is **correct for `T₁`**. `a` (borrowing) falls to 0.63 and 0.41 under
+> ordinal and binomial. Part of that is expansion order — `a` drifts with `|d|`, and for a
+> Gaussian `g_ηη = 0` identically so the responsible term does not exist — but at the smallest
+> `|d|` the binomial `a` is still 3.6σ below 1, so a family effect remains. The candidate is
+> **congeniality in scale applied to `Y`** (§1a(ii)): `T₂ = E[d·g]` pairs the imputation error
+> with the analysis *score*, while the imputer sees `Y` on its raw numeric scale.
+> `phase1/FINDINGS_v31.md`.
+
 That is a sharper statement than §1's clause list, and it is derived from the identity rather
 than measured against it.
 

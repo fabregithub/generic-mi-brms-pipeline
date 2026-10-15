@@ -1,6 +1,6 @@
 # What we learned, and what the pipeline now does about it
 
-**2026-10-13.** A synthesis of 30 validation tracks, the theory they produced, and the changes
+**2026-10-13.** A synthesis of 31 validation tracks, the theory they produced, and the changes
 that theory justified in the pipeline. Written to be readable without the other documents;
 every number is a measurement with a named source.
 
@@ -124,6 +124,14 @@ and V26's assumption that a defect's *absolute* bias is the same under both fami
 tested until now — is false: it runs **0.26 to 2.2**. **So ~0.474× is not a transferable
 constant**, and whether a Gaussian-measured defect is conservative elsewhere is not yet knowable.
 [V30]
+
+**And the bias half of that transfer is now localised.** Recording the imputation error `d`
+directly shows the bias is `borrow + atten`; under a Gaussian outcome the prediction is
+essentially exact (χ²/df = 1.1 across four arms and three missingness fractions), the
+**attenuation** channel transfers across outcome families untouched, and only the **borrowing**
+channel fails — over-predicted 1.6× under ordinal and 2.4× under binomial. It is not a question
+of expansion order: that was registered as a prediction and refuted, each arm's error being flat
+across a 2.6× range of `|d|`. [V31]
 
 **And the residual that did survive is governed by `s²`, not by the causal role.** Moving
 `Var(logX1)` with the arrow held fixed, the chain's `derived/measured` ratio rises in *both*
