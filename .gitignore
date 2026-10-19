@@ -61,3 +61,6 @@ _site/
 
 /.quarto/
 **/*.quarto_ipynb
+
+# Manuscript drafts live in Dropbox (NIES-JECS), never in this repo
+manuscript/

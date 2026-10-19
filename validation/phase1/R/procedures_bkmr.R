@@ -281,7 +281,7 @@ proc_bkmr_pipeline <- function(bundle, grid, m = 10L, iter = 1000L,
 proc_bkmr_smc <- function(bundle, grid, m = 10L, iter = 1000L, n_knots = NULL,
                           seed = NULL, mode = c("oracle", "plugin"),
                           sweeps = 3L, rho = 0.4, sd_x = 1, mu_x = 0,
-                          sigma_y = 1, label = NULL) {
+                          sigma_y = 1, label = NULL, declared_form = NULL) {
   mode  <- match.arg(mode)
   label <- label %||% paste0("smc_", mode, "_bkmr")
 
@@ -290,6 +290,7 @@ proc_bkmr_smc <- function(bundle, grid, m = 10L, iter = 1000L, n_knots = NULL,
 
   imputed <- tryCatch(
     smc_impute_datasets(bundle$censored, truth, m = as.integer(m), mode = mode,
+                        declared_form = declared_form,
                         sweeps = sweeps, rho = rho, sd_x = sd_x, mu_x = mu_x,
                         sigma_y = sigma_y),
     error = function(e) structure(list(), err = conditionMessage(e)))

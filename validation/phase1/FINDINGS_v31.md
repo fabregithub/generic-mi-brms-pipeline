@@ -1,5 +1,23 @@
 # V31 — the bias transfer localises to ONE channel, and it is not an expansion-order problem
 
+> ## ⚠️ SUPERSEDED IN PART BY V32 (2026-10-19) — read that first
+>
+> **The localisation claimed below is withdrawn.** V31 fitted the channel scales on four arms
+> whose surviving fractions topped out at 0.73, and across the 0.40 rung where its own §1
+> measured the expansion broken (χ²/df 115.8). With a fifth arm at surviving fraction 1.000 and
+> the dirty rung excluded, `a` moved 0.41 → 0.85 (binomial) and 0.63 → 0.94 (ordinal) while `b`
+> moved *away* from 1 — the opposite assignment — and the non-Gaussian fits are **rejected**
+> (χ²/df 17.8, 4.4), leaving neither channel distinguishable from 1.
+>
+> **`a` and `b` were not identified here.** With only ill-conditioned arms the two terms are
+> nearly proportional and the scales trade off along a ridge. §3's table below is the location of
+> that ridge, not a measurement.
+>
+> **What stands:** the Gaussian result (now χ²/df = 0.24 on five arms), the refutation of the
+> expansion-order explanation (§1), and the raw bias-ratio range 0.26–2.2, which involves no
+> model fit. `phase1/FINDINGS_v32.md`.
+
+
 **Question.** V30 left the bias half of outcome-family transfer open: a defect's absolute bias
 is not family-invariant (0.26×–2.2×) and no reduction to a function of the information ratio
 survived. The harness was instrumented to record the imputation error `d` directly
@@ -9,7 +27,9 @@ survived. The harness was instrumented to record the imputation error `d` direct
 
 1. **Under a Gaussian outcome the instrument is essentially exact** — allowing one scale per
    channel gives `a = 0.947 ± 0.016`, `b = 1.028 ± 0.020`, **χ²/df = 1.1** on 12 points.
-2. **The attenuation channel transfers across families untouched** (`b` = 0.94–1.03 everywhere).
+2. ~~**The attenuation channel transfers across families untouched** (`b` = 0.94–1.03 everywhere).~~
+   **WITHDRAWN — V32.** With a well-conditioned arm set `b` reads 1.05 / 1.44 / 1.25 and the
+   non-Gaussian fits are rejected outright.
 3. **The borrowing channel does not**: `a` falls **0.95 → 0.63 → 0.41** for gaussian → ordinal
    (K=3) → binomial, ordered by how much information the outcome carries.
 4. **Registered P1 failed on its chosen statistic, but the mechanism it named is real.**

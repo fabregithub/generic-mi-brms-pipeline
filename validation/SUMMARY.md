@@ -1,6 +1,6 @@
 # What we learned, and what the pipeline now does about it
 
-**2026-10-13.** A synthesis of 31 validation tracks, the theory they produced, and the changes
+**2026-10-13.** A synthesis of 32 validation tracks, the theory they produced, and the changes
 that theory justified in the pipeline. Written to be readable without the other documents;
 every number is a measurement with a named source.
 
@@ -125,7 +125,15 @@ tested until now — is false: it runs **0.26 to 2.2**. **So ~0.474× is not a t
 constant**, and whether a Gaussian-measured defect is conservative elsewhere is not yet knowable.
 [V30]
 
-**And the bias half of that transfer is now localised.** Recording the imputation error `d`
+**But there is no transfer law, and the apparent localisation was an identification artefact.**
+With five arms spanning surviving fraction 0.069–1.000, a single pair of channel scales per
+family is **rejected** for binomial and ordinal outcomes (χ²/df 17.8 and 4.4) and the borrowing
+scale is arm-dependent (p = 0.004, 0.008). Under a Gaussian outcome the instrument is essentially
+exact (χ²/df = 0.24, both scales within 5% of 1). ⚠️ V31's claim that attenuation transfers
+untouched while borrowing fails is **withdrawn**: its arms were too ill-conditioned to separate
+the two scales, which are collinear when every arm cancels heavily. [V32]
+
+**What V31 established, before that correction.** Recording the imputation error `d`
 directly shows the bias is `borrow + atten`; under a Gaussian outcome the prediction is
 essentially exact (χ²/df = 1.1 across four arms and three missingness fractions), the
 **attenuation** channel transfers across outcome families untouched, and only the **borrowing**

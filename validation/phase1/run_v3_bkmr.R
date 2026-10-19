@@ -99,7 +99,19 @@ getenv <- function(key, default) {
 }
 split_csv <- function(x) trimws(strsplit(x, ",")[[1]])
 
+# V33: declared-form SMC. The analyst declares the surface BASIS; coefficients
+# are fitted (plugin). These test whether substantive-model-compatible
+# imputation is usable when the form is DECLARED rather than known.
+V3_DECLARED <- list(
+  smc_dec_true   = Y ~ logX1 + logX2 + logX3 + Z1 + Z2 + logX1:logX2 + I(logX1^2),
+  smc_dec_noint  = Y ~ logX1 + logX2 + logX3 + Z1 + Z2 + I(logX1^2),
+  smc_dec_noquad = Y ~ logX1 + logX2 + logX3 + Z1 + Z2 + logX1:logX2,
+  smc_dec_lin    = Y ~ logX1 + logX2 + logX3 + Z1 + Z2,
+  smc_dec_over   = Y ~ logX1 + logX2 + logX3 + Z1 + Z2 + logX1:logX2 + I(logX1^2) +
+                       I(logX2^2) + logX1:logX3)
+
 V3_ARMS <- c("oracle_bkmr", "cc_bkmr", "sub_lod2_bkmr", "pipeline_bkmr",
+             names(V3_DECLARED),
              # V9: the SMC arms. Not in the V3 default set -- V3 is closed and its
              # numbers must stay reproducible. Select them explicitly via ARMS.
              "smc_oracle_bkmr", "smc_plugin_bkmr")
@@ -202,6 +214,16 @@ V15_SCENARIOS <- c("mixf10", "nd20", "mixf30", "nd40", "mixf50", "mixf60")
           bundle, grid, m = m, iter = iter, n_knots = n_knots,
           seed = base_seed + r, mode = md, sweeps = sweeps,
           rho = sc$rho, sd_x = 1, mu_x = 0, sigma_y = 1)
+    }
+    # V33: declared-form SMC, coefficients fitted. Same seed as the other arms,
+    # so every declared form sees byte-identical data.
+    for (dn in names(V3_DECLARED)) {
+      if (dn %in% arms)
+        parts[[length(parts) + 1L]] <- proc_bkmr_smc(
+          bundle, grid, m = m, iter = iter, n_knots = n_knots,
+          seed = base_seed + r, mode = "plugin", sweeps = sweeps,
+          rho = sc$rho, sd_x = 1, mu_x = 0, sigma_y = 1,
+          declared_form = V3_DECLARED[[dn]], label = dn)
     }
 
     do.call(rbind, parts)

@@ -179,7 +179,8 @@
 smc_impute_datasets <- function(d, truth, m = 10L, mode = c("oracle", "plugin"),
                                 sweeps = 3L, rho = 0.4, sd_x = 1, mu_x = 0,
                                 sigma_y = 1, n_grid = 512L, z_mode = NULL,
-                                x_mode = c("exact", "shipped", "grid"), margin = "shash") {
+                                x_mode = c("exact", "shipped", "grid"), margin = "shash",
+                                declared_form = NULL) {
   mode   <- match.arg(mode)
   x_mode <- match.arg(x_mode)
   p <- length(truth$b)
@@ -191,9 +192,19 @@ smc_impute_datasets <- function(d, truth, m = 10L, mode = c("oracle", "plugin"),
   is_cens <- lapply(stats::setNames(cens_cols, cens_cols), function(cc) is.na(d[[cc]]))
   upper   <- lapply(stats::setNames(cens_cols, cens_cols), function(cc) d[[paste0(cc, "_lod")]])
 
-  # The matched analysis-model formula: the SAME surface the generator used. This
-  # is what makes the imputation substantive-model-COMPATIBLE.
-  fm <- dgp_formula(truth)
+  # The matched analysis-model formula: by default the SAME surface the generator
+  # used, which is what makes the imputation substantive-model-COMPATIBLE.
+  #
+  # V33: `declared_form` replaces it with a surface the ANALYST declares. The
+  # default keeps every pre-V33 result byte-identical. This is the whole point
+  # of the track: V9 showed that an SMC draw with the generator's own form
+  # recovers the curvature the shipped engine destroys, and that the
+  # COEFFICIENTS need not be known (plugin mode matches oracle to 0.2 pp). What
+  # was never tested on the OUTCOME surface is whether the FORM can be declared
+  # rather than known -- and the covariate-arrow analogue (SUMMARY.md) says the
+  # basis has to be right, with an INCOMPLETE basis worse than nothing
+  # (+20.7% against +8.5% for omitting the factor entirely).
+  fm <- declared_form %||% dgp_formula(truth)
 
   out <- vector("list", m)
   for (i in seq_len(m)) {
