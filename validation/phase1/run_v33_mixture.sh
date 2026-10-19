@@ -90,6 +90,14 @@ fi
 
 STAMP="${V33_STAMP:-$STAMP}"
 LOG="logs/${TAG}_${STAMP}.log"
+# ⚠️ PIN BLAS TO ONE THREAD PER WORKER. Without this each of the 22 forked
+# workers spawns its own BLAS threads (observed 114-160% CPU each on 24 cores)
+# and the job thrashes: the 2026-10-19 launch ran >=9 h PER TASK and was killed
+# after 18 h having completed zero chunks. Pinned, a 22-rep wave of one SMC arm
+# takes 680 s against 411 s uncontended -- a 1.65x contention factor instead of
+# ~9x. This is not a tuning preference; it is the difference between feasible
+# and not.
+export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 VECLIB_MAXIMUM_THREADS=1 MKL_NUM_THREADS=1
 export NCORES="${NCORES:-$(( $(sysctl -n hw.ncpu) - 2 ))}"
 export N_REP="${N_REP:-200}"
 export M="${M:-5}"
