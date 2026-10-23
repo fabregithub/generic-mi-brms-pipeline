@@ -42,6 +42,9 @@ if (is.null(.here) || !nzchar(.here)) {
 }
 TAG <- Sys.getenv("TAG", "v33")
 EST <- Sys.getenv("ESTIMAND", "curv_X1")     # the surface feature the fix is about
+# V34 runs TWO scenarios in one invocation. Filtering on estimand alone would
+# silently average nd20 and nd40_all together, which is the whole comparison.
+SCN <- Sys.getenv("SCENARIO", "")
 
 res <- file.path(.here, "results", sprintf("%s_latest.rds", TAG))
 ck  <- file.path(.here, "results", sprintf("%s_checkpoint.rds", TAG))
@@ -53,14 +56,28 @@ if (file.exists(res)) {
   s <- as.data.frame(summarise_v3(raw)); src <- "CHECKPOINT (run incomplete)"
 } else stop("no V33 results at ", res)
 
+if (nzchar(SCN)) s <- s[s$scenario == SCN, ]
+if (length(unique(s$scenario)) > 1L)
+  stop("results hold ", length(unique(s$scenario)), " scenarios (",
+       paste(unique(s$scenario), collapse = ", "),
+       "). Set SCENARIO= to pick one -- averaging them would destroy the comparison.")
 d <- s[s$estimand == EST, ]
 if (!nrow(d)) stop("estimand '", EST, "' not present; have: ",
                    paste(unique(s$estimand), collapse = ", "))
 g <- function(arm, f) { v <- d[[f]][d$procedure == arm]; if (length(v) == 1L) v else NA_real_ }
-# MC error of rel_bias = MC error of bias / |true|
-d$rb_se <- d$mcse_bias / abs(d$true)
-ab   <- function(a) abs(g(a, "rel_bias"))
-abse <- function(a) g(a, "rb_se")
+# ⚠️ REFERENCE IS THE ORACLE, NOT THE TRUTH.
+# BKMR at these settings is itself biased on curvature: the oracle arm -- complete,
+# uncensored data -- reads +15.1% against truth at 200 reps, 6 sigma from zero. That is
+# GPP/iteration/knot approximation error, and EVERY arm inherits it. Scoring arms against
+# truth therefore measures BKMR's bias plus the imputation's, and the first dominates.
+# The IMPUTATION-induced bias is (arm - oracle)/oracle. The first draft of this script used
+# truth and reached the opposite verdict on P2.
+.orc    <- g("oracle_bkmr", "mean_est")
+.orc_se <- g("oracle_bkmr", "mcse_bias")
+d$vs_oracle <- (d$mean_est - .orc) / .orc
+d$vs_or_se  <- sqrt(d$mcse_bias^2 + .orc_se^2) / abs(.orc)
+ab   <- function(a) abs(g(a, "vs_oracle"))
+abse <- function(a) g(a, "vs_or_se")
 
 #' Compare |rel_bias| of two arms with MC error.
 #' @param better the arm the prediction says should be SMALLER
@@ -81,9 +98,11 @@ roll <- function(v) if (any(v == "NOT MET")) "NOT MET" else if (any(v == "UNDECI
 cat(sprintf("\n=== V33  estimand = %s  [%s]  reps = %d ===\n",
             EST, src, suppressWarnings(max(d$n_ok, na.rm = TRUE))))
 
-keep <- c("procedure","n_ok","true","mean_est","rel_bias","mcse_bias","coverage")
-cat("\n--- all arms ---\n")
-print(format(d[order(abs(d$rel_bias)), intersect(keep, names(d))], digits = 3), row.names = FALSE)
+keep <- c("procedure","n_ok","mean_est","rel_bias","vs_oracle","vs_or_se","coverage")
+cat("\n--- all arms  (rel_bias = vs truth; vs_oracle = IMPUTATION-induced) ---\n")
+print(format(d[order(abs(d$vs_oracle)), intersect(keep, names(d))], digits = 3), row.names = FALSE)
+cat(sprintf("\n  oracle vs truth: %+.3f -- BKMR's OWN curvature bias, shared by every arm\n",
+            g("oracle_bkmr", "rel_bias")))
 
 # ---- FLOOR ------------------------------------------------------------------
 tru <- unique(d$true)[1]
@@ -94,10 +113,9 @@ floor_ok <- is.finite(tru) && abs(tru) > 1e-6 && is.finite(orc) && abs(orc) < 0.
 cat(sprintf("  %s\n", if (floor_ok) "ok -- comparisons below are defined"
                       else "⚠️ VOID -- the oracle itself does not recover this estimand"))
 
-ab <- function(a) abs(g(a, "rel_bias"))
 cat("\n--- P1  does declaring the TRUE basis recover the surface? ---\n")
-cat(sprintf("  reference: oracle %.3f   (MC error on rel_bias ~ %.3f at %d reps)\n",
-            ab("oracle_bkmr"), mean(d$rb_se, na.rm = TRUE),
+cat(sprintf("  all figures are IMPUTATION-induced (vs oracle); MC error ~ %.3f at %d reps\n",
+            mean(d$vs_or_se, na.rm = TRUE),
             suppressWarnings(max(d$n_ok, na.rm = TRUE))))
 p1 <- roll(c(cmp("smc_dec_true", "pipeline_bkmr", "vs the shipped engine"),
              cmp("smc_dec_true", "sub_lod2_bkmr", "vs LOD/sqrt(2)")))

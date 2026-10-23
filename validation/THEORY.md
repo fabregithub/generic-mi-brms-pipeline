@@ -298,6 +298,158 @@ three, and no amount of flexibility in modelling the *mean* recovers it.
 
 ---
 
+## 1a(iii). The ladder — congeniality is one requirement at four strengths
+
+**Added 2026-10-23.** The four imputation problems this project has worked on are not four
+problems. They are **one requirement applied to successively larger sets of functionals**: the
+imputation must preserve whatever functional the analysis reads off.
+
+| what the analysis reads off | what the imputation must preserve | status |
+|---|---|---|
+| marginal summaries | the **marginal** of `X` below `L` | solved — but the *family* must be right: a Gaussian/tobit draw collapses to coverage **0.47** under right-skew, hence the shash default |
+| correlations, mixture indices | the **joint among `X`** | solved — `leftcens` within-`X` relationships |
+| a causal coefficient, linear | the **`X`–`Y` conditional** | solved — but only with `Y` in the imputation (**−13.1 pp** without, V16) and the covariate's causal role decides the cost (**+1.2 pp** inert vs **+22–28 pp** on an open X–Y path, V17) |
+| a causal **surface** (non-linear, mixture) | the **`X`–`Y` surface**, i.e. its functional form | **open** |
+
+Reading the ladder downward is the project's history; reading it upward is the statement that
+each rung's imputation is *insufficient* for the rung below, which is what every track has
+measured.
+
+**A standing caution against collapsing rung 3 into "solved".** The non-linear single-`X` case
+is diagnosed, not closed: the censored draw carries **~+20% asymptotic** bias when a covariate
+relates non-linearly to the exposure, and item 07's grid draw **inverts to +142%** there. The
+declared-basis fix (correct basis, coefficients fitted: **−0.51%**) was measured on the
+*covariate arrow* and is not shipped.
+
+### Censoring is not missingness
+
+Worth stating because it is why the MI-for-missing-data literature does not transfer intact. A
+non-detect is not an absent value: it is a value known to lie in `(0, L]`. That is **interval
+censoring with a known bound** — strictly more information than MAR-missingness, and a
+different estimand for the imputation to target. It is also the cleanest separation from
+D'Agostino McGowan et al. (2026, *Stat Med*), whose congeniality framing otherwise overlaps
+§1a.
+
+### What actually fills the censored region — an assumption, at every rung
+
+**Added 2026-10-23.** The ladder invites a natural question: rungs 1 and 2 estimate a
+distribution from the reported values and extrapolate it below `L`; why can the surface not be
+obtained the same way — fit `h` on the measured data, then impute with `Y` and `Z`?
+
+**It can, and that is the validated method.** V9: *"oracle parameters are not required —
+estimating the surface each sweep and drawing from its posterior matches the oracle version to
+0.2 pp"*. V33's `smc_dec_*` arms all run in that plugin mode — coefficients fitted from
+above-LOD rows each sweep — and with the right basis gave **≤3.6% bias on all four estimands**.
+
+The clarifying statement is this: **nothing is ever observed below `L`, so at every rung what
+fills the censored region is an assumption, not data.** The rungs differ only in how rigid the
+assumption is and whether it can be checked.
+
+| rung | the assumption | rigidity | checkable above `L`? |
+|---|---|---|---|
+| 1 — marginal | a distributional family | 2–3 parameters; fitting the upper portion pins the lower tail | partly — and it still fails: tobit/Gaussian under right-skew gives **coverage 0.47** |
+| 2 — joint | family + correlation structure | low-dimensional | partly |
+| 4 — surface | **which basis functions `h` contains** | entirely determined by the basis named | **no** |
+
+So rung 1 is not "no information" — the parametric family *is* the information. Rung 4 can be
+made just as rigid by **declaring** a parametric basis, which is why the scheme works.
+
+**The asymmetry is in the form, not the coefficients.** Fit above the limit tells you nothing
+about which basis is right below it — V22–V24 measured exactly this: *all five declared shapes
+fit the observed region acceptably and differed by 26 percentage points below the LOD*. So
+"estimate the surface from the measured data" is correct for the **coefficients** and
+impossible for the **form**, and the form is what governs the extrapolation.
+
+This is also the cleanest statement of why a non-parametric surface cannot supply the Y-factor
+(§1a(iv)): **a quadratic fitted above `L` extrapolates rigidly because the family forces it; a
+GP fitted above `L` extrapolates by prior because nothing does.** The flexibility that makes
+BKMR the right analysis model is what disqualifies it as the imputation's surface.
+
+**Practical form of the rule:** *estimate the coefficients, declare the form, declare it
+generously.* The residual limitation is honest and belongs in any write-up — for a real mixture
+nobody knows the true basis, so the method ships with an assumption the data cannot verify.
+That is still a better position than the shipped engine's **unstated** assumption that the
+conditional is linear, which costs 50% of the curvature (V33).
+
+## 1a(iv). One engine, parameterised by the analysis likelihood — and why the mixture case resists it
+
+**Added 2026-10-23.** A natural response to the ladder is to build an engine per model class —
+one for linear, one for splines, one for BKMR. **That is the wrong shape.** The
+substantive-model-compatible draw is
+
+> `p(x | rest, Y) ∝ p(x | rest) · p(Y | x, rest ; ANALYSIS MODEL) · 1{x ≤ L}`
+
+and the analysis model enters **only** through the middle factor. One engine, parameterised by
+whatever likelihood the analysis uses. V33 is the evidence: with the surface declared
+correctly, imputation-induced bias was **≤3.6% on all four estimands simultaneously**
+(curvature, interaction, overall mixture effect, single-exposure), with nothing BKMR-specific
+in the draw.
+
+**But a learned surface is not a declared one, and for a mixture that distinction bites twice.**
+
+1. **Circularity.** With BKMR the Y-factor would use a surface estimated from data that already
+   contains the imputed values. The draw conditions on a surface that depends on the draw.
+2. **The surface is unidentified exactly where it is needed.** BKMR is a GP; below the LOD
+   there are no observations, so `h(x)` in the censored region is prior-driven extrapolation.
+   An SMC rejection step against it conditions on a part of the surface the data never
+   determined.
+
+(2) is the deeper obstruction and it is the same partial identification that limits any
+low-dose extrapolation. **Flexibility cannot resolve it** — V22–V24 established that directly:
+every fitted polynomial failed while a *declared* basis succeeded, because the declaration
+supplies the extrapolation the data cannot. The corollary for mixtures is therefore
+uncomfortable but clear: **the Y-factor should carry a declared parametric surface even when
+the analysis model is non-parametric**, with the declaration reported as an assumption and
+sensitivity run across forms.
+
+V33's `smc_dec_over` result — two spurious terms cost nothing measurable (+0.029 worst case vs
++0.036 for the true basis, 0.2σ) — is the first evidence that declaring generously is the safe
+direction. The mechanism, and what an omitted term does instead of simply vanishing, is derived
+in `phase1/DERIVATION_declared_basis.md`.
+
+## 1a(v). Partial identification — the honest endpoint for rung 4
+
+**Added 2026-10-23.** §1a(iii) establishes that the surface's *form* cannot be chosen from the
+data: five declared shapes all fit above the limit acceptably and differ by **26 percentage
+points** below it (V22–V24). A point estimate at rung 4 therefore rests on an assumption the
+data cannot check.
+
+The response is not to pretend otherwise, nor to abandon the rung. It is to **report what the
+censored region can and cannot determine**:
+
+> Pre-specify a CLASS of plausible declared forms. Impute under each. Report the **envelope**
+> of the estimand over that class, not a point.
+
+This converts the limitation into the result. It is also what two independent lines in this
+project already reached for: `SUMMARY.md`'s standing guidance (*"run more than one form and
+report the spread"*) and the archived mixture-HBEB plan (*"low-dose ERF shape is partially
+identified; the true sub-limit exposure is never observed"*).
+
+### What the projection account would add — a computable envelope
+
+If `DERIVATION_declared_basis.md` holds, the envelope need not be obtained by brute force.
+Omitting basis function `φ_j` biases the retained coefficients by `≈ b f Γ_j θ_j`, where
+`Γ_j = E[φ_ret φ_ret']⁻¹ E[φ_ret φ_j]` is computable **from the design alone**, over the
+censored region. So for a candidate class the bias of each member is predictable without
+running the imputation, and the envelope follows in closed form.
+
+`θ_j` — the true coefficient of a term you did not declare — is of course unknown. But that is
+exactly the right place to put the sensitivity parameter:
+
+> **if the true surface contains `φ_j` with `|θ_j| ≤ θ_max`, the induced bias on the retained
+> terms is at most `b f Γ_j θ_max`.**
+
+A bound indexed by "how large an undeclared term could plausibly be", rather than a point
+estimate indexed by an unverifiable claim that none exists. The `f` in front says the bound
+tightens as detection improves — which is the decision-relevant statement for an analyte-level
+threshold.
+
+**Status: a direction, not a result.** It requires (i) the projection account to survive V34's
+`f`-scaling test, (ii) `Γ` computed and validated against the measured inflations (`P-B`), and
+(iii) a defensible way to set `θ_max` from external knowledge rather than from the data — which
+is the same problem as choosing the form, only weakened from "name it exactly" to "bound it".
+That weakening is the whole gain, and whether it is enough is untested.
+
 ## 1b. When a violation reaches the estimand
 
 **Added 2026-09-09.** Clauses (A) and (B) say when the *draw* is right. They say nothing about
