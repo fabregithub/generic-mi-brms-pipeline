@@ -1,7 +1,7 @@
 # Why a declared basis loses exactly what it omits — a projection argument
 
-**Proposed 2026-10-23 to explain V33. Derivation only; the test is specified in §5 and has
-not been run.**
+**Proposed 2026-10-23 to explain V33. Tested by V34 on 2026-10-26: the mechanism survives,
+the `f`-scaling prediction does not — it is `f²`, not `f`. See §5 P-C.**
 
 ## 1. What needs explaining
 
@@ -72,17 +72,34 @@ dropped, and the failure has a computable size.
 
 **P-A (sign and target).** Omitting `φ_j` attenuates `θ̂_j` and inflates the retained terms with
 which `φ_j` is correlated over the censored region. ✅ *Consistent with all four V33 rows, and
-the signs are right in both directions.* Not yet a quantitative test.
+the signs are right in both directions.* Also holds at nd20 and nd40_all (V34): every sign is
+preserved as the fraction changes. Not yet a quantitative test.
 
 **P-B (magnitude).** The inflation equals `b f Γ θ_omit`. `Γ` is computable from the DGP with
 no free parameters — regress `x₁x₂` on `{x₁, x₂, x₃, z₁, z₂, x₁²}` over `x₁ ≤ L`, and
 symmetrically for `x₁²`. **This is the derivation to do next**, in the style of
 `derive_scale_retention.R`: compute `Γ`, predict +29.6% and +10.1%, compare.
 
-**P-C (scaling in `f`).** Both effects are **linear in the censored fraction** to first order.
-The censoring sweep now being set up (`nd20` at 20% vs `nd40` at 40%) tests this directly:
-*`smc_dec_noint`'s curvature inflation should roughly halve, +29.6% → ≈ +15%.* A flat or
-non-monotone result refutes the projection account.
+**P-C (scaling in `f`) — TESTED BY V34, REFUTED AS STATED, ACCOUNT SURVIVES.**
+Registered: both effects **linear** in the censored fraction, so halving `f` halves the bias
+(`smc_dec_noint` +29.6% → ≈ +15%).
+
+Measured over nd20 (f = 0.20) vs nd40 (f = 0.40), 200 reps:
+**pooled exponent `p` = 1.85 ± 0.20** — against linear (`p`=1) **4.2σ, refuted**; against
+quadratic (`p`=2) 0.7σ, consistent. `smc_dec_noint` came in at **+6.1%**, not +15%.
+
+**Where §4 went wrong:** it treated `Γ` as a constant. `Γ` is the projection of the omitted
+basis onto the retained one **over the censored region**, and that region is set by `L`, hence
+by `f`. The bias is `b · f · Γ(f) · θ_omit`; with `Γ` growing roughly linearly in `f`, the
+product is `f²`. The mechanism stands — only the constant-`Γ` step fails.
+
+This is also the **second independent route to `f²`** in the project: V15 found curvature
+attenuation quadratic in the censored fraction (`excess% = −323.4·f²`) by a different
+mechanism. See `THEORY.md` §1a(vi).
+
+**P-C′ (open).** Is `Γ(f)` in fact linear in `f`? Computable from the design with no new run —
+evaluate `Γ_j` over `x₁ ≤ L` at several `L` and check the slope. That would close the account
+quantitatively rather than by exponent-matching.
 
 **P-D (already confirmed, and it is the strongest support).** The shipped engine draws from a
 conditional **linear in its predictors** — which is exactly `smc_dec_lin`'s declared basis. The

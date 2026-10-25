@@ -428,27 +428,76 @@ identified; the true sub-limit exposure is never observed"*).
 ### What the projection account would add — a computable envelope
 
 If `DERIVATION_declared_basis.md` holds, the envelope need not be obtained by brute force.
-Omitting basis function `φ_j` biases the retained coefficients by `≈ b f Γ_j θ_j`, where
-`Γ_j = E[φ_ret φ_ret']⁻¹ E[φ_ret φ_j]` is computable **from the design alone**, over the
-censored region. So for a candidate class the bias of each member is predictable without
-running the imputation, and the envelope follows in closed form.
+Omitting basis function `φ_j` biases the retained coefficients by `≈ b f Γ_j(f) θ_j`, where
+`Γ_j = E[φ_ret φ_ret']⁻¹ E[φ_ret φ_j]` is computable **from the design alone** — but taken
+**over the censored region**, so `Γ_j` is itself a function of `L` and hence of `f`. V34
+measured the combined scaling as **`f²`**, not `f` (§1a(vi)). So for a candidate class the bias
+of each member is predictable without running the imputation, and the envelope follows in
+closed form.
 
 `θ_j` — the true coefficient of a term you did not declare — is of course unknown. But that is
 exactly the right place to put the sensitivity parameter:
 
 > **if the true surface contains `φ_j` with `|θ_j| ≤ θ_max`, the induced bias on the retained
-> terms is at most `b f Γ_j θ_max`.**
+> terms is at most `≈ C_j f² θ_max`,** with `C_j` fixed by the design.
 
 A bound indexed by "how large an undeclared term could plausibly be", rather than a point
-estimate indexed by an unverifiable claim that none exists. The `f` in front says the bound
-tightens as detection improves — which is the decision-relevant statement for an analyte-level
-threshold.
+estimate indexed by an unverifiable claim that none exists. **The `f²` is the decision-relevant
+part**: the bound tightens *quadratically* as detection improves, so an analyte at 60%
+detection carries roughly **4×** the bias of one at 80%. That is a far better basis for an
+analyte-level inclusion threshold than a blanket detection-frequency cut, which treats 61% and
+99% alike.
 
-**Status: a direction, not a result.** It requires (i) the projection account to survive V34's
-`f`-scaling test, (ii) `Γ` computed and validated against the measured inflations (`P-B`), and
+**Status: a direction, not a result.** It requires (i) the projection account to survive its
+`f`-scaling test — **V34 ran this: the account survives, the exponent does not** (§1a(vi)), (ii) `Γ` computed and validated against the measured inflations (`P-B`), and
 (iii) a defensible way to set `θ_max` from external knowledge rather than from the data — which
 is the same problem as choosing the form, only weakened from "name it exactly" to "bound it".
 That weakening is the whole gain, and whether it is enough is untested.
+
+## 1a(vi). The censored fraction enters as `f²`, not `f` — V34
+
+**Added 2026-10-26.** `DERIVATION_declared_basis.md` predicted the declared-basis bias to be
+**linear** in the censored fraction, because it treated `Γ` as fixed. V34 swept the fraction
+(nd20 at 20% vs nd40 at 40%, 200 reps, nine arms) and registered that prediction before the run.
+
+| arm | nd40 | nd20 | ratio | exponent `p` |
+|---|---|---|---|---|
+| `pipeline_bkmr` | −0.501 | −0.099 | 0.20 | 2.34 ± 0.46 |
+| `smc_dec_lin` | −0.460 | −0.102 | 0.22 | 2.17 ± 0.45 |
+| `smc_dec_noint` | +0.296 | +0.061 | 0.21 | 2.28 ± 0.68 |
+| `smc_dec_noquad` | −0.397 | −0.144 | 0.36 | 1.46 ± 0.30 |
+| `cc_bkmr` | −0.157 | −0.057 | 0.36 | 1.46 ± 0.98 |
+
+> **Pooled `p = 1.85 ± 0.20`. Against linear (`p` = 1): 4.2σ — REFUTED. Against quadratic
+> (`p` = 2): 0.7σ — consistent.**
+
+**The account survives; the simplification does not.** `Γ` is the projection of the omitted
+basis onto the retained one *computed over the censored region*, and that region is set by `L`,
+hence by `f`. So the bias is `b · f · Γ(f) · θ_omit`, and with `Γ` growing roughly linearly in
+`f` the product is `f²`. The constant-`Γ` step was the error.
+
+**This is the second independent route to `f²` in this project.** V15 established that curvature
+attenuation is quadratic in the censored fraction (`excess% = −323.4·f²`) for a different arm
+and a different mechanism; V34 reproduces the exponent for the declared-basis bias. Two
+mechanisms converging on the same power is worth more than either alone, and suggests the
+exponent is a property of the censored region's geometry rather than of any one draw.
+
+### Two further results from the same run
+
+**P-C2 MET — a correct declared basis is congenial at every fraction.** `smc_dec_true`
+(−0.011 / +0.036 / −0.008 at nd20 / nd40 / nd40_all) and `smc_dec_over`
+(−0.011 / +0.029 / −0.009) stay inside ±0.05 throughout. The declaration does not have to be
+re-tuned as censoring worsens.
+
+**P-C3 NOT MET, and the negative is the useful part.** `nd40_all` censors **all three**
+exposures where `nd40` censors one, yet the bias on `curv_X1` is indistinguishable
+(`pipeline_bkmr` −0.501 vs −0.472, 0.7σ; `smc_dec_noquad` −0.397 vs −0.434, 0.9σ). **The bias is
+governed by the censoring of the FOCAL exposure, not by total censoring across the mixture.**
+
+Combined with `f²`, this gives an analyte-level rule: a term's bias depends on that analyte's own
+detection frequency, quadratically. An analyte detected in 60% of samples carries roughly **4×**
+the bias of one detected in 80% — so a blanket detection-frequency threshold, which treats 61%
+and 99% alike and discards everything below the cut, is the wrong instrument.
 
 ## 1b. When a violation reaches the estimand
 
