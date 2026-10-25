@@ -1,7 +1,10 @@
 # Why a declared basis loses exactly what it omits — a projection argument
 
-**Proposed 2026-10-23 to explain V33. Tested by V34 on 2026-10-26: the mechanism survives,
-the `f`-scaling prediction does not — it is `f²`, not `f`. See §5 P-C.**
+**Proposed 2026-10-23 to explain V33. Status after testing (2026-10-26): the QUALITATIVE
+account stands — omitted terms are rerouted onto what they correlate with, signs and targets
+correct at every censoring level. The QUANTITATIVE account fails — it predicts bias linear in
+the censored fraction, the measurement is `f^1.85 ± 0.20`, and the repair offered for that gap
+(`Γ` growing with `f`) was computed and is false. See §5, P-C and P-C′.**
 
 ## 1. What needs explaining
 
@@ -80,7 +83,7 @@ no free parameters — regress `x₁x₂` on `{x₁, x₂, x₃, z₁, z₂, x�
 symmetrically for `x₁²`. **This is the derivation to do next**, in the style of
 `derive_scale_retention.R`: compute `Γ`, predict +29.6% and +10.1%, compare.
 
-**P-C (scaling in `f`) — TESTED BY V34, REFUTED AS STATED, ACCOUNT SURVIVES.**
+**P-C (scaling in `f`) — TESTED BY V34, REFUTED. The repair offered for it was then also refuted (P-C′).**
 Registered: both effects **linear** in the censored fraction, so halving `f` halves the bias
 (`smc_dec_noint` +29.6% → ≈ +15%).
 
@@ -88,18 +91,74 @@ Measured over nd20 (f = 0.20) vs nd40 (f = 0.40), 200 reps:
 **pooled exponent `p` = 1.85 ± 0.20** — against linear (`p`=1) **4.2σ, refuted**; against
 quadratic (`p`=2) 0.7σ, consistent. `smc_dec_noint` came in at **+6.1%**, not +15%.
 
-**Where §4 went wrong:** it treated `Γ` as a constant. `Γ` is the projection of the omitted
-basis onto the retained one **over the censored region**, and that region is set by `L`, hence
-by `f`. The bias is `b · f · Γ(f) · θ_omit`; with `Γ` growing roughly linearly in `f`, the
-product is `f²`. The mechanism stands — only the constant-`Γ` step fails.
+**The repair I proposed:** that §4 treated `Γ` as constant, whereas `Γ` depends on the region
+and hence on `f`, so `f · Γ(f)` would give `f²`. **P-C′ below tested that and it is false** —
+`Γ` is flat or decreasing in `f`. Both the original prediction and its repair are refuted; see
+P-C′ for what survives.
 
 This is also the **second independent route to `f²`** in the project: V15 found curvature
 attenuation quadratic in the censored fraction (`excess% = −323.4·f²`) by a different
 mechanism. See `THEORY.md` §1a(vi).
 
-**P-C′ (open).** Is `Γ(f)` in fact linear in `f`? Computable from the design with no new run —
-evaluate `Γ_j` over `x₁ ≤ L` at several `L` and check the slope. That would close the account
-quantitatively rather than by exponent-matching.
+**P-C′ — TESTED 2026-10-26, REFUTED.** Is `Γ(f)` linear in `f`? Computed from the design at
+`f` = 0.05 … 0.50 (n = 400,000):
+
+| | `Γ(0.05)` | `Γ(0.20)` | `Γ(0.40)` | `Γ(0.50)` |
+|---|---|---|---|---|
+| `noint` (omits `x₁x₂`, read on `x₁²`) | 0.400 | 0.403 | 0.405 | 0.407 |
+| `noquad` (omits `x₁²`, read on `x₁x₂`) | 0.507 | 0.389 | 0.315 | 0.287 |
+
+**`Γ` is flat in one case and decreasing in the other.** The censored-region extrapolation
+residual is likewise flat to slightly decreasing (0.39 → 0.29; 0.56 → 0.46). The product
+`f · residual(f)` therefore scales with exponent **0.88** and **0.98** — essentially linear —
+against V34's measured **1.85 ± 0.20**. The account under-predicts the exponent by ~4.8σ.
+
+Also corrected here: §3 is right that `Γ` is an expectation over the **observed** region (it is
+the plugin fit's omitted-variable bias); §5's earlier wording said "censored". Neither reading
+produces `f²`.
+
+**Status of the account after this test.** §4's qualitative content stands — the signs and
+targets are right at every censoring level (P-A). Its quantitative content does not: it cannot
+produce the measured `f`-scaling. **`f²` is an empirical regularity with no mechanism**, which
+is where V15's `excess% = −323.4·f²` has also sat since 2026-09-02. Two unexplained `f²`
+findings by different routes is now a question in its own right, not a coincidence to note in
+passing.
+
+**P-C″ — the direct measurement, done 2026-10-26. Also negative.** Rather than propose a third
+closed form, the chain was measured: imputed `x₁` error per censored row, and its propagation
+into the curvature regressor, at `f` = 0.05 … 0.50 (n = 4,000, 6 reps, no BKMR).
+
+Declared `lin` (V34 bias exponent 2.17 ± 0.45):
+
+| `f` | mean \|d\| | `curv_err` = mean(2x₁d + d²) | `f × curv_err` |
+|---|---|---|---|
+| 0.05 | 0.353 | −0.098 | −0.005 |
+| 0.20 | 0.467 | −0.115 | −0.023 |
+| 0.40 | 0.567 | −0.073 | −0.029 |
+| 0.50 | 0.618 | −0.042 | −0.021 |
+
+**Exponents over `f` 0.20 → 0.40: mean\|d\| 0.28, `curv_err` −0.66, `f × curv_err` 0.34.**
+The per-row error grows only weakly with `f`; the induced regressor error is flat to shrinking.
+Nothing here produces 1.85. (Control: declared `true` gives `curv_err` ≈ 0 at every `f`, so the
+measurement is sound.)
+
+**What the three failures have in common.** Constant `Γ`, growing `Γ`, and direct error
+propagation are all arguments about **magnitudes**. A mean shift in `x₁²` does not determine a
+fitted coefficient — coefficient bias is set by `Cov(error, Y)` and by **leverage**. All three
+were therefore answering the wrong question, which is why each came out flat.
+
+**The remaining candidate, stated as a hypothesis and NOT tested.** Censored rows lie in the
+low-`x₁` tail, which is exactly where a quadratic term is identified. As `f` grows, corrupted
+rows take over more of the region that carries the curvature information, and leverage in the
+tail grows faster than linearly. That would place the extra power in the **fitting** step, not
+the imputation — consistent with every imputation-side quantity above being flat. Testing it
+means computing the leverage of censored rows for the `x₁²` column as a function of `f`, and
+weighting the error by it.
+
+**Standing caution.** Three mechanisms have now been proposed and refuted for this one
+exponent. The qualitative account (§4) has survived every test; the quantitative one has failed
+every test. `f²` should be cited as an **empirical regularity** — twice measured, by V15 and
+V34, through different mechanisms — until something predicts it.
 
 **P-D (already confirmed, and it is the strongest support).** The shipped engine draws from a
 conditional **linear in its predictors** — which is exactly `smc_dec_lin`'s declared basis. The

@@ -471,10 +471,39 @@ That weakening is the whole gain, and whether it is enough is untested.
 > **Pooled `p = 1.85 ± 0.20`. Against linear (`p` = 1): 4.2σ — REFUTED. Against quadratic
 > (`p` = 2): 0.7σ — consistent.**
 
-**The account survives; the simplification does not.** `Γ` is the projection of the omitted
-basis onto the retained one *computed over the censored region*, and that region is set by `L`,
-hence by `f`. So the bias is `b · f · Γ(f) · θ_omit`, and with `Γ` growing roughly linearly in
-`f` the product is `f²`. The constant-`Γ` step was the error.
+**My proposed explanation for the `f²` was itself tested, and refuted (2026-10-26).** I argued
+that `Γ` grows linearly in `f`, so that `f · Γ(f)` gives `f²`. Computed directly from the design
+at `f` = 0.05 … 0.50:
+
+| | `Γ(0.05)` → `Γ(0.50)` | |
+|---|---|---|
+| `noint` (omits `x₁x₂`) | 0.400 → 0.407 | **flat** |
+| `noquad` (omits `x₁²`) | 0.507 → 0.287 | **decreasing** |
+
+`Γ` does not grow; for one case it falls. The extrapolation residual over the censored region is
+also flat to slightly decreasing. Together these give `bias ∝ f^0.88` (noint) and `f^0.98`
+(noquad) — essentially **linear**, against the measured **1.85 ± 0.20**, a ~4.8σ miss.
+
+A note on where the confusion came from: `Γ` is the omitted-variable bias of the **plugin fit**,
+so it is an expectation over the **observed** region (`x₁ > L`), not the censored one. An
+earlier draft of this section said "censored"; that was wrong, and fixing it does not rescue the
+argument either way.
+
+**What survives and what does not.** The projection account still predicts, correctly, *which*
+coefficients move and in *which direction* — omit a term and it is rerouted onto whatever it
+correlates with, confirmed at all three censoring levels. It does **not** predict the magnitude's
+scaling. **The `f²` is an empirical regularity with no mechanism behind it**, which is the same
+position V15's `−323.4·f²` has been in since 2026-09-02.
+
+**Three mechanisms have now been proposed and refuted** (constant `Γ`; `Γ` growing in `f`; direct
+propagation of the per-row imputation error). The last was measured directly rather than argued:
+the imputed-`x₁` error grows as `f^0.28` and the induced curvature-regressor error is flat to
+shrinking, so `f × error` scales as `f^0.34`, nowhere near 1.85. All three are arguments about
+**magnitudes**, and a mean shift in a regressor does not determine a fitted coefficient —
+`Cov(error, Y)` and **leverage** do. The untested candidate is therefore leverage: censored rows
+occupy the low-`x₁` tail where a quadratic is identified, so as `f` grows the corrupted rows take
+over more of the information carrying the curvature. That puts the extra power in the **fitting**
+step, not the imputation. See `phase1/DERIVATION_declared_basis.md` §5 P-C″.
 
 **This is the second independent route to `f²` in this project.** V15 established that curvature
 attenuation is quadratic in the censored fraction (`excess% = −323.4·f²`) for a different arm
