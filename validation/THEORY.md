@@ -499,11 +499,26 @@ position V15's `−323.4·f²` has been in since 2026-09-02.
 propagation of the per-row imputation error). The last was measured directly rather than argued:
 the imputed-`x₁` error grows as `f^0.28` and the induced curvature-regressor error is flat to
 shrinking, so `f × error` scales as `f^0.34`, nowhere near 1.85. All three are arguments about
-**magnitudes**, and a mean shift in a regressor does not determine a fitted coefficient —
-`Cov(error, Y)` and **leverage** do. The untested candidate is therefore leverage: censored rows
-occupy the low-`x₁` tail where a quadratic is identified, so as `f` grows the corrupted rows take
-over more of the information carrying the curvature. That puts the extra power in the **fitting**
-step, not the imputation. See `phase1/DERIVATION_declared_basis.md` §5 P-C″.
+**magnitudes**, and a mean shift in a regressor does not determine a fitted coefficient.
+See `phase1/DERIVATION_declared_basis.md` §5 P-C″.
+
+**Where the exponent now sits, after P-B (2026-10-26).** `phase1/derive_declared_basis.R` built
+the account's first parameter-free quantitative implementation and, with it, a replica that
+matches V33's imputation in every respect — the same closed-form conditional prior, truncated
+quadratic grid draw, completed-data proper refit, `n` = 800, `m` = 10, three sweeps, cold start —
+and differs **only in using OLS on the true basis instead of BKMR**. The replica agrees with the
+asymptotic fixed point to ≤ 0.025 in all twelve cells, and still gives `f`-exponents of 0.83–1.33
+against the measured 1.46–2.28. So finite `n`, properness, `m` and sweep count contribute nothing,
+and **the residual exponent is a property of the analysis model's response to degraded curvature
+information, not of the imputation.** Both of this project's `f²` findings — V15's
+`excess% = −323.4·f²` and V34's `f^1.85` — were measured with BKMR as the analysis model. The
+decisive test is cheap and is now queued: re-run V33/V34's two scenarios with an `lm` analysis arm
+and see whether the exponent falls to ≈ 0.85.
+
+Note what the same calculation **does** predict without being fitted to it: `smc_dec_lin`'s
+interaction bias *shrinks* as censoring doubles (+0.056 → +0.027, exponent −1.04), and the account
+gives −1.19. It reproduces the interaction's scaling everywhere, including that sign reversal, and
+fails only on curvature in the arms that omit the quadratic.
 
 **This is the second independent route to `f²` in this project.** V15 established that curvature
 attenuation is quadratic in the censored fraction (`excess% = −323.4·f²`) for a different arm
