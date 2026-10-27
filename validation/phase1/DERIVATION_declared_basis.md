@@ -265,8 +265,14 @@ Computing OLS leverage is therefore no longer the test. **The test is to re-run 
 scenarios with an `lm` analysis arm on the true basis and see whether the exponent falls to
 ≈ 0.85.** `derive_declared_basis.R` STAGE 4 already predicts that it will.
 
-**Standing caution.** Three mechanisms have now been proposed and refuted for this one
-exponent. The qualitative account (§4) has survived every test; the quantitative one has failed
+**RESOLVED 2026-10-27 (V35): the exponent is the ANALYSIS MODEL's.** V15's six-point sweep with
+an OLS analysis arm, paired on identical imputed datasets at 100 reps/cell, gives slope
+**0.75 [0.69, 0.81]** against BKMR's **2.01 [1.80, 2.21]**, and over all six points
+**0.87 [0.75, 0.99]** — containing STAGE 4's registered **0.85**. The prediction made here was
+right. `phase1/FINDINGS_v35.md`.
+
+**Standing caution.** Three mechanisms had been proposed and refuted for this one
+exponent before it was localised. The qualitative account (§4) has survived every test; the quantitative one has failed
 every test. `f²` should be cited as an **empirical regularity** — twice measured, by V15 and
 V34, through different mechanisms — until something predicts it.
 

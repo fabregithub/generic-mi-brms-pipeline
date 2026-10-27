@@ -103,7 +103,19 @@ TAG="${OUT_TAG:-v26}"
 if [[ "${V26_DETACHED:-0}" != "1" ]]; then
   mkdir -p logs
   export V26_STAMP="$(date +%Y%m%d-%H%M%S)"
-  V26_DETACHED=1 nohup bash "$SELF" >/dev/null 2>&1 &
+  # True detachment. `nohup ... &` only IGNORES SIGHUP -- it leaves the job in
+  # the launching shell's PROCESS GROUP, so when a terminal or host app tears
+  # that group down the "detached" run dies with it. V35 was lost this way on
+  # 2026-10-26: killed 1.6 h into an 11 h run, no R error, no crash report, no
+  # OOM, no sleep -- the wrapper and its child went at the same instant.
+  # setsid(2) puts the run in its own session so nothing upstream can reach it.
+  # macOS ships no setsid(1); python3 is used only to make the syscall.
+  if command -v python3 >/dev/null 2>&1; then
+    V26_DETACHED=1 nohup python3 -c 'import os,sys; os.setsid(); os.execvp("bash",["bash"]+sys.argv[1:])' "$SELF" >/dev/null 2>&1 &
+  else
+    echo "WARNING: no python3; falling back to nohup, which does NOT survive a session teardown." >&2
+    V26_DETACHED=1 nohup bash "$SELF" >/dev/null 2>&1 &
+  fi
   PID=$!
   echo "$PID" > "logs/${TAG}_${V26_STAMP}.pid"
   command -v caffeinate >/dev/null 2>&1 && nohup caffeinate -i -w "$PID" >/dev/null 2>&1 &

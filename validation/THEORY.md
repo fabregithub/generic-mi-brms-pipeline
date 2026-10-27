@@ -502,7 +502,30 @@ shrinking, so `f × error` scales as `f^0.34`, nowhere near 1.85. All three are 
 **magnitudes**, and a mean shift in a regressor does not determine a fitted coefficient.
 See `phase1/DERIVATION_declared_basis.md` §5 P-C″.
 
-**Where the exponent now sits, after P-B (2026-10-26).** `phase1/derive_declared_basis.R` built
+**ANSWERED 2026-10-27 (V35): the exponent belongs to the ANALYSIS MODEL.** V15's six-point
+`f`-sweep, re-run with an OLS analysis arm on the true basis **paired on identical imputed
+datasets** (4 arms × 6 `f` × 100 reps, all cells complete), gives a log-log slope of
+**0.75 [0.69, 0.81]** against BKMR's **2.01 [1.80, 2.21]** — disjoint, gap 1.26. Over all six
+points the OLS slope is 0.87 [0.75, 0.99] against BKMR's 2.47 [2.00, 2.95]; the OLS interval
+contains `derive_declared_basis.R` STAGE 4's registered prediction of **0.85** and the BKMR one
+contains V15's 2. The two curves **cross at `f` = 0.44** and diverge both ways — +14.6 (2.7σ) at
+`f` = 0.10, −23.8 (3.7σ) at `f` = 0.60, where BKMR reaches −101.7% and the fitted curvature has
+changed sign (V15's recorded inversion). **With a correctly specified parametric analysis the
+curvature loss is close to LINEAR in `f`; the quadratic shape is manufactured by BKMR**, which
+inflates curvature on *complete* data by **+15.1% ± 1.5 with no trend in `f`** (per-`f` +16.2
++15.1 +15.1 +11.9 +14.6 +17.6, reproducing V33's independently measured +15.1% exactly) and so
+masks attenuation at low censoring while amplifying it at high. The complete-data inflation is
+therefore a **constant** property of the GP prior; the exponent comes from its **interaction**
+with a degraded tail. The difference is neither an offset (it changes sign) nor a rescaling
+(the ratio climbs 0.07 → 1.31 monotonically). ⚠️ **Coverage is not a warning signal here**:
+`pipeline_bkmr` holds 0.92–0.99 across the whole sweep — the intervals are simply wide — while
+`pipeline_lm` falls 0.91 → 0.15. ⚠️ **This does not recommend OLS**: it was handed the
+generator's own basis, as an instrument whose response to information loss is known. And the
+mechanism is **localised, not derived** — the question has moved from "why does censoring
+enter as `f²`" to "what does a GP do to a degraded curvature signal". See
+`phase1/FINDINGS_v35.md`.
+
+**Where the exponent sat before that, after P-B (2026-10-26).** `phase1/derive_declared_basis.R` built
 the account's first parameter-free quantitative implementation and, with it, a replica that
 matches V33's imputation in every respect — the same closed-form conditional prior, truncated
 quadratic grid draw, completed-data proper refit, `n` = 800, `m` = 10, three sweeps, cold start —
@@ -1149,7 +1172,10 @@ evidence, not a guess:
 | excess | −1.3% | −13.9% | −29.6% | −55.6% | −90.2% | −116.5% |
 
 *(§3c now supplies a candidate mechanism for the quadratic form, which may reach `f²`
-as well. Read it before treating the exponents below as wholly unexplained.)*
+as well. Read it before treating the exponents below as wholly unexplained. V35 re-measured
+this row on the current harness — −1.2, −11.9, −25.5, −49.3, −78.5, −101.7 — reproducing it
+to 0.4σ at `f` = 0.2 and 1.2σ at `f` = 0.4, and showed the exponent is **BKMR's**, not
+censoring's: see §3c and `phase1/FINDINGS_v35.md`.)*
 
 **A second measured rate joined it on 2026-09-03.** V18 found the shipped default's bias
 under a causally active covariate decaying as **n^−1/3** — also measured, also underived.
@@ -1174,10 +1200,17 @@ product of two `f`-linear losses — (i) the fraction of rows whose exposure is 
 conditional linear in its own predictors, hence carrying no curvature by clause (A), and
 (ii) the fraction of the *estimand's evaluation range* that lies below the detection limit,
 since `curv_X1` is a contrast at fixed quantiles of X1 and the LOD climbs that distribution
-as `f` grows. Their product is `f²`. **This is a conjecture with a discriminating test**:
-factor (ii) depends on where the contrast is evaluated and factor (i) does not, so moving
-`q_lo` from 0.25 to 0.40 should move the curve under the conjecture and leave it alone
-otherwise. See FINDINGS_v15.md; that comparison is the natural next prediction.
+as `f` grows. Their product is `f²`. **This conjecture is REFUTED (2026-10-26), on V15's own data, without
+needing the run it proposed.** Factor (ii) is the fraction of `[qnorm(q_lo), qnorm(q_hi)]` below
+`L = qnorm(f)`. At `q_lo` = 0.25 that range is `[−0.674, +0.674]`, so factor (ii) — and hence the
+whole product — is **identically zero for `f` ≤ 0.22**. V15 measured **−13.9% ± 2.0 at `f` = 0.20**,
+7.0σ from zero, and −29.6% ± 2.3 at `f` = 0.30, 13.0σ. A multiplicative factor that is exactly zero
+cannot produce those. The proposed discriminating run (`q_lo` = 0.40) would have been worse than
+uninformative: factor (ii) is zero at **four of the six sweep points** there. Under the only other
+reading of (ii) — the censored fraction of the exposure distribution — the product is `f²`
+trivially, (ii) does not depend on `q_lo`, and the test is vacuous. **V21 is retired without being
+run; the window went to V35 instead**, which tests the hypothesis P-B actually localised: that the
+exponent belongs to the analysis model. See `phase1/run_v35_analysis_model.sh`.
 
 V15 also found that the damage is not confined to attenuation: at `f` = 0.60 the fitted
 surface **inverts**, curving the wrong way in 40% of replications, while nominal coverage

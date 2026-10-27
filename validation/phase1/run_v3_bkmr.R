@@ -68,6 +68,7 @@
 #              together. Changing these changes the estimands.
 #   SWEEPS / MARGIN / PIPELINE_ROOT                      as V4
 #   OUT_TAG    result/checkpoint prefix                  (default "v3")
+#   RESUME     1 = skip tasks already in the checkpoint  (default off)
 #
 # COST. `pipeline_bkmr` fits M BKMR models per replication and dominates
 # everything else. Measure before scaling: see run_v3_bkmr.sh's header for the
@@ -89,7 +90,7 @@ if (is.null(.here) || !nzchar(.here)) {
 for (f in c("dgp.R", "censoring.R", "procedures.R", "procedures_pipeline.R",
             "metrics.R", "robustness.R", "proper_impute.R", "mice_impute.R",
             "bart_impute.R", "estimands_bkmr.R", "smc_impute.R",
-            "procedures_bkmr.R")) {
+            "procedures_bkmr.R", "procedures_lm.R")) {
   source(file.path(.here, "R", f))
 }
 
@@ -112,6 +113,10 @@ V3_DECLARED <- list(
 
 V3_ARMS <- c("oracle_bkmr", "cc_bkmr", "sub_lod2_bkmr", "pipeline_bkmr",
              names(V3_DECLARED),
+             # V35: OLS on the true basis, as an INSTRUMENT rather than a rival.
+             # Paired with the BKMR arms on the same bundle and seed, so the
+             # only difference is the analysis model. See R/procedures_lm.R.
+             "oracle_lm", "pipeline_lm",
              # V9: the SMC arms. Not in the V3 default set -- V3 is closed and its
              # numbers must stay reproducible. Select them explicitly via ARMS.
              "smc_oracle_bkmr", "smc_plugin_bkmr")
@@ -208,6 +213,15 @@ V15_SCENARIOS <- c("mixf10", "nd20", "mixf30", "nd40", "mixf50", "mixf60")
         bundle, grid, m = m, iter = iter, n_knots = n_knots,
         seed = base_seed + r, n_cores = 1L, outer_sweeps = sweeps,
         margin = margin, project_root = project_root)
+    # V35: the same two arms with an OLS analysis model. Same `bundle`, same
+    # seed, so `oracle_lm`/`pipeline_lm` are paired with their BKMR twins.
+    if ("oracle_lm" %in% arms)
+      parts[[length(parts) + 1L]] <- proc_lm_oracle(
+        bundle, grid, seed = base_seed + r)
+    if ("pipeline_lm" %in% arms)
+      parts[[length(parts) + 1L]] <- proc_lm_pipeline(
+        bundle, grid, m = m, seed = base_seed + r, n_cores = 1L,
+        outer_sweeps = sweeps, margin = margin, project_root = project_root)
     for (md in c("oracle", "plugin")) {
       if (paste0("smc_", md, "_bkmr") %in% arms)
         parts[[length(parts) + 1L]] <- proc_bkmr_smc(
@@ -371,9 +385,53 @@ run_v3 <- function(n_rep = 200L, n_obs = 800L, m = 10L, iter = 3000L,
                 if (is.null(n_knots)) "none (full GP)" else n_knots))
   }
 
-  # Chunked + checkpointed, as V4: a kill costs one chunk, not the run.
+  # Chunked + checkpointed. NOTE (2026-10-27): until today the checkpoint was
+  # WRITE-ONLY -- nothing read it back, so the comment that once stood here
+  # ("a kill costs one chunk, not the run") was false: a kill cost the WHOLE
+  # run, and the checkpoint was good only for post-mortem salvage. V35 was
+  # killed 1.6 h into an 11 h run and that is exactly what happened.
+  #
+  # RESUME=1 now reloads the checkpoint and skips tasks already completed. It
+  # is OPT-IN and a no-op without the env var, so every existing track
+  # reproduces byte-for-byte. A task is skipped only when the checkpoint holds
+  # rows for that (scenario, rep) covering EVERY requested arm -- otherwise a
+  # run resumed with a different ARMS set would silently inherit a partial
+  # task.
   ckpt_file <- getOption("v3.checkpoint", NULL)
   done <- list()
+  resume <- identical(Sys.getenv("RESUME"), "1")
+  if (resume) {
+    if (is.null(ckpt_file) || !file.exists(ckpt_file)) {
+      if (verbose) cat("RESUME=1 but no checkpoint found; starting from scratch.\n")
+    } else {
+      prev <- tryCatch(readRDS(ckpt_file), error = function(e) NULL)
+      if (is.data.frame(prev) && nrow(prev)) {
+        have <- stats::aggregate(
+          list(n_arms = prev$procedure),
+          by = list(scenario = prev$scenario, rep = prev$rep),
+          FUN = function(z) length(unique(z)))
+        full <- have[have$n_arms >= length(arms), ]
+        key_task <- vapply(tasks, function(tk) paste(tk$sc$name, tk$rep, sep = "\r"), "")
+        # Only carry forward what THIS design asks for. Without the intersect a
+        # resume with a smaller N_REP (or fewer scenarios) would silently inherit
+        # every rep in the checkpoint, and the summary would be computed over a
+        # different design from the one requested.
+        key_done <- intersect(paste(full$scenario, full$rep, sep = "\r"), key_task)
+        keep <- !(key_task %in% key_done)
+        prev <- prev[paste(prev$scenario, prev$rep, sep = "\r") %in% key_done &
+                     prev$procedure %in% arms, ]
+        if (verbose)
+          cat(sprintf("RESUME: %d/%d tasks already complete in %s; %d to run.\n",
+                      sum(!keep), length(tasks), basename(ckpt_file), sum(keep)))
+        done[[1L]] <- list(prev)
+        tasks <- tasks[keep]
+        if (!length(tasks)) {
+          if (verbose) cat("RESUME: nothing left to run.\n")
+          return(prev)
+        }
+      }
+    }
+  }
   chunk_size <- max(n_cores, 2L * n_cores)
   chunks <- split(seq_along(tasks), ceiling(seq_along(tasks) / chunk_size))
 

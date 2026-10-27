@@ -92,6 +92,42 @@ the watchers' own command lines (`pgrep -f "[r]un_v3_bkmr.R"`). That protects ag
 watchers, but not against unrelated processes that mention the same filename — so prefer
 the PID file. PIDs are exact; patterns are approximate.
 
+### `nohup &` is NOT detachment — and the checkpoint used to be write-only
+
+Two defects, both found on 2026-10-27 after V35 died silently 1.6 h into an 11 h run. There
+was no R error, no crash report, no OOM (192 GB free, zero swap, no jetsam event), no reboot
+and no sleep event; the wrapper and its child went at the same instant, so the wrapper never
+wrote its `done rc=` line.
+
+**1. The runners were not detached.** `nohup cmd &` only makes the job IGNORE SIGHUP. It
+leaves it in the launching shell's **process group**, so when a terminal or host application
+tears that group down, the "detached" run dies with it. Every runner now puts itself in its
+own session with `setsid(2)` before doing any work. macOS ships no `setsid(1)`, so `python3`
+is used purely to make the syscall, with a loud warning if `python3` is missing.
+
+**2. The checkpoint was never read back.** `run_v3_bkmr.R` wrote `<tag>_checkpoint.rds` after
+every chunk under a comment claiming "a kill costs one chunk, not the run" — but nothing ever
+loaded it, so a kill cost the **whole** run and the checkpoint was good only for post-mortem
+salvage. `RESUME=1` now reloads it and skips completed tasks:
+
+```bash
+RESUME=1 ./run_v35_analysis_model.sh      # pick up where a killed run stopped
+```
+
+It is **opt-in and a no-op without the env var**, so every existing track still reproduces
+byte-for-byte. A task is skipped only when the checkpoint holds rows for that
+`(scenario, rep)` covering **every** requested arm, and the carried-forward rows are
+intersected with the current design — otherwise resuming with a different `ARMS` or `N_REP`
+would silently inherit a partial task or report a summary over a design you did not ask for.
+
+**When you resume, say so in the findings.** A resumed run is not one continuous run: the
+reps before and after the break were drawn under the same seeds but on possibly different
+library versions.
+
+**Used in anger 2026-10-27.** V35's resume carried 88 of 600 tasks forward and cut the re-run
+from 11 h 15 m to 9 h 36 m. The detach fix held: `ps` showed TTY `??` and a process group of
+the run's own, and the run survived to `done rc=0`.
+
 ## Track V3 — BKMR mixture estimands
 
 The one track that changes **what is measured** rather than how missingness is handled.
