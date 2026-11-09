@@ -76,6 +76,28 @@ shipped pipeline code, not a prototype of it — full tables and caveats in
 > Interaction estimands are more robust — they survive censoring of a single exposure
 > (+2.6% to +5.7%) and break down (−12.5%) only when a second exposure is censored too.
 >
+> ### Do not read a low non-detect rate as safety
+>
+> The row above is a **single operating point**. Across the full sweep, against analytic
+> truth, the bias **changes sign** — on five of the seven estimands a BKMR analysis reports
+> (100 replications per cell):
+>
+> | estimand | 10% | 20% | 30% | 40% | 50% | 60% |
+> |---|---|---|---|---|---|---|
+> | pure curvature | **+11.8%** | +3.1% | −13.6% | −42.8% | −75.3% | −101.9% |
+> | interaction | +5.9% | +6.5% | +4.0% | +3.0% | −9.7% | −18.3% |
+> | overall q25→q50 | −14.2% | −22.5% | −23.9% | −19.2% | −3.8% | **+16.4%** |
+> | single-exposure X1 at q50 | −2.2% | −7.7% | −9.0% | −5.3% | +4.0% | **+16.3%** |
+>
+> At **20% non-detects the curvature bias reads +3.1%**, which looks like a clean bill of
+> health and is not one: BKMR over-states curvature by a flat **+14.7%** even on complete
+> data, and at 20% that offset happens to cancel the imputation's attenuation. By 40% the
+> cancellation is gone. A validation run at your own non-detect rate can therefore land on a
+> zero crossing and tell you nothing about the rate next door — and at 60% the curvature
+> estimate has **inverted in sign**.
+>
+> So the scope limit is not "safe below some non-detect rate". There is no such rate.
+>
 > **Coverage will not warn you.** In these runs a −42% point bias sat behind 0.945–0.960
 > coverage, because the pooled intervals ran 1.5–1.6× wider than the estimates' true
 > sampling spread.
