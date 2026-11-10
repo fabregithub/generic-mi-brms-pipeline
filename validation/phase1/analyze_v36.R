@@ -60,26 +60,43 @@ for (cl in intersect(c("desc","outcome","collider"), cells)) {
 }
 cat(sprintf("  P1: %s\n", if (p1ok) "MET" else "NOT MET -- read nothing below until fixed"))
 
-cat("\n---- P2  THE GATE: does imputation AMPLIFY selection bias? ----\n")
-cat("  positive = imputation makes it worse.  sub_lod2 borrows nothing from Y\n")
-cat("  and is the mechanism control: it must show NO interaction.\n")
+cat("\n---- P2  THE GATE: does imputation make selection bias WORSE? ----\n")
+# SIGN TRAP, fixed 2026-11-11. The first version of this scorer reported the
+# SIGNED interaction and called a positive value "amplification". Selection bias
+# in every live cell is NEGATIVE, so a positive interaction means the arm is
+# nearer the truth, not further from it -- the opposite reading. The gate is
+# therefore stated on |bias|, paired per replication against the SAME cell's
+# oracle, which is sign-safe whatever direction the selection bias takes.
+cat("  paired per rep: |arm - truth| - |oracle - truth|, pp of truth.\n")
+cat("  POSITIVE = imputation makes it WORSE (P2's prediction).\n")
+cat("  sub_lod2 borrows nothing from Y and is the mechanism control.\n")
 cat(sprintf("\n  %-20s", "arm"))
-for (cl in setdiff(cells, "none")) cat(sprintf(" %18s", cl))
+for (cl in setdiff(cells, "none")) cat(sprintf(" %17s", cl))
 cat("\n")
+p2 <- list()
 for (a in ARMS) {
   if (!a %in% names(w)) next
-  dn <- pd("none", a)
   cat(sprintf("  %-20s", a))
   for (cl in setdiff(cells, "none")) {
-    dd <- pd(cl, a)
-    est <- mean(dd) - mean(dn)
-    se  <- sqrt(var(dd)/length(dd) + var(dn)/length(dn))
-    cat(sprintf(" %+7.2f+/-%-5.2f%-4s", est, se,
-                switch(state(est, se), "MET+"="  *", "MET-"="  -", "UNDECIDED"="   ")))
+    d  <- w[w$cell == cl, ]
+    dd <- 100 * (abs(d[[a]] - tr) - abs(d$oracle - tr)) / tr
+    est <- mean(dd); se <- sd(dd)/sqrt(nrow(d))
+    st  <- state(est, se)
+    p2[[paste(a, cl)]] <- c(est, se)
+    cat(sprintf(" %+6.2f+/-%-5.2f%-4s", est, se,
+                switch(st, "MET+"=" W", "MET-"=" B", "UNDECIDED"="  ")))
   }
   cat("\n")
 }
-cat("\n  * = significantly positive (amplification)   - = significantly negative\n")
+cat("\n  W = significantly WORSE than its own oracle (P2 direction)\n")
+cat("  B = significantly BETTER -- P2 REFUTED in that cell: the imputation\n")
+cat("      partially OFFSETS the selection bias rather than adding to it.\n")
+key <- grep("^pipeline_block_fcs (desc|outcome|collider)$", names(p2), value = TRUE)
+nW  <- sum(vapply(p2[key], function(v) v[1]/v[2] >  2, TRUE))
+nB  <- sum(vapply(p2[key], function(v) v[1]/v[2] < -2, TRUE))
+cat(sprintf("\n  P2 on pipeline_block_fcs: %d cell(s) WORSE, %d BETTER of %d -> %s\n",
+            nW, nB, length(key),
+            if (nW == length(key)) "MET" else if (nB > 0) "NOT MET (and reversed)" else "UNDECIDED"))
 
 cat("\n---- P3  does the fix rescue selection bias? (it should NOT) ----\n")
 cat("  smc_xgrid should land on oracle_sel, not on the target.\n")

@@ -1,6 +1,12 @@
 # V36 — outcome-dependent selection: does censored-exposure imputation amplify it?
 
-**Status: BUILT; PILOT RUN 2026-11-09; full run not yet launched.** Registered predictions
+**Status: RUN AND SCORED 2026-11-10 — see `FINDINGS_v36.md`.** P1 MET; **P2 NOT MET and
+REVERSED** (imputation offsets selection bias, it does not amplify it); P4 confirmed in
+magnitude and refuted in direction; P5 MET. Two design defects surfaced by running it — the
+`sub_lod2` mechanism control is confounded by the realised non-detect fraction, and the
+scorer's sign convention was wrong — both documented in `FINDINGS_v36.md` §7.
+
+**Status at design time: BUILT; PILOT RUN 2026-11-09.** Registered predictions
 below were fixed *before* any V36 code ran. Two things changed after the pilot and both are
 dated and explained in place: the **strength lever** (§3) and the **measured cost** (§7).
 Neither touches a prediction.

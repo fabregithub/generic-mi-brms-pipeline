@@ -115,7 +115,12 @@ and every one benefits from the fix.
 > 3. **Nothing else until a decision needs it.** A new cell should be justified by a choice it
 >    would change, not by a gap in a table.
 >
-> **One track has since qualified under rule 3 (2026-11-09): V36, outcome-dependent
+> **V36 RAN 2026-11-09/10 and is resolved — see `phase1/FINDINGS_v36.md`.** Headline: the
+> two defects **do not compound** (the gate was refuted and reversed), but selection bias is
+> **flat in `n`** so coverage falls to **0.001** at `n` = 12800. The manuscript's §6.3 row 3
+> can now be filled, and the three deviations priced independently.
+>
+> **One track qualified under rule 3 (2026-11-09): V36, outcome-dependent
 > selection.** It is justified by a specific choice it would change — whether the manuscript
 > can price Itoh et al.'s low-birth-weight exclusion, which Mezawa's DAG draws as a mediator.
 > It is the only remaining gap blocking `DRAFT.md` §6.3, and the harness has no mechanism for
