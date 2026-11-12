@@ -104,6 +104,31 @@ a correction. Scored cell by cell the gate reads NOT MET in 3 of 5 because the s
 for *any* significant movement — at 3000 reps a 1.1 pp shift is significant. **Read §2, not the
 gate's verdict: the fix addresses congeniality, not the sampling frame.**
 
+## 5b. A by-product that matters more to the manuscript than the gate
+
+The `none` cells carry an incidental measurement nobody had made: **what MRL/2 substitution
+does on the additive path with a correctly specified analysis model.** Every prior substitution
+result in this programme is from the mixture/BKMR path, where it attenuates curvature.
+
+| non-detect fraction | `sub_lod2` bias | its coverage | shipped engine | its coverage |
+|---|---|---|---|---|
+| 0.10 | **+1.92%** ± 0.23 | 0.952 | +0.27% ± 0.23 | 0.955 |
+| 0.30 | **+8.56%** ± 0.21 | 0.880 | +0.18% ± 0.21 | 0.954 |
+| 0.50 | **+18.60%** ± 0.31 | **0.729** | −0.26% ± 0.32 | 0.955 |
+
+**Substitution INFLATES the coefficient, monotonically**, log-log slope in the non-detect
+fraction **1.48 [0.76, 2.20]**, while the shipped engine is unbiased across the whole range with
+coverage at nominal. Unlike the point estimate, **substitution's coverage failure is
+unambiguous**: 0.729 at a 50% non-detect rate.
+
+⚠️ **Scope, and it is a tight one.** The LOD here is a **single** value set at a quantile of
+the exposure, as in every cell this programme has run. Where reporting limits vary by
+participant — as in the JECS assay — the substituted value carries variation unrelated to the
+true exposure, which is classical measurement error and attenuates instead. **The direction
+measured here must not be assumed to transfer to a subject-specific-limit study**; the
+manuscript's §6.5.4 registers both regimes and names a discriminator computed from the limits
+alone.
+
 ## 6. What may be asserted
 
 - ✅ "Selection on a descendant of the exposure that shares a cause with the outcome attenuates
