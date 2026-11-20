@@ -61,6 +61,43 @@ The imputation step is intended for ordinary missing data where a MICE-style imp
 
 If a variable is left-censored, below a detection limit, structurally missing, not applicable by design or likely not missing at random (MNAR), handle that issue before running the pipeline. Such values should not be treated as ordinary `NA` values unless that choice is explicitly justified.
 
+**One exception, added in v1.4.0:** a left- or interval-censored *focal exposure* has a dedicated path in the pipeline — `strategy = "censored_exposure_block_fcs"`, which imputes it congenially with the analysis model rather than substituting a constant. It is opt-in and documented in [`docs/censored-exposures.md`](censored-exposures.md). The guidance above still holds for every other censored or structurally missing variable.
+
+### `z_imputer` — which engine imputes the covariates
+
+`analysis_spec$imputation$z_imputer` selects the imputation engine. It is **the setting most likely to change your results without changing your model**, so set it deliberately rather than inheriting it.
+
+Despite the name — "Z block" is vocabulary from the censored-exposure path — this option is **not** specific to that path. `run_row_level_imputation()` is the shared entry point for every strategy, so `z_imputer` governs:
+
+| strategy | what `z_imputer` controls |
+|---|---|
+| `"row_level"` | all imputation |
+| `"subject_wide_with_repeated_y_auxiliary"` | all imputation |
+| `"censored_exposure_block_fcs"` | the **Z block** only (covariates + outcome). The censored exposure itself is drawn by `leftcens::impute_censored_conditional()` and is unaffected by this setting |
+
+```r
+imputation = list(
+  z_imputer = "mice",     # the default since v1.7.0
+  ...
+)
+```
+
+| value | what it is | needs | notes |
+|---|---|---|---|
+| `"mice"` | parametric proper draws — `pmm` for continuous targets, `logreg` for binary | `mice` | **The default since v1.7.0.** Better or equal in every cell tested, at every `n`, with coverage never worse by 0.008 |
+| `"bart"` | BART posterior draws — proper and flexible | `dbarts` | The default from v1.5.0 to v1.6.x. ⚠️ Carries **+5% to +10.4%** in the exposure coefficient when a covariate is causally active, which **coverage does not detect** (0.93–0.97) and which decays only as `n^(−1/3)`. Set it to reproduce a v1.5.0–v1.6.x analysis exactly |
+| `"forest_boot"` | bootstrapped random forest | — | The v1.4.0 default. ⚠️ **−23% bias that does not shrink with `n`** whenever a covariate is a confounder or a mediator; interval coverage goes to 0 |
+| `"forest"` | plain random forest (`miceRanger`), improper | — | Between-imputation variance comes out too small; pooled intervals up to 16% too narrow. Raising `m` does not help — it is a bias in the variance estimator |
+
+**Leave it unset and you get `"mice"`** — unless the config also sets the superseded `proper_draw`, which is still honoured for back-compatibility: `TRUE` maps to `"forest_boot"` and `FALSE` to `"forest"`. A config written against v1.4.0 therefore keeps the imputer it was validated with, silently. **In a new config, set `z_imputer` and leave `proper_draw` unset.**
+
+Two guards fire at runtime, both as loud warnings naming the consequence rather than just the substitution:
+
+* `"bart"` requested while `dbarts` is absent falls back to `"forest_boot"` and warns. The run completes rather than aborting, so **check which imputer actually ran**: `grep "Z-block imputer" run_all_stdout.log`.
+* Any route to `"forest_boot"` warns once, including the legacy `proper_draw = TRUE` route — warning a config whose author does not know they are on that imputer is the point.
+
+Evidence: `validation/phase1/FINDINGS_v27.md` (the v1.7.0 default change), `FINDINGS_v21.md` and `FINDINGS_v7.md` (`bart`), `FINDINGS_v19.md` (`forest_boot`), `FINDINGS_v4.md` and `FINDINGS_v5.md` (properness). Narrative: [`docs/censored-exposures.md`](censored-exposures.md).
+
 ### Skipping imputation when there is no missing data
 
 If the analysis dataset has no missing covariate data, or if you deliberately want to run a complete-data analysis without multiple imputation, edit the `imputation = list(...)` block in `00_config.R` directly:

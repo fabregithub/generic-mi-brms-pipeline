@@ -72,13 +72,19 @@ If you plan to use the Cox proportional hazards family (`family = "cox"`), the `
 install.packages("survival")
 ```
 
-The default imputation path uses **BART** (`z_imputer = "bart"`, since v1.5.0), which needs the `dbarts` package:
+The default covariate imputer is **`mice`** (`z_imputer = "mice"`, since v1.7.0 — it was BART from v1.5.0 to v1.6.x), which needs the `mice` package:
+
+```r
+install.packages("mice")
+```
+
+`dbarts` is needed **only** if you set `z_imputer = "bart"`, which you would do to reproduce a v1.5.0–v1.6.x analysis exactly:
 
 ```r
 install.packages("dbarts")
 ```
 
-Without it the pipeline still runs — it warns and falls back to the v1.4.0 imputer — but intervals will be slightly too narrow where much of the data is imputed. See [`validation/phase1/FINDINGS_v7.md`](../validation/phase1/FINDINGS_v7.md).
+⚠️ Setting `"bart"` without `dbarts` installed does not abort the run. The pipeline warns and falls back to `forest_boot`, the v1.4.0 imputer, which carries **−23% bias that does not shrink with sample size** wherever a covariate is a confounder or a mediator, with interval coverage falling to zero. Confirm which imputer actually ran: `grep "Z-block imputer" run_all_stdout.log`. See [`validation/phase1/FINDINGS_v19.md`](../validation/phase1/FINDINGS_v19.md), and [`FINDINGS_v27.md`](../validation/phase1/FINDINGS_v27.md) for the v1.7.0 change.
 
 If you plan to use the censored-exposure block-FCS strategy (`strategy = "censored_exposure_block_fcs"`, for a left-/interval-censored focal exposure), the `leftcens` package is also required at imputation time. It is not on CRAN — install it from GitHub, pinned to a release tag:
 

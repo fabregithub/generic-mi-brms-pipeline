@@ -97,9 +97,11 @@ what that costs: adjusting for a **collider** moved an exposure coefficient from
 bias that the credible interval's coverage does not reveal (0.93–0.95). Neither is repaired by
 imputation. **→ [`docs/covariate-roles.md`](docs/covariate-roles.md)**
 
-**Install `dbarts` before a real analysis.** With it absent, `z_imputer = "bart"` warns and
-falls back to `forest_boot`, which under a confounder carries **−23% bias that does not shrink
-with sample size**. Confirm which imputer ran:
+**Confirm which covariate imputer actually ran.** `z_imputer` defaults to `"mice"` (since
+v1.7.0, and it needs the `mice` package). `dbarts` is required only if you set
+`z_imputer = "bart"` — and if it is absent, that setting warns and falls back to
+`forest_boot`, which under a confounder carries **−23% bias that does not shrink with sample
+size**. Either way the run log records what ran:
 `grep "Z-block imputer" run_all_stdout.log`.
 
 ---

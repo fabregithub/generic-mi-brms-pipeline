@@ -206,19 +206,30 @@ whole class of imputation error. Do not read that as protection against the othe
 
 `analysis_spec$imputation$z_imputer` selects how covariates are imputed. Where `Z` is
 causally inert, the choice barely matters. Where `Z` is a confounder or a mediator, it
-decides whether your bias shrinks with data or not:
+decides whether your bias shrinks with data or not.
 
-| `z_imputer` | bias at n = 800 | bias at n = 12,800 | coverage at n = 12,800 |
+**The default changed in v1.7.0, from `"bart"` to `"mice"`.** V27 measured the two across
+11 cells × 3 `n` levels × 500 reps. Relative bias in the exposure coefficient, `bart` → `mice`:
+
+| cell | n = 800 | n = 3,200 | n = 12,800 |
 |---|---|---|---|
-| **`"bart"` (default)** | +4.6 / +4.8% | **+2.1 / +2.0%** | **0.87 / 0.92** |
-| `"forest_boot"` | −22.8 / −26.4% | **−22.0 / −23.3%** | **0.00 / 0.00** |
-| a parametric alternative | +2.4 / +2.9% | +3.5 / +3.9% | 0.78 / 0.84 |
+| `zrmar_pipe` | 10.21% → **2.95%** | 5.38% → 0.87% | 3.50% → **0.66%** |
+| `zrmar_fork` | 8.02% → **0.84%** | 4.98% → 0.54% | 2.66% → **0.08%** |
+| `zr_fork` | 5.23% → **0.79%** | 2.75% → 0.35% | 1.45% → **0.00%** |
+| `zr_pipe` | 4.99% → **0.52%** | 2.42% → 0.09% | 1.87% → **0.36%** |
 
-*(Two covariate structures; more detail in the validation findings linked below.)*
+`"mice"` was better or equal in **every cell at every `n`**, and coverage was never traded
+away for it — never worse by more than 0.008. **Keep the default.**
 
-**`"bart"` is the only option measured whose bias shrinks as the sample grows.** Every other
-imputer tested carries bias that does not decay — it is simply *there*, at whatever `n` you
-have. Keep the default.
+The objection that had blocked a parametric covariate imputer was that it is misspecified
+where the covariate's *own* conditional is non-linear, which V6 measured at **−4.70%**. V27
+tested that ground head-on and it did not reproduce: across the four inert and non-linear
+cells, `"mice"`'s `bias/SE` was **better** than `"bart"`'s in all four, by 0.01 to 0.09.
+
+⚠️ **Reproducing an analysis run before v1.7.0 means setting `z_imputer = "bart"`
+explicitly.** Leave it unset and the imputer changes underneath you.
+
+`"forest_boot"`, the pre-v1.5.0 default, is in a different class from either — see below.
 
 ### ⚠️ `forest_boot` and the `dbarts` fallback
 
@@ -230,17 +241,21 @@ coverage falling to **zero** by n ≈ 6,400 under a confounder. Two situations r
 2. **`z_imputer = "bart"` when the `dbarts` package is not installed.** The pipeline warns
    and falls back to `forest_boot` so the run completes rather than aborting.
 
-Case 2 is worth guarding against deliberately. **Install `dbarts` before a real analysis**,
-and check the run log for the `Z-block imputer:` line — it records which imputer actually
-ran:
+Case 2 no longer sits on the default path: since v1.7.0 the default is `"mice"`, which needs
+the `mice` package rather than `dbarts`. **If you set `z_imputer = "bart"` deliberately —
+including to reproduce a v1.5.0–v1.6.x analysis — install `dbarts` first**, or the setting
+degrades to `forest_boot` with only a warning to tell you. Either way, check the run log for
+the `Z-block imputer:` line, which records what actually ran:
 
 ```bash
 grep "Z-block imputer" run_all_stdout.log
 ```
 
-If it says `forest_boot` and you did not ask for it, install `dbarts` and re-run. The one
-consolation is that this failure *is* visible in the diagnostics: coverage collapses, unlike
-the subtler bias above.
+If it says `forest_boot` and you did not ask for it, find which of the two routes you are on
+before re-running: either `dbarts` is missing under an explicit `z_imputer = "bart"`, or the
+config sets `proper_draw = TRUE` and is being honoured as a pre-v1.5.0 one. The warning names
+the route. The one consolation is that this failure *is* visible in the diagnostics: coverage
+collapses, unlike the subtler bias above.
 
 Reproducing a pre-v1.5.0 analysis is a legitimate reason to set `forest_boot` explicitly —
 just do not expect the covariate path to be unbiased while you do.

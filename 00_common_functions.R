@@ -786,10 +786,13 @@ run_row_level_imputation <- function(data, imputation_spec, analysis_spec) {
             "NOT shrink as n grows, whenever a covariate is a cause of the ",
             "exposure (a confounder) or an effect of it (a mediator). Interval ",
             "coverage goes to 0.\n",
-            "  'bart' was measured at 1.29% against forest_boot's 2.67% in the ",
-            "same cells. Set analysis_spec$imputation$z_imputer <- 'bart' ",
-            "unless you have a specific reason not to. ",
-            "See validation/phase1/FINDINGS_v19.md.",
+            "  Set analysis_spec$imputation$z_imputer <- 'mice' (the default ",
+            "since v1.7.0) unless you have a specific reason not to.\n",
+            "  The evidence is chained, not head-to-head: V19 measured 'bart' ",
+            "at 1.29% against forest_boot's 2.67% in these cells, and V27 found ",
+            "'mice' better or equal to 'bart' in every cell it tested. No arm ",
+            "has run 'mice' against 'forest_boot' directly.\n",
+            "  See validation/phase1/FINDINGS_v19.md and FINDINGS_v27.md.",
             call. = FALSE, immediate. = TRUE)
   }
 
@@ -1622,9 +1625,9 @@ summarise_missing_y_draws <- function(pred_draws_long, analysis_spec, summary_sp
 # carries bias that coverage does not detect. Measured post-v1.6.1 on matched
 # cells, 200 reps, n = 800:
 #
-#     Z-block imputer   confounder   mediator
-#     bart (default)      +4.83%      +6.03%
-#     mice (this one)     -0.08%      +1.45%
+#     Z-block imputer       confounder   mediator
+#     bart (then default)     +4.83%      +6.03%
+#     mice (this one, now)    -0.08%      +1.45%
 #
 # V21 attributed 100% of that bias to BART's FLEXIBILITY: a correctly specified
 # estimated parametric draw is +0.26%/+0.58%, and improper and donor-matched
@@ -1641,9 +1644,15 @@ summarise_missing_y_draws <- function(pred_draws_long, analysis_spec, summary_sp
 # while `Y` enters the exact conditional linearly and a linear fit gets that
 # part exactly right.
 #
-# ⚠️ NOT THE DEFAULT. `z_imputer` still defaults to "bart". Switching the
-# default is a larger behaviour change than adding an option and wants evidence
-# across every cell family, not just the two above -- see ROADMAP.md.
+# ⚠️ THIS IS THE DEFAULT, since v1.7.0. It was not when the block above was
+# written: `z_imputer` defaulted to "bart" from v1.5.0, and this paragraph used
+# to say that switching wanted evidence across every cell family rather than
+# just the two cells above. V27 supplied exactly that -- 11 cells x 3 n x 500
+# reps, mice better or equal in EVERY cell at EVERY n -- and the default moved.
+#
+# The figures and the reasoning live with the default itself, in
+# `resolve_z_imputer()` above; they are deliberately not duplicated here.
+# `z_imputer = "bart"` reproduces a v1.5.0-v1.6.x analysis exactly.
 #
 # Uses `pmm` for continuous targets and `logreg` for binary ones; both draw the
 # imputation model's parameters from their posterior, which is what makes them

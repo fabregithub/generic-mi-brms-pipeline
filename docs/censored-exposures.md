@@ -164,11 +164,16 @@ study design, as noted above.
 > worse). Details and numbers:
 > [`validation/phase1/FINDINGS_v4.md`](../validation/phase1/FINDINGS_v4.md).
 >
-> **Corrected in v1.5.0.** `analysis_spec$imputation$z_imputer` defaults to `"bart"`:
-> the Z block draws imputations from a BART posterior, which is proper multiple imputation
-> (parameters drawn from a posterior) *and* flexible enough for non-linear covariates.
-> Across 7 scenarios × 300 replications this gave the best bias of any variant tested
-> (≤1.3% everywhere) with **coverage 0.937–0.963**, and it costs ~4% of pipeline runtime.
+> **Corrected in v1.5.0.** `analysis_spec$imputation$z_imputer` was made to default to
+> `"bart"`: the Z block drew imputations from a BART posterior, which is proper multiple
+> imputation (parameters drawn from a posterior) *and* flexible enough for non-linear
+> covariates. Across 7 scenarios × 300 replications that gave the best bias of any variant
+> tested at the time (≤1.3% everywhere) with **coverage 0.937–0.963**, at ~4% of pipeline
+> runtime.
+>
+> ⚠️ **`"bart"` is no longer the default.** v1.7.0 moved it to `"mice"` on evidence this
+> note predates — see the **v1.7.0** section below. `"bart"` is still available, and setting
+> it explicitly is what reproduces a v1.5.0–v1.6.x analysis.
 >
 > **⚠️ Added 2026-09-08 — a separate and larger limit.** `leftcens` draws each below-LOD
 > value from a conditional **linear in its predictors** (the skew-aware part is the *margin*,
